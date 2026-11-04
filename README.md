@@ -2,7 +2,7 @@
 
 IntentLens is a local-first visual grounding prototype for electronics work.
 Point a camera at a board, type a question, and get a short answer
-plus a target position on a normalized overlay grid. The default grid is **64×64**;
+plus a target position on a normalized overlay grid if asked for. The default grid is **64×64**;
 16×16, 24×24, 32×32, 64×64 and 128×128 are available in Settings.
 
 There are **two builds**:
@@ -19,7 +19,8 @@ Live phone build: <https://aizkinwork-star.github.io/intentlens/>
 > the priority across every provider; non-Meta models are explicitly labelled.
 
 > **Honest status.** This is a prototype, not a production tool. Local component
-> tracking accuracy is low, physical Android/iOS camera behaviour was not tested,
+> tracking accuracy is low, physical Android/iOS camera behaviour was tested but
+> free providers weren't available for PWA so those alongside paid ones remains unchecked,
 > and Meta glasses integration was not built. Details are in
 > [Limitations](#limitations) and [docs/](docs/).
 
@@ -50,7 +51,7 @@ Live phone build: <https://aizkinwork-star.github.io/intentlens/>
 - Camera preview, still capture, grid overlay and tap/drag tracking.
 - Local k-NN component classifier (unverified candidates, not facts).
 - Structured project memory: projects, messages, images, tasks and results.
-- Text-only chat that never attaches an image.
+- Text-only chat that never attaches an image (free).
 - Optional cloud image analysis with strict result validation (no invented box).
 - Repeat = 0 AI requests; Explain = exactly 1.
 - Provider request log showing the exact API host, endpoint, model, mode, HTTP
@@ -149,7 +150,7 @@ between desktop and phone so coordinate conversion and validation cannot drift.
 3. **Frame** the board; rotate the phone to landscape for a wider view.
 4. **Capture** one still. The live stream is never sent to a model.
 5. **Ask** a question by typing, e.g. “where is the battery connector?”.
-6. **Allow cloud** for the session (off by default).
+6. **Allow cloud** for the session (off by default, instructions to allow the cloud is in PC installation guide).
 7. **Send**. One still image, the prompt and a trimmed project context leave the
    device. Repeat and Explain are explicit: Repeat reuses the stored answer with
    zero requests; Explain makes exactly one.
@@ -321,7 +322,7 @@ works through the Electron server but cannot be read by a browser because of COR
 | **Custom relay** | Not wired | **Yes** | Your choice (Meta ids only) | Your cost | Your HTTPS relay must allow this Pages origin. Non-Meta model ids are still refused. |
 
 **Limitations of the paid-only setup.** On the phone, every provider call goes
-straight from the browser, so only OpenRouter (and text-only Groq) can work
+straight from the browser, so only OpenRouter-paid (and text-only Groq) can work
 without a relay; Cloudflare, NVIDIA-hosted Meta models and BlockRun need the PC
 app or your own relay. Phone camera and photo upload have **not been tested on a
 physical phone**. Free tiers on the listed hosts may exist but are not relied on.
@@ -431,7 +432,7 @@ Cloud hosts used by the shipped software:
 - **No IntentLens-owned cloud.** No Supabase, Firebase, Vercel function, AWS
   service or application backend is used.
 
-### Development models versus shipped calls
+### Development models or shipped calls
 
 The development agents that helped build this repository were **not Meta
 models**, because Meta model API access was not available to them. That does not
@@ -570,9 +571,9 @@ logged.
   candidates, not electrical facts. See [docs/KNN_EVALUATION.md](docs/KNN_EVALUATION.md).
 - **No Meta glasses integration.** Meta Ray-Ban Display / device access toolkit
   access was not available, so the glasses integration was planned but **not
-  built**. The phone camera and phone display are the only input/output.
-- **Physical phone testing not done.** Camera permission, landscape rotation,
-  install prompts and touch tracking are **NOT TESTED — DEVICE REQUIRED**.
+  built**. The phone/PC camera and display uploads are the only input/output.
+- **Physical phone API call testing not done.** API calls, query/context transfer 
+  due to CORS limitations **NOT TESTED — PAID API REQUIRED**.
 - **Model coordinates are proposals.** The app validates and rejects invalid
   coordinates; it does not clamp a bad result into a fake marker. It cannot verify
   circuit connectivity or measure a component.
