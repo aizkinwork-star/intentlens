@@ -1,9 +1,9 @@
 // POST /api/analyze — v8 local-first, strict Meta-only cloud inference.
 //
-// Order: validate request -> build explicit context -> call Meta Llama Vision
-// runtime via cloud provider (NVIDIA NIM primary, Cloudflare Workers AI next,
-// Groq only with an explicit Meta vision model) -> validate output ->
-// return GroundingResult.
+// Order: validate request -> build explicit context -> call a verified Meta
+// vision model via a cloud provider (NVIDIA NIM primary, Cloudflare Workers AI
+// next) -> validate output -> return GroundingResult. Groq is skipped unless
+// the account actually exposes a verified Meta vision model.
 //
 // v7 non-negotiables:
 //   - Meta Llama Vision models only, hosted via cloud providers.
@@ -16,7 +16,7 @@
 import { randomUUID } from 'node:crypto';
 import { readJson, json, recordServerLog } from '../lib/http.js';
 import { appError, errorPayload } from '../lib/errors.js';
-import { config, localModelConfig, modelMode, localModelAvailable, outboundNetworkAllowed, isAllowedOutboundHost } from '../config.js';
+import { META_MODEL_CATALOG, config, localModelConfig, modelMode, localModelAvailable, outboundNetworkAllowed, isAllowedOutboundHost } from '../config.js';
 import { isValidPoint, isValidBox, GRID_SIZES, DEFAULT_GRID_SIZE } from '../../grid.js';
 import { buildGroundingPrompt, summarizeContext, resolveLimits } from '../services/contextBuilder.js';
 import { ContextBudget } from '../services/contextBudget.js';
@@ -35,6 +35,29 @@ const text = (value, max) => String(value ?? '').trim().slice(0, max);
 function decodedBytes(dataUrl) {
   const comma = dataUrl.indexOf(',');
   return Math.floor(((dataUrl.length - comma - 1) * 3) / 4);
+}
+
+/** Exact upstream target for logs. Cloudflare's account id is never logged. */
+function inferenceTarget(providerId, modelId) {
+  if (providerId === 'nvidia-nim') {
+    return {
+      endpoint: 'https://integrate.api.nvidia.com/v1/chat/completions',
+      host: META_MODEL_CATALOG['nvidia-nim']?.host || 'integrate.api.nvidia.com',
+    };
+  }
+  if (providerId === 'cloudflare-workers-ai') {
+    return {
+      endpoint: `https://api.cloudflare.com/client/v4/accounts/{account}/ai/run/${modelId}`,
+      host: META_MODEL_CATALOG['cloudflare-workers-ai']?.host || 'api.cloudflare.com',
+    };
+  }
+  if (providerId === 'groq') {
+    return {
+      endpoint: 'https://api.groq.com/openai/v1/chat/completions',
+      host: META_MODEL_CATALOG.groq?.host || 'api.groq.com',
+    };
+  }
+  return { endpoint: '', host: '' };
 }
 
 function sanitizeSceneMap(list) {
@@ -168,7 +191,7 @@ export async function analyzeHandler(req, res, store) {
     const isLocalAvailable = localModelAvailable();
 
     if (!isLocalAvailable) {
-      throw appError('AI_NOT_CONFIGURED', 'No vision model is configured. Connect NVIDIA NIM, Cloudflare Workers AI, or Groq first.');
+      throw appError('AI_NOT_CONFIGURED', 'No verified vision model is configured. Connect NVIDIA NIM or Cloudflare Workers AI. Groq has no Meta vision model on this account.');
     }
     if (!outboundNetworkAllowed()) {
       throw appError('NETWORK_DISABLED', 'Outbound network is disabled in .env (ALLOW_OUTBOUND_NETWORK=false). Local camera, grid, tracking and k-NN still work.');
@@ -243,11 +266,18 @@ export async function analyzeHandler(req, res, store) {
     }
 
     const resolvedModelId = modelId || localModelConfig.modelId;
+    const target = inferenceTarget(providerUsed, resolvedModelId);
+    const httpStatus = Number.isFinite(rawResult?.httpStatus) ? rawResult.httpStatus : 200;
+    const returnedModel = rawResult?.returnedModel || resolvedModelId;
+    const attemptTrail = (attempts || []).map((a) => {
+      const at = inferenceTarget(a.id, a.modelId);
+      return `${a.id}(${at.host || a.id}) model=${a.modelId || '-'} ${a.ok ? 'ok' : (a.code || 'fail')} ${a.ms ?? '-'}ms`;
+    }).join(' | ');
 
     recordServerLog({
       level: 'ok',
       category: 'api',
-      message: `Analysis successful via ${providerUsed} (${resolvedModelId}) (${Date.now() - started}ms) — status: ${result.resultStatus}`,
+      message: `POST ${target.endpoint} provider=${providerUsed} host=${target.host} model=${resolvedModelId} returned=${returnedModel} mode=vision http=${httpStatus} status=ok latency=${Date.now() - started}ms request=${clean.requestId}${fallbackOccurred ? ` fallback=true attempts=${attemptTrail}` : ''}`,
       ms: Date.now() - started,
     });
 
@@ -261,11 +291,28 @@ export async function analyzeHandler(req, res, store) {
         searchEnabled: false,
         modelMode: modelMode(),
         modelId: resolvedModelId,
+        returnedModel,
         providerUsed,
         providerName: providerName || providerUsed,
         fallbackOccurred,
         providerHealth: providerHealthSnapshot(),
-        ...(attempts?.length ? { attempts } : {}),
+        request: {
+          method: 'POST',
+          endpoint: target.endpoint,
+          host: target.host,
+          model: resolvedModelId,
+          mode: 'vision',
+          provider: providerUsed,
+          requestId: clean.requestId,
+          httpStatus,
+        },
+        ...(attempts?.length ? {
+          attempts: attempts.map((a) => ({
+            ...a,
+            endpoint: inferenceTarget(a.id, a.modelId).endpoint,
+            host: inferenceTarget(a.id, a.modelId).host,
+          })),
+        } : {}),
         latencyMs: Date.now() - started,
         context: summarizeContext(clean, resolveLimits('none')),
         projectId: clean.projectId,
@@ -284,10 +331,15 @@ export async function analyzeHandler(req, res, store) {
     }
     const status = err?.name === 'AppError' ? err.status : 500;
     const msg = err?.message || 'Inference failed';
+    const attempts = Array.isArray(err?.attempts) ? err.attempts : [];
+    const attemptTrail = attempts.map((a) => {
+      const target = inferenceTarget(a.id, a.modelId);
+      return `${a.id}(${target.host || a.id}) POST ${target.endpoint || '-'} model=${a.modelId || '-'} ${a.ok ? 'ok' : (a.code || 'fail')} ${a.ms ?? '-'}ms`;
+    }).join(' | ');
     recordServerLog({
       level: 'error',
       category: 'api',
-      message: `Inference failed (${status}): ${msg}`,
+      message: `Inference failed (${status})${requestId ? ` request=${requestId}` : ''} mode=vision: ${msg}${attemptTrail ? ` attempts=${attemptTrail}` : ''}`,
       detail: err?.stack || String(err),
     });
     console.warn(`[${requestId || '-'}] analyze failed ${status}: ${err?.code || err?.message}`);

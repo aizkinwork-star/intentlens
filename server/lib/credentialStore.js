@@ -237,7 +237,7 @@ export async function applyCredentialsToConfig(config) {
   const env = process.env;
   config.cloudflareAccountId = (env.CLOUDFLARE_ACCOUNT_ID || '').trim();
   config.cloudflareApiToken = (env.CLOUDFLARE_API_TOKEN || '').trim();
-  config.cloudflareModelId = (env.CLOUDFLARE_MODEL_ID || config.cloudflareModelId || '@cf/meta/llama-4-scout-17b-16e-instruct').trim();
+  config.cloudflareModelId = (env.CLOUDFLARE_MODEL_ID || config.cloudflareModelId || '@cf/meta/llama-3.2-11b-vision-instruct').trim();
   config.nimApiKey = (env.NIM_API_KEY || '').trim();
   config.nimBaseUrl = normalizeNimBaseUrl(env.NIM_BASE_URL || config.nimBaseUrl);
   config.nimModelId = (env.NIM_MODEL_ID || config.nimModelId || 'meta/muse-glimmer-30b').trim();
@@ -245,7 +245,7 @@ export async function applyCredentialsToConfig(config) {
     ? config.nimEnabled
     : String(env.NIM_ENABLED).toLowerCase() === 'true' || String(env.NIM_ENABLED) === '1';
   config.groqApiKey = (env.GROQ_API_KEY || '').trim();
-  config.groqTextModel = (env.GROQ_TEXT_MODEL || config.groqTextModel || 'llama-3.3-70b-versatile').trim();
+  config.groqTextModel = (env.GROQ_TEXT_MODEL || config.groqTextModel || '').trim();
   config.groqVisionModel = (env.GROQ_VISION_MODEL || '').trim();
   config.providerPriority = (env.PROVIDER_PRIORITY || config.providerPriority?.join(',') || 'nvidia-nim,cloudflare-workers-ai,groq')
     .split(',').map((s) => s.trim()).filter(Boolean);

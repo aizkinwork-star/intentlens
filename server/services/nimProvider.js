@@ -127,7 +127,15 @@ export function buildNimProvider({ baseUrl, apiKey, modelId, timeoutMs } = {}) {
 
       const rawJson = extractJson(text);
       if (!rawJson) throw new Error('NVIDIA NIM did not return valid JSON');
-      return { text: JSON.stringify(rawJson), citations: [], searchedWeb: false };
+      return {
+        text: JSON.stringify(rawJson),
+        citations: [],
+        searchedWeb: false,
+        httpStatus: res.status,
+        returnedModel: parsed?.model || modelId,
+        endpoint: `${baseUrl}/v1/chat/completions`,
+        host: 'integrate.api.nvidia.com',
+      };
     },
   };
 }

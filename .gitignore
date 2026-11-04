@@ -5,6 +5,8 @@
 API(SECRETS).txt
 api(secrets).txt
 *SECRETS*.txt
+*SECRET*.txt
+API Keys*.txt
 *.pem
 *.key
 

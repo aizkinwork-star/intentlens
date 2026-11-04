@@ -97,7 +97,15 @@ export function buildGroqProvider({ apiKey, modelId, timeoutMs = 60000 } = {}) {
       try { rawJson = JSON.parse(unfence(text)); } catch {
         throw new Error('Groq did not return valid JSON');
       }
-      return { text: JSON.stringify(rawJson), citations: [], searchedWeb: false };
+      return {
+        text: JSON.stringify(rawJson),
+        citations: [],
+        searchedWeb: false,
+        httpStatus: res.status,
+        returnedModel: parsed?.model || modelId,
+        endpoint,
+        host: 'api.groq.com',
+      };
     },
   };
 }

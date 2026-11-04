@@ -17,10 +17,13 @@ import {
   PROVIDERS,
   PROVIDER_ORDER,
   OPENROUTER_MODELS,
+  GROQ_TEXT_MODELS,
   callModel,
   callChatModel,
   testProvider,
   modelFor,
+  modelInfo,
+  providerSupportsImages,
 } from './provider.js';
 import { cameraErrorMessage, computeCaptureSize, tryLockLandscape, unlockOrientation } from './camera.js';
 import { escapeHtml } from './safe.js';
@@ -72,9 +75,6 @@ const els = {
   modelList: $('modelList'),
   modelNote: $('modelNote'),
   keyInput: $('keyInput'),
-  blockrunWarning: $('blockrunWarning'),
-  blockrunPolicy: $('blockrunPolicy'),
-  blockrunConsent: $('blockrunConsent'),
   baseUrlInput: $('baseUrlInput'),
   gridSelect: $('gridSelect'),
   ttsToggle: $('ttsToggle'),
@@ -82,6 +82,9 @@ const els = {
   clearKeyBtn: $('clearKeyBtn'),
   saveSettingsBtn: $('saveSettingsBtn'),
   closeSettingsBtn: $('closeSettingsBtn'),
+  requestLog: $('requestLog'),
+  requestLogCount: $('requestLogCount'),
+  clearLogBtn: $('clearLogBtn'),
   projectDialog: $('projectDialog'),
   projectList: $('projectList'),
   newProjectName: $('newProjectName'),
@@ -98,11 +101,10 @@ const state = {
   result: null,
   lastLatency: null,
   gridSize: DEFAULT_GRID_SIZE,
-  providerId: 'groq',
+  providerId: 'openrouter',
   model: '',
   baseUrl: '',
   apiKey: '',
-  blockrunConsent: false,
   tts: true,
   allowCloud: false,
   mode: 'vision',       // 'vision' sends one still; 'chat' sends text only
@@ -111,7 +113,10 @@ const state = {
   recognition: null,
   installPrompt: null,
   lastModel: null,
+  requestLog: [],       // in-memory only; never persisted
 };
+
+const MAX_REQUEST_LOG = 40;
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -134,6 +139,128 @@ function updateNetDot() {
   const online = navigator.onLine !== false;
   els.netDot.classList.toggle('off', !online);
   els.netDot.title = online ? 'Online' : 'Offline';
+}
+
+function logSafeText(value) {
+  return String(value ?? '')
+    .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, 'Bearer [redacted]')
+    .replace(/\b(?:sk|nvapi|gsk|brk)[-_][A-Za-z0-9._-]+/gi, '[redacted]')
+    .slice(0, 300);
+}
+
+function usageSummary(usage) {
+  if (!usage || typeof usage !== 'object') return '';
+  const bits = [];
+  const total = Number(usage.total_tokens);
+  if (Number.isFinite(total)) bits.push(`${total} tokens`);
+  const cost = Number(usage.cost);
+  if (Number.isFinite(cost) && cost > 0) bits.push(`$${cost.toFixed(7).replace(/0+$/, '').replace(/\.$/, '')}`);
+  else if (Number.isFinite(cost) && cost === 0) bits.push('$0');
+  return bits.join(' · ');
+}
+
+function recordRequest(result) {
+  if (!result) return;
+  const entry = {
+    when: new Date().toISOString(),
+    ok: result.ok === true,
+    providerId: result.providerId || state.providerId,
+    providerLabel: result.providerLabel || PROVIDERS[result.providerId]?.label || result.providerId || 'provider',
+    method: result.method || 'POST',
+    endpoint: result.endpoint || '',
+    host: result.host || '',
+    model: result.model || result.requestedModel || '',
+    returnedModel: result.returnedModel || '',
+    mode: result.mode || 'chat',
+    requestId: result.requestId || '',
+    status: Number.isFinite(result.httpStatus) ? result.httpStatus : (Number.isFinite(result.status) ? result.status : null),
+    code: result.code || '',
+    latencyMs: Number.isFinite(result.latencyMs) ? result.latencyMs : null,
+    usage: result.usage || null,
+    imageAttached: result.imageAttached === true,
+    message: result.ok ? '' : logSafeText(result.message || ''),
+  };
+  state.requestLog.unshift(entry);
+  if (state.requestLog.length > MAX_REQUEST_LOG) state.requestLog.length = MAX_REQUEST_LOG;
+  renderRequestLog();
+}
+
+function renderRequestLog() {
+  if (!els.requestLog) return;
+  els.requestLog.replaceChildren();
+  const count = state.requestLog.length;
+  if (els.requestLogCount) {
+    els.requestLogCount.textContent = `${count} request${count === 1 ? '' : 's'}`;
+  }
+  if (!count) {
+    const empty = document.createElement('p');
+    empty.className = 'meta';
+    empty.textContent = 'No provider requests yet. Each Send, Explain or Test is logged here with the exact endpoint and model.';
+    els.requestLog.appendChild(empty);
+    return;
+  }
+  for (const entry of state.requestLog) {
+    const row = document.createElement('article');
+    row.className = `logRow ${entry.ok ? 'ok' : 'fail'}`;
+
+    const head = document.createElement('div');
+    head.className = 'logHead';
+    const status = document.createElement('span');
+    status.className = `logStatus ${entry.ok ? 'ok' : 'fail'}`;
+    status.textContent = entry.status
+      ? `${entry.status} ${entry.ok ? 'OK' : 'ERROR'}`
+      : (entry.ok ? 'OK' : (entry.code || 'FAILED'));
+    const time = document.createElement('time');
+    time.dateTime = entry.when;
+    time.textContent = new Date(entry.when).toLocaleTimeString();
+    head.append(status, time);
+
+    const target = document.createElement('code');
+    target.className = 'logTarget';
+    target.textContent = `${entry.method} ${entry.endpoint || '(no endpoint)'}`;
+
+    const meta = document.createElement('div');
+    meta.className = 'logMetaLine';
+    meta.textContent = [
+      entry.providerLabel,
+      entry.host || 'no host',
+      entry.mode,
+      entry.imageAttached ? 'image attached' : 'text only',
+    ].join(' · ');
+
+    const modelLine = document.createElement('div');
+    modelLine.className = 'logMetaLine';
+    const returned = entry.returnedModel && entry.returnedModel !== entry.model
+      ? ` → ${entry.returnedModel}`
+      : '';
+    modelLine.textContent = `model ${entry.model || '(default)'}${returned}`;
+
+    row.append(head, target, meta, modelLine);
+
+    const extras = [];
+    if (entry.latencyMs != null) extras.push(`${(entry.latencyMs / 1000).toFixed(2)} s`);
+    const usage = usageSummary(entry.usage);
+    if (usage) extras.push(usage);
+    if (entry.requestId) extras.push(entry.requestId);
+    if (extras.length) {
+      const extra = document.createElement('div');
+      extra.className = 'logMetaLine';
+      extra.textContent = extras.join(' · ');
+      row.appendChild(extra);
+    }
+    if (entry.message) {
+      const error = document.createElement('div');
+      error.className = 'logError';
+      error.textContent = entry.message;
+      row.appendChild(error);
+    }
+    els.requestLog.appendChild(row);
+  }
+}
+
+function clearRequestLog() {
+  state.requestLog = [];
+  renderRequestLog();
 }
 
 function clearOverlay() {
@@ -232,15 +359,20 @@ function updateRotateHint() {
 function updateCloudUi() {
   const provider = PROVIDERS[state.providerId];
   const model = state.model || provider.defaultModel;
+  const images = providerSupportsImages(state.providerId);
   if (state.allowCloud) {
     els.cloudState.textContent = `Cloud is ON · ${provider.label}`;
-    els.cloudDetail.textContent = `${model} · only the still image you capture and this prompt leave the device when you press Send. Project history stays local.`;
+    els.cloudDetail.textContent = images
+      ? `${model} · only the still image you capture and this prompt leave the device when you press Send. Project history stays local.`
+      : `${model} · text only. This provider cannot accept images on this account, so use Chat; project history stays local.`;
     els.allowCloudBtn.textContent = 'Cloud is ON for this session';
     els.allowCloudBtn.disabled = true;
     els.cloudCard.classList.add('on');
   } else {
     els.cloudState.textContent = 'Cloud is off';
-    els.cloudDetail.textContent = 'No image leaves this phone until you allow it for this session.';
+    els.cloudDetail.textContent = images
+      ? 'No image leaves this phone until you allow it for this session.'
+      : 'No text leaves this phone until you allow it for this session. This provider is text-only.';
     els.allowCloudBtn.textContent = 'Allow cloud for this session';
     els.allowCloudBtn.disabled = false;
     els.cloudCard.classList.remove('on');
@@ -474,11 +606,6 @@ function requireCloudReady() {
     setStatus('Add a provider key in Settings. It is kept in memory only.', 'error');
     return false;
   }
-  if (PROVIDERS[state.providerId]?.consent && !state.blockrunConsent) {
-    openSettings();
-    setStatus('BlockRun needs explicit consent. Read the warning and tick the consent box in Settings.', 'error');
-    return false;
-  }
   if (navigator.onLine === false) {
     setStatus('Offline. Local history is available, but cloud analysis needs a connection.', 'error');
     return false;
@@ -499,7 +626,7 @@ async function sendChat(command) {
     renderChatLog();
     els.command.value = '';
 
-    setStatus(`Asking ${PROVIDERS[state.providerId].label} for a text-only answer…`, 'busy');
+    setStatus(`POST ${PROVIDERS[state.providerId].host} for a text-only answer…`, 'busy');
     const { instructions, userText } = buildChatPrompt({
       projectContext: projectContext(),
       history: state.messages.filter((message) => message.mode === 'chat'),
@@ -512,6 +639,7 @@ async function sendChat(command) {
       baseUrl: state.baseUrl,
       prompt: `${instructions}\n\n${userText}`,
     });
+    recordRequest(response);
 
     if (!response.ok) {
       setStatus(response.message, 'error');
@@ -540,7 +668,7 @@ async function sendChat(command) {
     renderChatLog();
     els.chatLog.scrollTop = els.chatLog.scrollHeight;
     setStatus(
-      `Text answer received in ${(response.latencyMs / 1000).toFixed(1)} s · no image was sent.`,
+      `Text answer from ${response.returnedModel || response.model} in ${(response.latencyMs / 1000).toFixed(1)} s · no image was sent.`,
       'ok',
     );
   } catch (error) {
@@ -560,6 +688,15 @@ async function send() {
   if (state.mode === 'chat') {
     if (!requireCloudReady()) return;
     return sendChat(command);
+  }
+  if (!providerSupportsImages(state.providerId)) {
+    setStatus(`${PROVIDERS[state.providerId].label} cannot accept images on this account. Switch to OpenRouter, or tap Chat for a text-only question.`, 'error');
+    return;
+  }
+  const chosen = modelInfo(state.providerId, state.model);
+  if (chosen && chosen.vision === false) {
+    setStatus(`${state.model} is text-only. Choose a vision model in Settings, or tap Chat.`, 'error');
+    return;
   }
   if (!state.captured) {
     try {
@@ -594,7 +731,7 @@ async function send() {
     });
 
     const provider = PROVIDERS[state.providerId];
-    setStatus(`Analyzing image with ${provider.label}… (can take 10–120 s)`, 'busy');
+    setStatus(`POST ${provider.host} · image analysis… (can take 10–120 s)`, 'busy');
 
     const response = await callModel({
       providerId: state.providerId,
@@ -604,6 +741,7 @@ async function send() {
       prompt,
       imageDataUrl: state.captured.dataUrl,
     });
+    recordRequest(response);
 
     if (!response.ok) {
       setStatus(response.message, 'error');
@@ -647,7 +785,7 @@ async function send() {
     await db.touchProject(state.project.id);
     state.messages = await db.listMessages(state.project.id);
     renderResult(state.result, response.latencyMs);
-    setStatus('Done. The box, if any, passed coordinate validation.', 'ok');
+    setStatus(`Done via ${response.returnedModel || response.model}. The box, if any, passed coordinate validation.`, 'ok');
     await speak(normalized.result.instruction);
   } catch (error) {
     setStatus(String(error?.message || error), 'error');
@@ -675,6 +813,7 @@ async function explain() {
       baseUrl: state.baseUrl,
       prompt: `${instructions}\n\n${userText}`,
     });
+    recordRequest(response);
 
     if (!response.ok) {
       setStatus(`Explain failed (no retry): ${response.message}`, 'error');
@@ -776,31 +915,44 @@ function toggleMic() {
   }
 }
 
+function updateModelNote() {
+  const providerId = els.providerSelect.value || state.providerId;
+  const model = els.modelInput.value.trim() || PROVIDERS[providerId]?.defaultModel || '';
+  const info = modelInfo(providerId, model);
+  if (!info) {
+    els.modelNote.textContent = providerId === 'custom'
+      ? `Any model id your relay accepts can be typed here. Default example: ${PROVIDERS.custom.defaultModel}.`
+      : 'This model id is not in the verified catalogue. It will be sent as typed; the provider decides whether it exists and whether it can read images.';
+    return;
+  }
+  const bits = [info.label];
+  if (info.pricing) bits.push(info.pricing);
+  bits.push(info.vision ? 'accepts images' : 'text only — images are refused');
+  if (info.verified) bits.push('verified in this audit');
+  els.modelNote.textContent = `${bits.join(' · ')}. ${info.note || ''}`.trim();
+}
+
 function syncProviderDetail(providerId) {
   const provider = PROVIDERS[providerId];
   if (!provider) return;
   els.providerNote.textContent = `${provider.note} Browser CORS: ${provider.browserCors}. Retention: ${provider.retention}`;
   els.modelInput.placeholder = provider.defaultModel;
   els.baseUrlInput.disabled = providerId !== 'custom';
-  els.blockrunWarning.hidden = providerId !== 'blockrun';
-  if (providerId === 'blockrun') {
-    els.blockrunPolicy.textContent = provider.retention;
-  }
-  const models = providerId === 'openrouter'
-    ? Object.entries(OPENROUTER_MODELS).map(([id, info]) => ({ id, ...info }))
-    : [{ id: provider.defaultModel, label: `${provider.label} default`, pricing: '', modalities: [] }];
-  els.modelList.replaceChildren();
-  for (const model of models) {
-    const option = document.createElement('option');
-    option.value = model.id;
-    option.label = `${model.label}${model.pricing ? ` — ${model.pricing}` : ''}`;
-    els.modelList.appendChild(option);
-  }
-  els.modelNote.textContent = providerId === 'openrouter'
-    ? 'Free vision candidate: nvidia/nemotron-3-nano-omni-30b-a3b-reasoning (checked live 2026-11-04). Meta Maverick/Scout are paid per token. No model is switched silently.'
+  const catalogue = providerId === 'openrouter'
+    ? OPENROUTER_MODELS
     : providerId === 'groq'
-      ? 'Default changed to Meta Llama 4 Maverick because Scout was reported unavailable. Verify your account has access before the demo.'
-      : '';
+      ? GROQ_TEXT_MODELS
+      : null;
+  els.modelList.replaceChildren();
+  if (catalogue) {
+    for (const [id, info] of Object.entries(catalogue)) {
+      const option = document.createElement('option');
+      option.value = id;
+      option.label = `${info.label}${info.pricing ? ` — ${info.pricing}` : ''}`;
+      els.modelList.appendChild(option);
+    }
+  }
+  updateModelNote();
 }
 
 function updateProviderUi() {
@@ -809,7 +961,6 @@ function updateProviderUi() {
     .join('');
   els.providerSelect.value = state.providerId;
   els.modelInput.value = state.model;
-  els.blockrunConsent.checked = state.blockrunConsent;
   syncProviderDetail(state.providerId);
 }
 
@@ -829,7 +980,6 @@ function readSettingsForm() {
     providerId: els.providerSelect.value,
     model: els.modelInput.value.trim(),
     apiKey: els.keyInput.value.trim(),
-    blockrunConsent: els.blockrunConsent.checked,
     baseUrl: els.baseUrlInput.value.trim(),
     gridSize: Number(els.gridSelect.value) || DEFAULT_GRID_SIZE,
     tts: els.ttsToggle.checked,
@@ -838,14 +988,9 @@ function readSettingsForm() {
 
 async function saveSettings() {
   const values = readSettingsForm();
-  if (PROVIDERS[values.providerId]?.consent && !values.blockrunConsent) {
-    setStatus('BlockRun requires the consent checkbox before it can be saved.', 'error');
-    return;
-  }
   state.providerId = values.providerId;
   state.model = values.model;
   state.apiKey = values.apiKey;          // memory only, never persisted
-  state.blockrunConsent = values.blockrunConsent;
   state.baseUrl = values.baseUrl;
   state.gridSize = values.gridSize;
   state.tts = values.tts;
@@ -883,8 +1028,9 @@ async function runProviderTest() {
   setStatus('Testing the key with one text-only request…', 'busy');
   try {
     const result = await testProvider(values);
+    recordRequest(result);
     if (result.ok) {
-      setStatus(`Key works with ${PROVIDERS[values.providerId].label}.`, 'ok');
+      setStatus(`Key works: POST ${result.host} · ${result.model} · ${result.latencyMs} ms.`, 'ok');
     } else {
       setStatus(result.message, 'error');
     }
@@ -1004,12 +1150,15 @@ function wireEvents() {
 
   els.providerSelect.addEventListener('change', () => {
     const next = els.providerSelect.value;
-    const previousDefault = PROVIDERS[state.providerId]?.defaultModel || '';
-    if (!els.modelInput.value || els.modelInput.value === previousDefault) {
+    const knownDefaults = new Set(Object.values(PROVIDERS).map((provider) => provider.defaultModel));
+    if (!els.modelInput.value || knownDefaults.has(els.modelInput.value)) {
       els.modelInput.value = PROVIDERS[next]?.defaultModel || '';
     }
     syncProviderDetail(next);
   });
+  els.modelInput.addEventListener('input', updateModelNote);
+  els.modelInput.addEventListener('change', updateModelNote);
+  els.clearLogBtn?.addEventListener('click', clearRequestLog);
 
   els.chatBtn.addEventListener('click', () => {
     state.mode = state.mode === 'chat' ? 'vision' : 'chat';
@@ -1088,15 +1237,18 @@ async function boot() {
 
   const settings = await db.allSettings();
   state.gridSize = Number(settings.gridSize) || DEFAULT_GRID_SIZE;
-  state.providerId = PROVIDERS[settings.providerId] ? settings.providerId : 'groq';
-  state.model = settings.model || '';
+  const savedProvider = PROVIDERS[settings.providerId] ? settings.providerId : 'openrouter';
+  state.providerId = savedProvider;
+  // Older builds saved retired or browser-blocked providers/models. Migrate only
+  // those exact values; a model the user typed themselves is left alone.
+  const legacyRetired = new Set(['nvidia/nemotron-3-nano-omni-30b-a3b-reasoning']);
+  state.model = settings.model && !legacyRetired.has(settings.model) ? settings.model : '';
   state.baseUrl = settings.baseUrl || '';
   state.tts = settings.tts === true;
   // Legacy plaintext keys from older builds are deleted, not migrated.
   await db.deleteSetting('apiKey');
   await db.deleteSetting('rememberKey');
   state.apiKey = '';
-  state.blockrunConsent = false;
 
   els.gridSelect.value = String(state.gridSize);
   els.gridLabel.textContent = `Grid ${state.gridSize}×${state.gridSize}`;
@@ -1104,6 +1256,7 @@ async function boot() {
   updateProviderUi();
   updateCloudUi();
   updateChatModeUi();
+  clearRequestLog();
 
   try {
     await IntentLensTTS.init({ onStatus: () => {} });

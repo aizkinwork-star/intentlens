@@ -6,12 +6,15 @@ Cloud image analysis is optional and uses Meta-published vision models only.
 
 ## What you need
 
-- **Node.js 20+** from https://nodejs.org/
+- **Node.js 22.5+** from https://nodejs.org/ (the test runner uses `node:sqlite`)
 - A browser such as Chrome or Edge
 - Optional: a Meta vision provider key
   - NVIDIA NIM (default): https://build.nvidia.com/
   - Cloudflare Workers AI: https://dash.cloudflare.com/
-  - Groq, only when an explicit Meta vision model is available: https://console.groq.com/
+  - Groq: not usable for vision on the supplied account. It exposes only
+    Prompt Guard 2 classifiers among Meta models; the desktop app skips it.
+- For the phone build, see [../pwa/README.md](../pwa/README.md). It uses
+  OpenRouter directly and does not need this server.
 
 ## Start
 
@@ -58,16 +61,18 @@ Then open `http://localhost:8000`.
 Open the top-left menu and choose **Vision Provider & Model -> Configure provider**.
 The first-run popup opens automatically when no provider is configured.
 
-Supported Meta-only options:
+Supported Meta-only options (verified on 2026-11-04):
 
-| Priority | Provider | Vision model examples |
-|---|---|---|
-| 1 | NVIDIA NIM | `meta/llama-3.2-11b-vision-instruct`, `meta/llama-3.2-90b-vision-instruct` |
-| 2 | Cloudflare Workers AI | `@cf/meta/llama-4-scout-17b-16e-instruct`, `@cf/meta/llama-3.2-11b-vision-instruct` |
-| 3 | Groq | `meta-llama/llama-4-scout-17b-16e-instruct` |
+| Priority | Provider | Verified vision model | Notes |
+|---|---|---|---|
+| 1 | NVIDIA NIM | `meta/muse-glimmer-30b` | Real image returned valid JSON. 11B returned 404; 90B timed out. |
+| 2 | Cloudflare Workers AI | `@cf/meta/llama-3.2-11b-vision-instruct` | Real image verified after licence acceptance. |
+| 3 | Groq | **none** | Only Prompt Guard 2 22M/86M classifiers are Meta models on this account. Never used for chat or vision. |
 
-Enter the key, select a vision model, and press **Save & test**. A placeholder key is
-never treated as configured. Non-Meta models are rejected.
+Enter the key, select a **verified** vision model, and press **Save & test**. A
+placeholder key is never treated as configured. Non-Meta models are rejected.
+Catalogued-but-unverified models stay visible with their failure note, but they
+do not make a provider eligible.
 
 Keys are encrypted at rest with Electron `safeStorage` under Electron, or Windows
 DPAPI for the standalone server. They are never returned to the page and never logged.
@@ -92,7 +97,7 @@ environment variables take precedence over `.env`.
 NIM_ENABLED=true
 NIM_API_KEY=...
 NIM_BASE_URL=https://integrate.api.nvidia.com
-NIM_MODEL_ID=meta/llama-3.2-11b-vision-instruct
+NIM_MODEL_ID=meta/muse-glimmer-30b
 PROVIDER_PRIORITY=nvidia-nim,cloudflare-workers-ai,groq
 ALLOW_OUTBOUND_NETWORK=true
 ```

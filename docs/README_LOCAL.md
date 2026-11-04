@@ -5,8 +5,8 @@ preview, grid interaction, tap/drag tracking and k-NN component classification r
 this computer. Cloud generative analysis is optional.
 
 For installation and provider setup, see [INSTALL.md](INSTALL.md) or
-[SETUP_GUIDE.md](SETUP_GUIDE.md). For the current architecture and limitations, see
-[README.md](README.md).
+[SETUP_GUIDE.md](SETUP_GUIDE.md). For the master overview, architecture and
+limitations, see [../README.md](../README.md).
 
 ## What runs locally
 
@@ -21,9 +21,9 @@ For installation and provider setup, see [INSTALL.md](INSTALL.md) or
 
 Only the optional Meta vision analysis. The provider order is:
 
-1. NVIDIA NIM
-2. Cloudflare Workers AI
-3. Groq, only when an explicit Meta vision model is configured
+1. NVIDIA NIM (Meta Muse Glimmer 30B — verified)
+2. Cloudflare Workers AI (Meta Llama 3.2 11B — verified)
+3. Groq — skipped: the supplied account has only Prompt Guard classifiers
 
 A captured frame is sent only when the user presses **Find it**. No continuous video
 is streamed. The app is local-first, not fully offline.

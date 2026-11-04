@@ -35,6 +35,8 @@ export const META_MODEL_CATALOG = {
         note: 'Verified with a real image. Reasoning model: responses can take 80-120s.',
       },
       // Listed by /v1/models on this account, but the endpoint currently fails.
+      // Kept visible with verified:false so the UI can explain why; it is never
+      // selected automatically and never makes a provider "configured".
       'meta/llama-3.2-11b-vision-instruct': {
         name: 'Meta Llama 3.2 Vision 11B',
         modality: 'vision',
@@ -45,7 +47,7 @@ export const META_MODEL_CATALOG = {
         name: 'Meta Llama 3.2 Vision 90B',
         modality: 'vision',
         verified: false,
-        note: 'Times out (>90s) on this account.',
+        note: 'Timed out (>90s) on this account during the 2026-11-04 audit.',
       },
     },
   },
@@ -54,36 +56,44 @@ export const META_MODEL_CATALOG = {
     host: 'api.cloudflare.com',
     models: {
       '@cf/meta/llama-4-scout-17b-16e-instruct': {
-        name: 'Meta Llama 4 Scout 17B', modality: 'vision', verified: false, note: 'Not yet verified with a real image.',
+        name: 'Meta Llama 4 Scout 17B',
+        modality: 'vision',
+        verified: false,
+        note: 'Listed in this account model search; it was not image-tested in the 2026-11-04 audit.',
       },
       '@cf/meta/llama-3.2-11b-vision-instruct': {
-        name: 'Meta Llama 3.2 Vision 11B', modality: 'vision', verified: false, note: 'Not yet verified with a real image.',
-      },
-      '@cf/meta/llama-3.2-90b-vision-instruct': {
-        name: 'Meta Llama 3.2 Vision 90B', modality: 'vision', verified: false, note: 'Not yet verified with a real image.',
+        name: 'Meta Llama 3.2 Vision 11B',
+        modality: 'vision',
+        verified: true,
+        note: 'Verified with a real image after accepting the model licence: correctly named a red circle and blue rectangle.',
       },
       '@cf/meta/llama-3.1-8b-instruct': { name: 'Meta Llama 3.1 8B Instruct', modality: 'text' },
       '@cf/meta/llama-3.1-8b-instruct-fp8': { name: 'Meta Llama 3.1 8B Instruct FP8', modality: 'text' },
       '@cf/meta/llama-3.3-70b-instruct-fp8-fast': { name: 'Meta Llama 3.3 70B Instruct FP8 Fast', modality: 'text' },
       '@cf/meta/llama-3.2-1b-instruct': { name: 'Meta Llama 3.2 1B Instruct', modality: 'text' },
       '@cf/meta/llama-3.2-3b-instruct': { name: 'Meta Llama 3.2 3B Instruct', modality: 'text' },
-      '@cf/meta/llama-guard-3-8b': { name: 'Meta Llama Guard 3 8B (safety classifier)', modality: 'text' },
+      '@cf/meta/llama-guard-3-8b': { name: 'Meta Llama Guard 3 8B (safety classifier)', modality: 'classifier' },
     },
   },
   'groq': {
-    label: 'Groq',
+    label: 'Groq (classifier only on this account)',
     host: 'api.groq.com',
     models: {
-      'meta-llama/llama-4-scout-17b-16e-instruct': {
-        name: 'Meta Llama 4 Scout 17B', modality: 'vision', verified: false, note: 'Not yet verified on this account.',
+      // The live Groq account on 2026-11-04 listed only these Meta models.
+      // Prompt Guard is a prompt-injection classifier; it must never be used
+      // for chat or vision. No Meta chat or vision model was available.
+      'meta-llama/llama-prompt-guard-2-22m': {
+        name: 'Meta Llama Prompt Guard 2 22M (classifier only)',
+        modality: 'classifier',
+        verified: false,
+        note: 'Classifier only: not a chat model and not a vision model.',
       },
-      'meta-llama/llama-4-maverick-17b-128e-instruct': {
-        name: 'Meta Llama 4 Maverick 17B', modality: 'vision', verified: false, note: 'Not yet verified on this account.',
+      'meta-llama/llama-prompt-guard-2-86m': {
+        name: 'Meta Llama Prompt Guard 2 86M (classifier only)',
+        modality: 'classifier',
+        verified: false,
+        note: 'Classifier only: not a chat model and not a vision model.',
       },
-      'llama-3.3-70b-versatile': { name: 'Meta Llama 3.3 70B Versatile', modality: 'text' },
-      'llama-3.1-8b-instant': { name: 'Meta Llama 3.1 8B Instant', modality: 'text' },
-      'meta-llama/llama-prompt-guard-2-22m': { name: 'Meta Llama Prompt Guard 2 22M (classifier)', modality: 'text' },
-      'meta-llama/llama-prompt-guard-2-86m': { name: 'Meta Llama Prompt Guard 2 86M (classifier)', modality: 'text' },
     },
   },
 };
@@ -204,13 +214,16 @@ export const config = {
   inferenceMode: (process.env.INFERENCE_MODE || 'meta-cloud-only').toLowerCase(),
   cloudflareAccountId: (process.env.CLOUDFLARE_ACCOUNT_ID || '').trim(),
   cloudflareApiToken: (process.env.CLOUDFLARE_API_TOKEN || '').trim(),
-  cloudflareModelId: (process.env.CLOUDFLARE_MODEL_ID || '@cf/meta/llama-4-scout-17b-16e-instruct').trim(),
+  cloudflareModelId: (process.env.CLOUDFLARE_MODEL_ID || '@cf/meta/llama-3.2-11b-vision-instruct').trim(),
   nimApiKey: (process.env.NIM_API_KEY || '').trim(),
   nimBaseUrl: normalizeNimBaseUrl(process.env.NIM_BASE_URL),
   nimModelId: (process.env.NIM_MODEL_ID || 'meta/muse-glimmer-30b').trim(),
   nimEnabled: bool(process.env.NIM_ENABLED, true),
   groqApiKey: (process.env.GROQ_API_KEY || '').trim(),
-  groqTextModel: (process.env.GROQ_TEXT_MODEL || 'llama-3.3-70b-versatile').trim(),
+  // Groq's supplied account has no Meta chat/vision model, only Prompt Guard
+  // classifiers. Keep text/vision model fields empty rather than naming a
+  // retired or non-Meta model.
+  groqTextModel: (process.env.GROQ_TEXT_MODEL || '').trim(),
   groqVisionModel: (process.env.GROQ_VISION_MODEL || '').trim(),
   providerPriority: (process.env.PROVIDER_PRIORITY || 'nvidia-nim,cloudflare-workers-ai,groq')
     .split(',').map((s) => s.trim()).filter(Boolean),
@@ -246,11 +259,17 @@ export function isPlaceholderCredential(value) {
   return false;
 }
 
-/** Provider has credentials for a vision-capable Meta model. */
+/** A model is only eligible when it has an explicit modality and is verified. */
+function verifiedVisionModel(providerId, modelId) {
+  const model = META_MODEL_CATALOG[providerId]?.models?.[modelId];
+  return Boolean(model && model.modality === 'vision' && model.verified === true);
+}
+
+/** Provider has credentials for a verified, vision-capable Meta model. */
 export function providerConfigured(id) {
-  if (id === 'nvidia-nim') return Boolean(config.nimApiKey && !isPlaceholderCredential(config.nimApiKey) && config.nimEnabled && providerSupportsVisionModel(id, config.nimModelId));
-  if (id === 'cloudflare-workers-ai') return Boolean(config.cloudflareAccountId && !isPlaceholderCredential(config.cloudflareAccountId) && config.cloudflareApiToken && !isPlaceholderCredential(config.cloudflareApiToken) && providerSupportsVisionModel(id, config.cloudflareModelId));
-  if (id === 'groq') return Boolean(config.groqApiKey && !isPlaceholderCredential(config.groqApiKey) && config.groqVisionModel && providerSupportsVisionModel(id, config.groqVisionModel));
+  if (id === 'nvidia-nim') return Boolean(config.nimApiKey && !isPlaceholderCredential(config.nimApiKey) && config.nimEnabled && verifiedVisionModel(id, config.nimModelId));
+  if (id === 'cloudflare-workers-ai') return Boolean(config.cloudflareAccountId && !isPlaceholderCredential(config.cloudflareAccountId) && config.cloudflareApiToken && !isPlaceholderCredential(config.cloudflareApiToken) && verifiedVisionModel(id, config.cloudflareModelId));
+  if (id === 'groq') return Boolean(config.groqApiKey && !isPlaceholderCredential(config.groqApiKey) && config.groqVisionModel && verifiedVisionModel(id, config.groqVisionModel));
   return false;
 }
 

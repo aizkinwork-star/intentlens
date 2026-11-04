@@ -2670,12 +2670,18 @@ async function postAnalyze(payload, signal) {
     );
   }
   if (!data) throw new RequestError('The server returned an empty response.', 'LOCAL_MODEL_BAD_RESPONSE', true);
+  const target = data.meta?.request;
   log({
     stage: 'api',
     provider: data.meta?.providerUsed || 'model',
     ms: latency,
     kind: 'ok',
-    text: `Result: ${data.resultStatus} — ${data.answerShort?.slice(0, 75) || ''}`,
+    text: target
+      ? `POST ${target.endpoint} · ${target.host} · ${target.model} · HTTP ${target.httpStatus} · ${latency}ms · ${data.resultStatus}`
+      : `Result: ${data.resultStatus} — ${data.answerShort?.slice(0, 75) || ''}`,
+    detail: target
+      ? `request=${target.requestId} provider=${target.provider} mode=${target.mode} model=${target.model}`
+      : undefined,
   });
   return data;
 }
@@ -3833,7 +3839,7 @@ function updateSetupForm({ keepModel = false, preferredProvider = null, preferre
       modelSelect.append(option);
     }
     const saved = localModelStatus?.providers?.find((p) => p.id === provider)?.modelId;
-    const chosen = [currentModel, saved, models.find((m) => m.verified)?.id, models[0]?.id]
+    const chosen = [currentModel, saved, models.find((m) => m.verified)?.id]
       .find((id) => id && models.some((m) => m.id === id));
     if (chosen) modelSelect.value = chosen;
   }
@@ -3861,10 +3867,15 @@ function updateSetupForm({ keepModel = false, preferredProvider = null, preferre
   if (note) {
     const chosen = models.find((m) => m.id === (modelSelect?.value || ''));
     const parts = [];
-    if (chosen?.verified) parts.push('Verified with a real image on this account.');
-    else if (chosen) parts.push('Not verified with a real image yet — use Test connection.');
-    if (chosen?.note) parts.push(chosen.note);
-    parts.push(`Only the ${models.length} Meta vision model${models.length === 1 ? '' : 's'} listed here are used; text-only Meta models are never sent images.`);
+    if (!models.length) {
+      parts.push('This provider has no vision-capable Meta model on this account. It cannot be used for image analysis.');
+      parts.push('Prompt Guard and other text/classifier models are never used for images.');
+    } else {
+      if (chosen?.verified) parts.push('Verified with a real image on this account.');
+      else if (chosen) parts.push('Not verified with a real image yet — use Test connection.');
+      if (chosen?.note) parts.push(chosen.note);
+      parts.push(`Only the ${models.length} Meta vision model${models.length === 1 ? '' : 's'} listed here are used; text-only Meta models are never sent images.`);
+    }
     note.textContent = parts.join(' ');
   }
 

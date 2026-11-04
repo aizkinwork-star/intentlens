@@ -8,7 +8,7 @@ sent only to the Meta-published vision provider you configure.
 
 1. Double-click `start.cmd` to open the Electron desktop app.
    Use `start.cmd --online` if you want cloud providers enabled for that session.
-2. For the browser UI instead: install Node.js 20+, run `start-browser.cmd`
+2. For the browser UI instead: install Node.js 22.5+, run `start-browser.cmd`
    (or `node server/index.js`), then open Chrome or Edge at `http://localhost:8000`.
 3. If no provider is configured, the first-run popup opens automatically.
 
@@ -18,14 +18,15 @@ Open the top-left menu -> **Vision Provider & Model** -> **Configure provider**.
 
 Supported providers, in default failover order:
 
-| Priority | Provider | Vision model examples |
+| Priority | Provider | Verified vision model |
 |---|---|---|
-| 1 | NVIDIA NIM | `meta/llama-3.2-11b-vision-instruct` |
-| 2 | Cloudflare Workers AI | `@cf/meta/llama-4-scout-17b-16e-instruct` |
-| 3 | Groq | `meta-llama/llama-4-scout-17b-16e-instruct` |
+| 1 | NVIDIA NIM | `meta/muse-glimmer-30b` |
+| 2 | Cloudflare Workers AI | `@cf/meta/llama-3.2-11b-vision-instruct` |
+| 3 | Groq | **none** (Prompt Guard classifiers only) |
 
-Only Meta vision models are accepted. Text-only Meta models are not sent images, and
-non-Meta models are rejected.
+Only Meta vision models are accepted. Text-only and classifier models are not
+sent images, non-Meta models are rejected, and unverified models do not make a
+provider eligible.
 
 ### NVIDIA NIM (default)
 
@@ -42,11 +43,14 @@ non-Meta models are rejected.
 3. Copy the **Account ID** and **API Token**.
 4. In IntentLens choose **Cloudflare Workers AI**, enter both values, and test.
 
-### Groq (fallback, explicit Meta vision model)
+### Groq (not usable for vision on this account)
 
 1. Create a key at https://console.groq.com/.
-2. In IntentLens choose **Groq**.
-3. Select a Meta vision model. Groq is not used with a text-only model.
+2. The live account lists only `meta-llama/llama-prompt-guard-2-22m` and
+   `-86m` as Meta models. They are prompt-injection classifiers, not chat or
+   vision models.
+3. IntentLens therefore skips Groq for image analysis. Use NVIDIA NIM,
+   Cloudflare Workers AI, or the phone PWA's OpenRouter path.
 
 ## How credentials are stored
 
@@ -65,7 +69,7 @@ You can configure a headless server with `.env` instead of the UI:
 NIM_ENABLED=true
 NIM_API_KEY=...
 NIM_BASE_URL=https://integrate.api.nvidia.com
-NIM_MODEL_ID=meta/llama-3.2-11b-vision-instruct
+NIM_MODEL_ID=meta/muse-glimmer-30b
 PROVIDER_PRIORITY=nvidia-nim,cloudflare-workers-ai,groq
 ALLOW_OUTBOUND_NETWORK=true
 ```

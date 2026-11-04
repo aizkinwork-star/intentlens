@@ -110,7 +110,15 @@ export function buildCloudflareProvider({ accountId, apiToken, modelId, timeoutM
       try { rawJson = JSON.parse(unfence(text)); } catch {
         throw new Error('Cloudflare did not return valid JSON');
       }
-      return { text: JSON.stringify(rawJson), citations: [], searchedWeb: false };
+      return {
+        text: JSON.stringify(rawJson),
+        citations: [],
+        searchedWeb: false,
+        httpStatus: res.status,
+        returnedModel: parsed?.model || modelId,
+        endpoint: `https://api.cloudflare.com/client/v4/accounts/{account}/ai/run/${modelId}`,
+        host: 'api.cloudflare.com',
+      };
     },
   };
 }

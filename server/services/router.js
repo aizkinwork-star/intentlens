@@ -1,7 +1,8 @@
 // server/services/router.js — Meta-only provider failover in user priority order.
 //
 // Default: NVIDIA NIM → Cloudflare Workers AI → Groq.
-// Only providers with a configured *vision* Meta model are eligible.
+// Only providers with a configured, *verified* vision Meta model are eligible.
+// The supplied Groq account has only Prompt Guard classifiers, so it is skipped.
 
 import { ProviderRouter } from './provider.js';
 import { buildCloudflareProvider } from './cloudflareProvider.js';

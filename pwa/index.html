@@ -1,12 +1,16 @@
 <!doctype html>
 <html lang="en">
 <head>
+  <!-- connect-src allows any HTTPS origin only because the optional "Custom
+       relay" provider must point at a relay the user deploys. Fixed providers
+       remain OpenRouter and Groq. GitHub Pages cannot set response headers, so
+       this CSP is delivered as a meta tag only. -->
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0b1118">
   <meta name="description" content="IntentLens — point your phone, ask what a part is, get a grounded next step.">
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self' https://api.groq.com https://openrouter.ai https://blockrun.ai https://integrate.api.nvidia.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'">
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self' https:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'">
   <title>IntentLens</title>
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" href="./icons/icon-192.png" sizes="192x192">
@@ -63,7 +67,7 @@
         <span id="chatModeTag" class="tag">text only · no image</span>
       </div>
       <div id="chatLog" class="chatLog"></div>
-      <p class="meta chatHint">Chat never captures or sends a photo. Captures and messages stay in this project on this device.</p>
+      <p class="meta chatHint">Chat never captures or sends a photo. Project history is stored on this device; only the current question leaves when you press Send.</p>
     </section>
 
     <section id="answer" class="card hidden" aria-live="polite">
@@ -89,9 +93,24 @@
       <button id="allowCloudBtn" class="ghost" type="button">Allow cloud for this session</button>
     </section>
 
+    <section class="card logCard" aria-live="polite">
+      <div class="logTop">
+        <strong>Provider request log</strong>
+        <span id="requestLogCount" class="tag">0 requests</span>
+      </div>
+      <p class="meta logHint">
+        Shows exactly which API was called, including the host, endpoint, model,
+        mode, HTTP status and latency. The key is never shown. This log is kept
+        in memory only and is cleared on reload.
+      </p>
+      <div id="requestLog" class="requestLog"></div>
+      <button id="clearLogBtn" class="ghost smallBtn" type="button">Clear log</button>
+    </section>
+
     <p class="footNote">
       Coordinates are model proposals, not measurements. The app refuses to draw a box
-      the model cannot honestly locate. Camera frames and the provider key stay on this device.
+      the model cannot honestly locate. The live camera stream and the provider key stay on
+      this device; only the still you press Send with leaves it.
     </p>
   </main>
 
@@ -118,17 +137,8 @@
         The key is used directly from this browser in the Authorization header. It is not
         written to localStorage, sessionStorage or IndexedDB. Anyone with access to this
         unlocked device or a script running on this page can read it while the tab is open.
+        A phone cannot keep the key after a reload; re-enter it when needed.
       </p>
-
-      <div id="blockrunWarning" class="warn danger" hidden>
-        <strong>BlockRun consent — read before using</strong>
-        <p id="blockrunPolicy"></p>
-        <p>Its own SDK README reports HTTP 200 with incorrect answers on real image probes, so vision is <strong>unverified</strong>. Do not send private documents, personal data or sensitive project history.</p>
-        <label class="checkRow">
-          <input id="blockrunConsent" type="checkbox">
-          <span>I understand the retention and unverified-vision risks and still choose BlockRun for this session.</span>
-        </label>
-      </div>
 
       <label>Custom base URL (only for “Custom relay”)
         <input id="baseUrlInput" type="url" placeholder="https://your-relay.example.workers.dev" autocomplete="off" spellcheck="false">

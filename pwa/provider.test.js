@@ -27,5 +27,7 @@ test('every PWA provider has a concrete default and no silent substitution', () 
     assert.ok(provider.browserCors, provider.id);
   }
   assert.equal(modelFor('groq', ''), PROVIDERS.groq.defaultModel);
-  assert.equal(modelFor('nim', 'custom-model'), 'custom-model');
+  assert.equal(modelFor('custom', 'custom-model'), 'custom-model');
+  assert.equal(PROVIDERS.nim, undefined);
+  assert.equal(PROVIDERS.blockrun, undefined);
 });

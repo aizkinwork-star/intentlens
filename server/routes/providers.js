@@ -164,10 +164,27 @@ export async function handleSaveCloudProvider(req, res) {
     json(res, 400, { error: { code: 'BAD_JSON', message: `${resolvedModel} is not in the ${META_MODEL_CATALOG[provider].label} catalog.`, retryable: false } });
     return;
   }
+  if (resolvedModel && modelModality(resolvedModel) === 'classifier') {
+    json(res, 400, {
+      error: {
+        code: 'MODEL_NOT_CHAT',
+        message: `${resolvedModel} is a safety/prompt-injection classifier. It cannot answer questions or analyse images and cannot be configured as a vision model.`,
+        retryable: false,
+      },
+    });
+    return;
+  }
   if (resolvedModel && modelModality(resolvedModel) === 'text') {
     // A text-only model is configurable, but it is not a vision model and will
     // never be silently used for an image request.
     recordServerLog({ level: 'warn', category: 'provider', message: `${provider} model ${resolvedModel} is text-only; it is not eligible for vision analysis.` });
+  }
+  if (resolvedModel && modelModality(resolvedModel) === 'vision' && META_MODEL_CATALOG[provider]?.models?.[resolvedModel]?.verified !== true) {
+    recordServerLog({
+      level: 'warn',
+      category: 'provider',
+      message: `${provider} model ${resolvedModel} is catalogued but not verified on this account; the provider will not be treated as configured.`,
+    });
   }
 
   const stored = (await loadCredentials()).credentials;
@@ -176,7 +193,7 @@ export async function handleSaveCloudProvider(req, res) {
   if (provider === 'cloudflare-workers-ai') {
     next.CLOUDFLARE_API_TOKEN = apiKey;
     if (accountId) next.CLOUDFLARE_ACCOUNT_ID = accountId;
-    next.CLOUDFLARE_MODEL_ID = resolvedModel || '@cf/meta/llama-4-scout-17b-16e-instruct';
+    next.CLOUDFLARE_MODEL_ID = resolvedModel || '@cf/meta/llama-3.2-11b-vision-instruct';
   } else if (provider === 'nvidia-nim') {
     next.NIM_API_KEY = apiKey;
     next.NIM_ENABLED = 'true';
@@ -306,22 +323,56 @@ export async function handleTestCloudProvider(req, res) {
     json(res, 200, { ok: false, provider, category: 'model_unavailable', modelId, detail: `This Meta model is not in the ${META_MODEL_CATALOG[provider].label} catalog.` });
     return;
   }
+  if (modelId && modelModality(modelId) === 'classifier') {
+    json(res, 200, { ok: false, provider, category: 'not_chat', modelId, detail: 'This Meta model is a classifier. It cannot answer questions or analyse images.' });
+    return;
+  }
   if (modelId && modelModality(modelId) !== 'vision') {
     json(res, 200, { ok: false, provider, category: 'not_vision', modelId, detail: 'This Meta model is text-only and cannot analyse images.' });
     return;
   }
 
-  const result = await testProvider({ provider, apiKey, accountId, modelId: modelId || defaultVisionModel(provider), baseUrl: body.baseUrl });
+  const effectiveModel = modelId || defaultVisionModel(provider);
+  if (!effectiveModel) {
+    json(res, 200, {
+      ok: false,
+      provider,
+      category: 'no_vision_model',
+      modelId: null,
+      detail: `${META_MODEL_CATALOG[provider].label} has no verified Meta vision model on this account. Configure a different provider.`,
+    });
+    return;
+  }
+  if (META_MODEL_CATALOG[provider]?.models?.[effectiveModel]?.verified !== true) {
+    json(res, 200, {
+      ok: false,
+      provider,
+      category: 'model_unverified',
+      modelId: effectiveModel,
+      detail: `${effectiveModel} is catalogued but was not verified with a real image on this account. Choose a verified model.`,
+    });
+    return;
+  }
+
+  const result = await testProvider({ provider, apiKey, accountId, modelId: effectiveModel, baseUrl: body.baseUrl });
   recordServerLog({
     level: result.ok ? 'ok' : 'warn',
     category: 'provider',
-    message: `${provider} connection test: ${result.category}${result.modelId ? ` (${result.modelId})` : ''}`,
+    message: `POST ${result.endpoint || '(endpoint unknown)'} provider=${provider} host=${result.host || '(unknown)'} model=${result.modelId || '(none)'} mode=test http=${result.httpStatus ?? 'n/a'} status=${result.ok ? 'ok' : result.category} latency=${result.ms ?? 'n/a'}ms request=${result.requestId || '(none)'}`,
   });
   json(res, 200, { ...result, provider });
 }
 
 async function testProvider({ provider, apiKey, accountId, modelId, baseUrl }) {
   const started = Date.now();
+  const requestId = `srvtest_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+  const meta = {
+    requestId,
+    method: 'POST',
+    provider,
+    mode: 'test',
+    modelId,
+  };
   try {
     if (provider === 'nvidia-nim') {
       const endpoint = `${(baseUrl || config.nimBaseUrl || 'https://integrate.api.nvidia.com').replace(/\/+$/, '')}/v1/chat/completions`;
@@ -337,10 +388,12 @@ async function testProvider({ provider, apiKey, accountId, modelId, baseUrl }) {
         signal: AbortSignal.timeout(20000),
       });
       const text = await res.text().catch(() => '');
-      return summarizeTest(res, text, modelId, started);
+      return summarizeTest(res, text, modelId, started, {
+        ...meta, endpoint, host: 'integrate.api.nvidia.com',
+      });
     }
     if (provider === 'cloudflare-workers-ai') {
-      if (!accountId) return { ok: false, category: 'not_configured', modelId, detail: 'Cloudflare Account ID is required.', ms: Date.now() - started };
+      if (!accountId) return { ok: false, category: 'not_configured', modelId, detail: 'Cloudflare Account ID is required.', ms: Date.now() - started, ...meta, endpoint: '', host: 'api.cloudflare.com' };
       const endpoint = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/ai/run/${modelId}`;
       const res = await fetch(endpoint, {
         method: 'POST',
@@ -349,7 +402,11 @@ async function testProvider({ provider, apiKey, accountId, modelId, baseUrl }) {
         signal: AbortSignal.timeout(20000),
       });
       const text = await res.text().catch(() => '');
-      return summarizeTest(res, text, modelId, started);
+      return summarizeTest(res, text, modelId, started, {
+        ...meta,
+        endpoint: `https://api.cloudflare.com/client/v4/accounts/{account}/ai/run/${modelId}`,
+        host: 'api.cloudflare.com',
+      });
     }
     if (provider === 'groq') {
       const endpoint = 'https://api.groq.com/openai/v1/chat/completions';
@@ -365,18 +422,20 @@ async function testProvider({ provider, apiKey, accountId, modelId, baseUrl }) {
         signal: AbortSignal.timeout(20000),
       });
       const text = await res.text().catch(() => '');
-      return summarizeTest(res, text, modelId, started);
+      return summarizeTest(res, text, modelId, started, {
+        ...meta, endpoint, host: 'api.groq.com',
+      });
     }
-    return { ok: false, category: 'not_configured', modelId, detail: 'Unknown provider.', ms: Date.now() - started };
+    return { ok: false, category: 'not_configured', modelId, detail: 'Unknown provider.', ms: Date.now() - started, ...meta, endpoint: '', host: '' };
   } catch (err) {
     const category = err?.name === 'TimeoutError' || err?.name === 'AbortError' ? 'timeout' : 'network';
-    return { ok: false, category, modelId, detail: scrub(String(err?.message || err)), ms: Date.now() - started };
+    return { ok: false, category, modelId, detail: scrub(String(err?.message || err)), ms: Date.now() - started, ...meta, endpoint: '', host: '' };
   }
 }
 
-function summarizeTest(res, text, modelId, started) {
+function summarizeTest(res, text, modelId, started, meta = {}) {
   const ms = Date.now() - started;
-  if (res.ok) return { ok: true, category: 'ok', modelId, detail: 'Credentials accepted; the Meta model answered.', ms };
+  if (res.ok) return { ok: true, category: 'ok', modelId, detail: 'Credentials accepted; the Meta model answered.', ms, httpStatus: res.status, ...meta };
   const category = res.status === 401 || res.status === 403 ? 'auth'
     : res.status === 429 ? 'rate_limit'
       : res.status === 402 ? 'quota'
@@ -391,6 +450,7 @@ function summarizeTest(res, text, modelId, started) {
     httpStatus: res.status,
     detail: scrub(text).slice(0, 240),
     ms,
+    ...meta,
   };
 }
 
@@ -406,8 +466,9 @@ function scrub(text) {
 
 function defaultVisionModel(provider) {
   if (provider === 'nvidia-nim') return 'meta/muse-glimmer-30b';
-  if (provider === 'cloudflare-workers-ai') return '@cf/meta/llama-4-scout-17b-16e-instruct';
-  if (provider === 'groq') return 'meta-llama/llama-4-scout-17b-16e-instruct';
+  if (provider === 'cloudflare-workers-ai') return '@cf/meta/llama-3.2-11b-vision-instruct';
+  // Groq has no Meta vision model on this account. Never invent one.
+  if (provider === 'groq') return null;
   return null;
 }
 

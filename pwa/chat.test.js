@@ -8,9 +8,12 @@ import {
   PROVIDERS,
   PROVIDER_HOSTS,
   OPENROUTER_MODELS,
+  GROQ_TEXT_MODELS,
   callModel,
   callChatModel,
   modelFor,
+  providerSupportsImages,
+  modelAcceptsImages,
 } from './provider.js';
 import { cameraErrorMessage, computeCaptureSize } from './camera.js';
 import { escapeHtml, safeHref } from './safe.js';
@@ -49,48 +52,98 @@ test('text chat request has a text-only content array and no image payload', asy
   const result = await callChatModel({
     providerId: 'groq',
     apiKey: 'sentinel-key-chat-test',
-    model: 'meta-llama/llama-4-maverick-17b-128e-instruct',
+    model: 'openai/gpt-oss-120b',
     prompt: 'Hello',
     fetchImpl: impl,
   });
   assert.equal(result.ok, true);
   assert.equal(result.text, 'A resistor limits current.');
+  assert.equal(result.providerId, 'groq');
+  assert.equal(result.host, 'api.groq.com');
+  assert.match(result.endpoint, /api\.groq\.com\/openai\/v1\/chat\/completions/);
+  assert.match(result.requestId, /^pwa_/);
+  assert.equal(result.httpStatus, 200);
+  assert.equal(result.mode, 'chat');
   const body = JSON.parse(calls[0].init.body);
   assert.equal(body.messages.length, 1);
   assert.deepEqual(body.messages[0].content, [{ type: 'text', text: 'Hello' }]);
   assert.equal(body.messages[0].content.some((part) => part.type === 'image_url'), false);
   assert.equal(calls[0].url.includes('sentinel-key-chat-test'), false);
+  assert.equal(JSON.stringify(result).includes('sentinel-key-chat-test'), false);
   assert.equal(calls[0].init.headers.Authorization, 'Bearer sentinel-key-chat-test');
 });
 
 test('vision request does include one image_url when an image is passed', async () => {
   const { impl, calls } = fakeFetch('{"ok":true}');
-  await callModel({
+  const result = await callModel({
     providerId: 'openrouter',
     apiKey: 'sentinel-key-vision-test',
     prompt: 'describe',
     imageDataUrl: 'data:image/jpeg;base64,AAAA',
     fetchImpl: impl,
   });
+  assert.equal(result.mode, 'vision');
+  assert.equal(result.imageAttached, true);
+  assert.equal(result.host, 'openrouter.ai');
   const body = JSON.parse(calls[0].init.body);
+  assert.equal(body.model, PROVIDERS.openrouter.defaultModel);
   const imageParts = body.messages[0].content.filter((part) => part.type === 'image_url');
   assert.equal(imageParts.length, 1);
   assert.equal(imageParts[0].image_url.url, 'data:image/jpeg;base64,AAAA');
   assert.equal(calls[0].url.includes('sentinel-key-vision-test'), false);
 });
 
-test('provider presets have honest capability and consent metadata', () => {
-  assert.match(PROVIDERS.groq.defaultModel, /maverick/i);
-  assert.doesNotMatch(PROVIDERS.groq.defaultModel, /scout/i);
-  assert.equal(PROVIDERS.blockrun.consent, true);
-  assert.equal(PROVIDERS.blockrun.vision, 'disputed');
-  assert.match(PROVIDERS.blockrun.retention, /retained until deletion/i);
-  assert.equal(PROVIDERS.openrouter.browserCors, 'allowed');
-  assert.equal(PROVIDERS.blockrun.browserCors, 'blocked-observed');
-  assert.ok(PROVIDER_HOSTS.includes('api.groq.com'));
-  assert.ok(PROVIDER_HOSTS.includes('openrouter.ai'));
+test('a text-only provider or model refuses an image before any network call', async () => {
+  let called = 0;
+  const impl = async () => { called += 1; throw new Error('must not be called'); };
+
+  const groq = await callModel({
+    providerId: 'groq',
+    apiKey: 'sentinel-key',
+    prompt: 'describe',
+    imageDataUrl: 'data:image/jpeg;base64,AAAA',
+    fetchImpl: impl,
+  });
+  assert.equal(groq.ok, false);
+  assert.equal(groq.code, 'VISION_UNSUPPORTED');
+  assert.match(groq.message, /Prompt Guard|classifier/i);
+
+  const textModel = await callModel({
+    providerId: 'openrouter',
+    apiKey: 'sentinel-key',
+    model: 'meta-llama/llama-3.3-70b-instruct',
+    prompt: 'describe',
+    imageDataUrl: 'data:image/jpeg;base64,AAAA',
+    fetchImpl: impl,
+  });
+  assert.equal(textModel.ok, false);
+  assert.equal(textModel.code, 'MODEL_TEXT_ONLY');
+  assert.equal(called, 0);
+});
+
+test('provider presets only offer browser-callable, honestly labelled paths', () => {
+  assert.equal(PROVIDERS.openrouter.browserCors, 'verified-allowed');
+  assert.equal(PROVIDERS.groq.browserCors, 'verified-allowed');
+  assert.equal(PROVIDERS.openrouter.defaultModel, 'nvidia/nemotron-3.5-super-vl:free');
   assert.ok(PROVIDERS.openrouter.defaultModel in OPENROUTER_MODELS);
-  assert.equal(modelFor('blockrun', ''), 'nvidia/llama-3.2-11b-vision');
+  assert.equal(OPENROUTER_MODELS[PROVIDERS.openrouter.defaultModel].vision, true);
+  assert.equal(OPENROUTER_MODELS[PROVIDERS.openrouter.defaultModel].verified, true);
+
+  assert.equal(PROVIDERS.groq.vision, 'none');
+  assert.equal(PROVIDERS.groq.defaultModel, 'openai/gpt-oss-120b');
+  assert.ok(PROVIDERS.groq.defaultModel in GROQ_TEXT_MODELS);
+  assert.equal(GROQ_TEXT_MODELS[PROVIDERS.groq.defaultModel].vision, false);
+  assert.equal(providerSupportsImages('groq'), false);
+  assert.equal(providerSupportsImages('openrouter'), true);
+  assert.equal(modelAcceptsImages('openrouter', 'meta-llama/llama-4-maverick'), true);
+  assert.equal(modelAcceptsImages('openrouter', 'meta-llama/llama-3.3-70b-instruct'), false);
+
+  // Removed from the phone layout: no browser CORS and/or no usable credit.
+  assert.equal(PROVIDERS.nim, undefined);
+  assert.equal(PROVIDERS.blockrun, undefined);
+  assert.deepEqual(PROVIDER_HOSTS, ['openrouter.ai', 'api.groq.com']);
+  assert.equal(modelFor('custom', ''), PROVIDERS.custom.defaultModel);
+  assert.equal(modelFor('custom', 'my-model'), 'my-model');
 });
 
 test('a network failure never echoes the sentinel key or the Authorization header', async () => {
@@ -152,12 +205,45 @@ test('PWA sources never persist an API key and always clear legacy slots', () =>
   assert.match(app, /deleteSetting\(['"]rememberKey['"]\)/);
 });
 
+test('every provider call is wired to an in-memory request log', () => {
+  const app = readFileSync(join(here, 'app.js'), 'utf8');
+  const html = readFileSync(join(here, 'index.html'), 'utf8');
+
+  assert.match(app, /function recordRequest\(/);
+  assert.match(app, /function renderRequestLog\(/);
+  assert.match(app, /function clearRequestLog\(/);
+  assert.match(app, /recordRequest\(response\)/);
+  assert.match(app, /recordRequest\(result\)/);
+  assert.match(app, /endpoint/);
+  assert.match(app, /host/);
+  assert.match(app, /requestId/);
+  assert.match(app, /imageAttached/);
+
+  assert.match(html, /id="requestLog"/);
+  assert.match(html, /id="requestLogCount"/);
+  assert.match(html, /id="clearLogBtn"/);
+  assert.match(html, /Provider request log/);
+
+  // The log is memory-only and must not write the key anywhere.
+  assert.doesNotMatch(app, /localStorage\.setItem\([^)]*apiKey/i);
+  assert.doesNotMatch(app, /sessionStorage\.setItem\([^)]*apiKey/i);
+  assert.match(app, /state\.requestLog = \[\]/);
+});
+
+test('phone CSP permits a user relay but the provider preset list stays fixed', () => {
+  const html = readFileSync(join(here, 'index.html'), 'utf8');
+  assert.match(html, /connect-src 'self' https:/);
+  assert.doesNotMatch(html, /blockrun/i);
+  const sw = readFileSync(join(here, 'sw.js'), 'utf8');
+  assert.match(sw, /intentlens-pwa-v7/);
+});
+
 test('service worker refuses authorization-bearing and cross-origin requests', () => {
   const sw = readFileSync(join(here, 'sw.js'), 'utf8');
   assert.match(sw, /request\.headers\.has\(['"]authorization['"]\)/);
   assert.match(sw, /url\.origin !== self\.location\.origin/);
   assert.match(sw, /request\.method !== 'GET'/);
-  assert.doesNotMatch(sw, /api\.groq\.com|openrouter\.ai|blockrun\.ai/);
+  assert.doesNotMatch(sw, /api\.groq\.com|openrouter\.ai/);
 });
 
 test('a deployed worker change reloads the old shell exactly once', () => {
