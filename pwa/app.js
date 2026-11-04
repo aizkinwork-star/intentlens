@@ -724,6 +724,13 @@ function registerServiceWorker() {
 }
 
 function wireEvents() {
+  els.video.addEventListener('loadedmetadata', () => {
+    if (els.video.videoWidth && els.video.videoHeight) {
+      els.stage.style.aspectRatio = `${els.video.videoWidth} / ${els.video.videoHeight}`;
+      drawGrid();
+    }
+  });
+
   els.cameraBtn.addEventListener('click', async () => {
     if (state.stream) {
       stopCamera();
