@@ -130,36 +130,6 @@ export const PROVIDER_HOSTS = Object.values(PROVIDERS)
 // where marked verified, with a real synthetic image request.
 // Free does not mean private; the model page's data policy still applies.
 export const OPENROUTER_MODELS = {
-  'nvidia/nemotron-3.5-super-vl:free': {
-    label: 'NVIDIA Nemotron 3.5 Super VL — free, vision',
-    pricing: 'free',
-    modalities: ['text', 'image', 'video'],
-    vision: true,
-    verified: true,
-    jsonMode: true,
-    reasoning: true,
-    note: 'Verified with a real image: correctly named a red circle and blue rectangle. Reasoning uses output tokens, so allow enough max_tokens.',
-  },
-  'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free': {
-    label: 'NVIDIA Nemotron 3 Nano Omni — free, vision',
-    pricing: 'free',
-    modalities: ['text', 'image', 'video', 'audio'],
-    vision: true,
-    verified: true,
-    jsonMode: false,
-    reasoning: true,
-    note: 'Verified with a real image in this audit.',
-  },
-  'dots-studio/dots-3-note-preview:free': {
-    label: 'Dots 3 Note Preview — free, vision',
-    pricing: 'free',
-    modalities: ['text', 'image'],
-    vision: true,
-    verified: true,
-    jsonMode: true,
-    reasoning: true,
-    note: 'Verified with a real image in this audit.',
-  },
   'meta-llama/llama-4-maverick': {
     label: 'Meta Llama 4 Maverick — vision, paid per token',
     pricing: '$0.1875/M input, $0.6525/M output',
@@ -195,6 +165,36 @@ export const OPENROUTER_MODELS = {
     vision: false,
     verified: false,
     note: 'Text-only. The app refuses to attach an image to this model.',
+  },
+  'nvidia/nemotron-3.5-super-vl:free': {
+    label: 'NVIDIA Nemotron 3.5 Super VL — free, vision (non-Meta fallback)',
+    pricing: 'free',
+    modalities: ['text', 'image', 'video'],
+    vision: true,
+    verified: true,
+    jsonMode: true,
+    reasoning: true,
+    note: 'Verified with a real image: correctly named a red circle and blue rectangle. Reasoning uses output tokens, so allow enough max_tokens.',
+  },
+  'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free': {
+    label: 'NVIDIA Nemotron 3 Nano Omni — free, vision (non-Meta fallback)',
+    pricing: 'free',
+    modalities: ['text', 'image', 'video', 'audio'],
+    vision: true,
+    verified: true,
+    jsonMode: false,
+    reasoning: true,
+    note: 'Verified with a real image in this audit.',
+  },
+  'dots-studio/dots-3-note-preview:free': {
+    label: 'Dots 3 Note Preview — free, vision (non-Meta fallback)',
+    pricing: 'free',
+    modalities: ['text', 'image'],
+    vision: true,
+    verified: true,
+    jsonMode: true,
+    reasoning: true,
+    note: 'Verified with a real image in this audit.',
   },
 };
 

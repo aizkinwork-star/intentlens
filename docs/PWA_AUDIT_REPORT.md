@@ -21,7 +21,7 @@ Scope: `pwa/`, `scripts/prepare-pwa.mjs`, `scripts/serve-pwa.mjs`, `.github/work
 > keeps its unverified warning. Modal is paid and **not tested**; BlockRun is
 > paid and the supplied key still returns HTTP 402. The desktop encrypted
 > credential file was not read, printed, modified or deleted. The live Pages
-> deploy was re-verified at cache `intentlens-pwa-v12`.
+> deploy was re-verified at cache `intentlens-pwa-v13`.
 
 ---
 
@@ -97,7 +97,7 @@ this audit. Its encrypted credential file was not touched or deleted.
 | API key | JavaScript memory only | `state.apiKey` in `pwa/app.js` |
 | Provider request log | JavaScript memory only | `state.requestLog` in `pwa/app.js` |
 | Camera stream | RAM; tracks stopped on stop/hide/pagehide | `startCamera`, `stopCamera` |
-| Service worker shell | Cache Storage `intentlens-pwa-v12` | `pwa/sw.js` |
+| Service worker shell | Cache Storage `intentlens-pwa-v13` | `pwa/sw.js` |
 
 ### B2. Data flow
 
@@ -298,7 +298,7 @@ node --check server\routes\analyze.js
 node --check app.js
 ```
 
-Final result: **223 tests, 223 passed, 0 failed** across **27 source test files**
+Final result: **224 tests, 224 passed, 0 failed** across **27 source test files**
 (excluding `node_modules`, `datasets`, `intentlens-data` and build output).
 
 Relevant coverage:
@@ -342,7 +342,7 @@ import `node:sqlite`, which exists only from Node 22.5. The workflow now uses
 Node 24 and `package.json` declares `>=22.5`. Every push touched by this audit
 deployed successfully.
 
-The service worker cache is `intentlens-pwa-v12`. The version was bumped for each
+The service worker cache is `intentlens-pwa-v13`. The version was bumped for each
 shell change, including the provider-restoration build. Two deployment traps
 were fixed rather than documented away:
 
@@ -362,7 +362,7 @@ Post-deploy evidence (2026-11-04):
 | Check | Result |
 |---|---|
 | Pages workflow | **PASS**: deploy job completed for every commit |
-| Served `sw.js` cache name | **PASS** for the audited build: `intentlens-pwa-v9`. Current build: `intentlens-pwa-v12`; re-check after deploy. |
+| Served `sw.js` cache name | **PASS** for the audited build: `intentlens-pwa-v9`. Current build: `intentlens-pwa-v13`; re-check after deploy. |
 | Served `provider.js` | **PASS** for the audited build: default `nvidia/nemotron-3.5-super-vl:free`; no NIM/BlockRun provider. Current build: Meta Maverick default with the full provider set — re-verify after deploy. |
 | Served `prompt.js` | **PASS**: embeds the exact `COMPONENT_SCHEMA` |
 | Request log card | **PASS**: present in the deployed `index.html` |

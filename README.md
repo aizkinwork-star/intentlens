@@ -218,7 +218,7 @@ Output: `electron/release/IntentLens Setup 0.4.0.exe`.
 
 ```cmd
 npm test
-:: 27 source test files, 223 tests, 0 failures at the 2026-11-04 checkpoint
+:: 27 source test files, 224 tests, 0 failures at the 2026-11-04 checkpoint
 ```
 
 `npm test` excludes `node_modules`, `datasets`, `intentlens-data` and build

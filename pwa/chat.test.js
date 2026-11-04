@@ -173,6 +173,11 @@ test('provider presets expose every host and label the browser-blocked ones', ()
   assert.equal(modelFor('custom', 'my-model'), 'my-model');
 });
 
+test('Meta models are listed first in the phone catalogues', () => {
+  assert.match(Object.keys(OPENROUTER_MODELS)[0], /^meta-llama\//);
+  assert.match(Object.keys(GROQ_TEXT_MODELS)[0], /^meta-llama\//);
+});
+
 test('a browser-blocked provider refuses before any network call and names its endpoint', async () => {
   let called = 0;
   const impl = async () => { called += 1; throw new Error('must not be called'); };
