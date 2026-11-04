@@ -38,15 +38,6 @@ setup.bat                                    # legacy browser-server installer
 setup.ps1                                    # legacy PowerShell installer
 ```
 
-### Browser UI (development only)
-
-```text
-start-browser.cmd    # Node backend + default browser
-```
-
-This starts the backend at `http://localhost:8000`. Do not run it at the same time
-as the desktop app: both use port 8000.
-
 ### Manual
 
 ```text
