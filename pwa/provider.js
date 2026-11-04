@@ -72,6 +72,8 @@ export const OPENROUTER_MODELS = {
     modalities: ['text', 'image', 'video'],
     vision: true,
     verified: true,
+    jsonMode: true,
+    reasoning: true,
     note: 'Verified with a real image: correctly named a red circle and blue rectangle. Reasoning uses output tokens, so allow enough max_tokens.',
   },
   'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free': {
@@ -80,6 +82,8 @@ export const OPENROUTER_MODELS = {
     modalities: ['text', 'image', 'video', 'audio'],
     vision: true,
     verified: true,
+    jsonMode: false,
+    reasoning: true,
     note: 'Verified with a real image in this audit.',
   },
   'dots-studio/dots-3-note-preview:free': {
@@ -88,6 +92,8 @@ export const OPENROUTER_MODELS = {
     modalities: ['text', 'image'],
     vision: true,
     verified: true,
+    jsonMode: true,
+    reasoning: true,
     note: 'Verified with a real image in this audit.',
   },
   'meta-llama/llama-4-maverick': {
@@ -96,6 +102,8 @@ export const OPENROUTER_MODELS = {
     modalities: ['text', 'image'],
     vision: true,
     verified: true,
+    jsonMode: true,
+    reasoning: false,
     note: 'Paid Meta model. Verified with a real image; a small canary cost $0.0000219.',
   },
   'meta-llama/llama-4-scout': {
@@ -104,6 +112,8 @@ export const OPENROUTER_MODELS = {
     modalities: ['text', 'image'],
     vision: true,
     verified: false,
+    jsonMode: false,
+    reasoning: false,
     note: 'Paid Meta model listed on this account. It was not image-tested in this audit; select it only if you accept that uncertainty and the price.',
   },
   'meta-llama/llama-3.3-70b-instruct': {
@@ -348,12 +358,21 @@ export async function callModel({
     content.push({ type: 'image_url', image_url: { url: imageDataUrl } });
   }
 
+  const info = modelInfo(providerId, requestedModel);
   const body = {
     model: requestedModel,
     messages: [{ role: 'user', content }],
-    max_tokens: 3072,
+    // Reasoning vision models can spend thousands of tokens before the JSON
+    // answer. 3072 was not enough for the default free model with this prompt.
+    max_tokens: expectJson ? 8192 : 3072,
     temperature: 0.2,
   };
+  if (providerId === 'openrouter' && expectJson && info?.jsonMode) {
+    body.response_format = { type: 'json_object' };
+  }
+  if (providerId === 'openrouter' && expectJson && info?.reasoning) {
+    body.reasoning = { effort: 'low' };
+  }
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { buildChatPrompt } from './prompt.js';
+import { buildChatPrompt, buildComponentPrompt, COMPONENT_SCHEMA } from './prompt.js';
 import {
   PROVIDERS,
   PROVIDER_HOSTS,
@@ -47,6 +47,17 @@ test('text chat prompt never asks for or contains an image', () => {
   assert.match(userText, /What is a resistor/);
 });
 
+test('component prompt includes the exact answer schema', () => {
+  const { instructions, userText } = buildComponentPrompt({
+    capture: { width: 640, height: 480, gridSize: 64 },
+    question: 'Where is the resistor?',
+  });
+  assert.match(`${instructions}\n${userText}`, /JSON Schema for the answer/);
+  assert.match(userText, /"component"/);
+  assert.match(userText, /"location"/);
+  assert.ok(userText.includes(JSON.stringify(COMPONENT_SCHEMA)));
+});
+
 test('text chat request has a text-only content array and no image payload', async () => {
   const { impl, calls } = fakeFetch('A resistor limits current.');
   const result = await callChatModel({
@@ -68,6 +79,9 @@ test('text chat request has a text-only content array and no image payload', asy
   assert.equal(body.messages.length, 1);
   assert.deepEqual(body.messages[0].content, [{ type: 'text', text: 'Hello' }]);
   assert.equal(body.messages[0].content.some((part) => part.type === 'image_url'), false);
+  assert.equal(body.max_tokens, 3072);
+  assert.equal(body.response_format, undefined);
+  assert.equal(body.reasoning, undefined);
   assert.equal(calls[0].url.includes('sentinel-key-chat-test'), false);
   assert.equal(JSON.stringify(result).includes('sentinel-key-chat-test'), false);
   assert.equal(calls[0].init.headers.Authorization, 'Bearer sentinel-key-chat-test');
@@ -87,6 +101,9 @@ test('vision request does include one image_url when an image is passed', async 
   assert.equal(result.host, 'openrouter.ai');
   const body = JSON.parse(calls[0].init.body);
   assert.equal(body.model, PROVIDERS.openrouter.defaultModel);
+  assert.equal(body.max_tokens, 8192);
+  assert.deepEqual(body.response_format, { type: 'json_object' });
+  assert.deepEqual(body.reasoning, { effort: 'low' });
   const imageParts = body.messages[0].content.filter((part) => part.type === 'image_url');
   assert.equal(imageParts.length, 1);
   assert.equal(imageParts[0].image_url.url, 'data:image/jpeg;base64,AAAA');
