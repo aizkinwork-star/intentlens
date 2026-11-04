@@ -116,11 +116,13 @@ MODAL_API_KEY=...
 MODAL_BASE_URL=https://your-workspace--your-app.modal.run
 MODAL_MODEL_ID=meta-llama/Llama-4-Maverick-17B-128E-Instruct
 
+# Free only by default. Set to preview or paid only if you have that access.
+MODEL_ACCESS_TIER=free
+
 GROQ_API_KEY=...
-GROQ_TEXT_MODEL=meta-llama/llama-3.3-70b-versatile
 GROQ_VISION_MODEL=
 
-PROVIDER_PRIORITY=openrouter,nvidia-nim,cloudflare-workers-ai,blockrun,modal,groq
+PROVIDER_PRIORITY=nvidia-nim,cloudflare-workers-ai,groq,openrouter,blockrun,modal
 ALLOW_OUTBOUND_NETWORK=true
 ```
 

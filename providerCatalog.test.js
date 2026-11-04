@@ -116,10 +116,12 @@ test('providerConfigured requires credentials plus a catalogued vision model', (
     modalModelId: config.modalModelId,
     groqApiKey: config.groqApiKey,
     groqVisionModel: config.groqVisionModel,
+    accessTier: config.accessTier,
   };
   try {
     config.nimApiKey = 'nvapi-real-looking-key';
     config.nimEnabled = true;
+    config.accessTier = 'free';
 
     config.nimModelId = 'meta/muse-glimmer-30b';
     assert.equal(providerConfigured('nvidia-nim'), true);
@@ -140,9 +142,11 @@ test('providerConfigured requires credentials plus a catalogued vision model', (
     config.cloudflareModelId = CLOUDFLARE_VISION;
     assert.equal(providerConfigured('cloudflare-workers-ai'), true);
 
-    // OpenRouter is the new default and must accept the Meta Maverick model.
+    // OpenRouter's Meta models are paid: free access must not make it eligible.
     config.openrouterApiKey = 'sk-or-v1-real-looking-key';
     config.openrouterModelId = 'meta-llama/llama-4-maverick';
+    assert.equal(providerConfigured('openrouter'), false);
+    config.accessTier = 'paid';
     assert.equal(providerConfigured('openrouter'), true);
     config.openrouterModelId = 'openai/gpt-4o';
     assert.equal(providerConfigured('openrouter'), false);

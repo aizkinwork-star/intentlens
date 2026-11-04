@@ -11,6 +11,8 @@ import {
   isAllowedOutboundHost,
   isPlaceholderCredential,
   modelModality,
+  modelTier,
+  modelAllowedAtTier,
   providerConfigured,
   providerSupportsModel,
 } from '../config.js';
@@ -55,6 +57,7 @@ function publicModelList(providerId) {
     name: model.name,
     modality: model.modality,
     verified: model.verified === true,
+    tier: model.tier || 'free',
     note: model.note || '',
     selected: selectedModel(providerId) === id,
   }));
@@ -105,6 +108,7 @@ function providerSummary() {
     providers: Object.keys(META_MODEL_CATALOG).map(providerStatus),
     configured: Object.keys(META_MODEL_CATALOG).filter((id) => providerConfigured(id)),
     priority: config.providerPriority.filter((id) => META_MODEL_CATALOG[id]),
+    accessTier: config.accessTier,
     catalog: META_MODEL_CATALOG,
     runtime: 'cloud-generative',
     baseUrl: config.nimBaseUrl,
@@ -130,6 +134,9 @@ export async function handleSaveCloudProvider(req, res) {
   const baseUrl = String(body?.baseUrl || '').trim();
   const modelId = String(body?.modelId || '').trim();
   const textModel = String(body?.textModel || '').trim();
+  const tierInput = String(body?.accessTier || '').toLowerCase();
+  const requestedTier = ['free', 'preview', 'paid'].includes(tierInput) ? tierInput : null;
+  const accessTier = requestedTier || config.accessTier;
 
   // Priority-only update.
   if (!provider && Array.isArray(body?.priority)) {
@@ -151,6 +158,20 @@ export async function handleSaveCloudProvider(req, res) {
   }
 
   if (!META_MODEL_CATALOG[provider]) {
+    // Tier-only update: lets an existing saved key switch between free/preview/
+    // paid without re-entering the key.
+    if (!provider && requestedTier) {
+      const current = (await loadCredentials()).credentials;
+      current.MODEL_ACCESS_TIER = requestedTier;
+      try { await saveCredentials(current); } catch (err) {
+        json(res, 503, { error: { code: 'SECURE_STORAGE_FAILED', message: err.message, retryable: false } });
+        return;
+      }
+      process.env.MODEL_ACCESS_TIER = requestedTier;
+      config.accessTier = requestedTier;
+      json(res, 200, { ok: true, ...providerSummary() });
+      return;
+    }
     json(res, 400, { error: { code: 'BAD_JSON', message: `Unknown provider ${provider || '(missing)'}.`, retryable: false } });
     return;
   }
@@ -185,6 +206,16 @@ export async function handleSaveCloudProvider(req, res) {
     json(res, 400, { error: { code: 'BAD_JSON', message: `${resolvedModel} is not in the ${META_MODEL_CATALOG[provider].label} catalog.`, retryable: false } });
     return;
   }
+  if (resolvedModel && !modelAllowedAtTier(provider, resolvedModel, accessTier)) {
+    json(res, 400, {
+      error: {
+        code: 'MODEL_ACCESS_LOCKED',
+        message: `${resolvedModel} is a ${modelTier(provider, resolvedModel)} model and ${accessTier} access is selected. Enable preview/paid access only if you have that account, or choose a free model.`,
+        retryable: false,
+      },
+    });
+    return;
+  }
   if (resolvedModel && modelModality(resolvedModel) === 'classifier') {
     json(res, 400, {
       error: {
@@ -210,6 +241,7 @@ export async function handleSaveCloudProvider(req, res) {
 
   const stored = (await loadCredentials()).credentials;
   const next = { ...stored };
+  if (requestedTier) next.MODEL_ACCESS_TIER = requestedTier;
 
   if (provider === 'cloudflare-workers-ai') {
     next.CLOUDFLARE_API_TOKEN = apiKey;
@@ -328,6 +360,8 @@ export async function handleTestCloudProvider(req, res) {
   const apiKey = String(body.apiKey || stored[envKey] || process.env[envKey] || '').trim();
   const modelId = String(body.modelId || stored[PROVIDER_ENV[provider].model] || selectedModel(provider) || '').trim();
   const accountId = String(body.accountId || stored.CLOUDFLARE_ACCOUNT_ID || process.env.CLOUDFLARE_ACCOUNT_ID || '').trim();
+  const tierInput = String(body.accessTier || config.accessTier || 'free').toLowerCase();
+  const accessTier = ['free', 'preview', 'paid'].includes(tierInput) ? tierInput : 'free';
 
   if (!config.allowOutboundNetwork) {
     json(res, 200, {
@@ -358,6 +392,16 @@ export async function handleTestCloudProvider(req, res) {
   }
   if (modelId && !providerSupportsModel(provider, modelId)) {
     json(res, 200, { ok: false, provider, category: 'model_unavailable', modelId, detail: `This Meta model is not in the ${META_MODEL_CATALOG[provider].label} catalog.` });
+    return;
+  }
+  if (modelId && !modelAllowedAtTier(provider, modelId, accessTier)) {
+    json(res, 200, {
+      ok: false,
+      provider,
+      category: 'model_access_locked',
+      modelId,
+      detail: `${modelId} is a ${modelTier(provider, modelId)} model and ${accessTier} access is selected. Enable paid/preview access only if you have that account.`,
+    });
     return;
   }
   if (modelId && modelModality(modelId) === 'classifier') {

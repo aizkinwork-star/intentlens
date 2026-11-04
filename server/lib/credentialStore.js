@@ -34,6 +34,7 @@ const SECRET_KEYS = [
   'MODAL_BASE_URL',
   'MODAL_MODEL_ID',
   'PROVIDER_PRIORITY',
+  'MODEL_ACCESS_TIER',
 ];
 
 let cachedCredentials = null;
@@ -261,8 +262,9 @@ export async function applyCredentialsToConfig(config) {
   config.modalApiKey = (env.MODAL_API_KEY || '').trim();
   config.modalBaseUrl = (env.MODAL_BASE_URL || config.modalBaseUrl || '').trim();
   config.modalModelId = (env.MODAL_MODEL_ID || config.modalModelId || 'meta-llama/Llama-4-Maverick-17B-128E-Instruct').trim();
-  config.providerPriority = (env.PROVIDER_PRIORITY || config.providerPriority?.join(',') || 'openrouter,nvidia-nim,cloudflare-workers-ai,blockrun,modal,groq')
+  config.providerPriority = (env.PROVIDER_PRIORITY || config.providerPriority?.join(',') || 'nvidia-nim,cloudflare-workers-ai,groq,openrouter,blockrun,modal')
     .split(',').map((s) => s.trim()).filter(Boolean);
+  config.accessTier = (env.MODEL_ACCESS_TIER || config.accessTier || 'free').toLowerCase();
 }
 
 export const SECRET_ENV_KEYS = SECRET_KEYS;

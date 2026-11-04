@@ -32,6 +32,7 @@ export const META_MODEL_CATALOG = {
         name: 'Meta Muse Glimmer 30B',
         modality: 'vision',
         verified: true,
+        tier: 'free',
         note: 'Verified with a real image. Reasoning model: responses can take 80-120s.',
       },
       // Listed by /v1/models on this account, but the endpoint currently fails.
@@ -41,12 +42,14 @@ export const META_MODEL_CATALOG = {
         name: 'Meta Llama 3.2 Vision 11B',
         modality: 'vision',
         verified: false,
+        tier: 'free',
         note: 'HTTP 404 on this account: the function is not deployed for this key.',
       },
       'meta/llama-3.2-90b-vision-instruct': {
         name: 'Meta Llama 3.2 Vision 90B',
         modality: 'vision',
         verified: false,
+        tier: 'free',
         note: 'Timed out (>90s) on this account during the 2026-11-04 audit.',
       },
     },
@@ -59,34 +62,43 @@ export const META_MODEL_CATALOG = {
         name: 'Meta Llama 4 Scout 17B',
         modality: 'vision',
         verified: false,
+        tier: 'free',
         note: 'Listed in this account model search; it was not image-tested in the 2026-11-04 audit.',
       },
       '@cf/meta/llama-3.2-11b-vision-instruct': {
         name: 'Meta Llama 3.2 Vision 11B',
         modality: 'vision',
         verified: true,
+        tier: 'free',
         note: 'Verified with a real image after accepting the model licence: correctly named a red circle and blue rectangle.',
       },
-      '@cf/meta/llama-3.1-8b-instruct': { name: 'Meta Llama 3.1 8B Instruct', modality: 'text' },
-      '@cf/meta/llama-3.1-8b-instruct-fp8': { name: 'Meta Llama 3.1 8B Instruct FP8', modality: 'text' },
-      '@cf/meta/llama-3.3-70b-instruct-fp8-fast': { name: 'Meta Llama 3.3 70B Instruct FP8 Fast', modality: 'text' },
-      '@cf/meta/llama-3.2-1b-instruct': { name: 'Meta Llama 3.2 1B Instruct', modality: 'text' },
-      '@cf/meta/llama-3.2-3b-instruct': { name: 'Meta Llama 3.2 3B Instruct', modality: 'text' },
-      '@cf/meta/llama-guard-3-8b': { name: 'Meta Llama Guard 3 8B (safety classifier)', modality: 'classifier' },
+      '@cf/meta/llama-3.1-8b-instruct': { name: 'Meta Llama 3.1 8B Instruct', modality: 'text', tier: 'free' },
+      '@cf/meta/llama-3.1-8b-instruct-fp8': { name: 'Meta Llama 3.1 8B Instruct FP8', modality: 'text', tier: 'free' },
+      '@cf/meta/llama-3.3-70b-instruct-fp8-fast': { name: 'Meta Llama 3.3 70B Instruct FP8 Fast', modality: 'text', tier: 'free' },
+      '@cf/meta/llama-3.2-1b-instruct': { name: 'Meta Llama 3.2 1B Instruct', modality: 'text', tier: 'free' },
+      '@cf/meta/llama-3.2-3b-instruct': { name: 'Meta Llama 3.2 3B Instruct', modality: 'text', tier: 'free' },
+      '@cf/meta/llama-guard-3-8b': { name: 'Meta Llama Guard 3 8B (safety classifier)', modality: 'classifier', tier: 'free' },
     },
   },
   'groq': {
-    label: 'Groq (Meta text; account dependent)',
+    label: 'Groq (account-dependent preview; no default)',
     host: 'api.groq.com',
     models: {
-      // Preferred Meta text model. The supplied restricted account exposed
-      // only Prompt Guard classifiers, so this stays unverified here and is
-      // not eligible for vision.
+      // No automatic default. Access and vision support vary by account, so the
+      // model must be chosen explicitly and tested before it is trusted.
+      'meta-models/muse-spark-open': {
+        name: 'Meta Muse Spark Open (limited preview, vision)',
+        modality: 'vision',
+        verified: false,
+        tier: 'preview',
+        note: 'Documented Groq vision candidate on a limited preview. Not verified on the supplied account; Test connection shows whether your account has it.',
+      },
       'meta-llama/llama-3.3-70b-versatile': {
-        name: 'Meta Llama 3.3 70B Versatile',
+        name: 'Meta Llama 3.3 70B Versatile (Enterprise only, text)',
         modality: 'text',
         verified: false,
-        note: 'Meta text model. Not listed on the supplied Groq account on 2026-11-04; Test connection shows whether your account has it.',
+        tier: 'enterprise',
+        note: 'Enterprise-only, retired for Free and Developer users on 2026-08-16. Text-only; never used for images or as a default.',
       },
       // Prompt Guard is a prompt-injection classifier; it must never be used
       // for chat or vision.
@@ -112,24 +124,28 @@ export const META_MODEL_CATALOG = {
         name: 'Meta Llama 4 Maverick',
         modality: 'vision',
         verified: true,
+        tier: 'paid',
         note: 'Verified with a real image on 2026-11-04; canary cost $0.0000219. Paid: $0.1875/M input, $0.6525/M output.',
       },
       'meta-llama/llama-4-scout': {
         name: 'Meta Llama 4 Scout',
         modality: 'vision',
         verified: false,
+        tier: 'paid',
         note: 'Paid Meta vision model listed on the account; not image-tested. $0.10/M input, $0.30/M output.',
       },
       'meta-llama/llama-3.3-70b-instruct': {
         name: 'Meta Llama 3.3 70B Instruct',
         modality: 'text',
         verified: false,
+        tier: 'paid',
         note: 'Text-only; never used for vision. Paid.',
       },
       'meta-llama/llama-3.1-8b-instruct': {
         name: 'Meta Llama 3.1 8B Instruct',
         modality: 'text',
         verified: false,
+        tier: 'paid',
         note: 'Text-only; never used for vision. Paid.',
       },
     },
@@ -142,18 +158,21 @@ export const META_MODEL_CATALOG = {
         name: 'Meta Llama 4 Maverick',
         modality: 'vision',
         verified: false,
+        tier: 'paid',
         note: 'Supplied key returned HTTP 402 Payment verification failed. Paid x402 marketplace; no browser CORS.',
       },
       'meta-llama/llama-4-scout': {
         name: 'Meta Llama 4 Scout',
         modality: 'vision',
         verified: false,
+        tier: 'paid',
         note: 'Paid x402 marketplace; untested beyond the payment error.',
       },
       'meta-llama/llama-3.3-70b-instruct': {
         name: 'Meta Llama 3.3 70B Instruct',
         modality: 'text',
         verified: false,
+        tier: 'paid',
         note: 'Text-only; paid marketplace.',
       },
     },
@@ -166,12 +185,14 @@ export const META_MODEL_CATALOG = {
         name: 'Meta Llama 4 Maverick',
         modality: 'vision',
         verified: false,
+        tier: 'paid',
         note: 'NOT TESTED. Requires your Modal deployment URL. Paid Modal compute.',
       },
       'meta-llama/Llama-3.3-70B-Instruct': {
         name: 'Meta Llama 3.3 70B Instruct',
         modality: 'text',
         verified: false,
+        tier: 'paid',
         note: 'NOT TESTED. Text-only; requires your Modal deployment URL.',
       },
     },
@@ -298,6 +319,26 @@ export const localModelConfig = LOCAL_MODEL_DEFAULTS;
 export const MAX_JSON_BODY_BYTES = 12 * 1024 * 1024;
 export const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
+// Free models are prioritised. Paid hosts (OpenRouter, BlockRun, Modal) only
+// become eligible after the user explicitly enables paid access.
+const DEFAULT_PROVIDER_PRIORITY = 'nvidia-nim,cloudflare-workers-ai,groq,openrouter,blockrun,modal';
+
+export const ACCESS_TIERS = ['free', 'preview', 'paid'];
+const TIER_RANK = { free: 0, preview: 1, paid: 2, enterprise: 2 };
+
+/** Tier declared on a catalogue entry; unknown/older entries default to free. */
+export function modelTier(providerId, modelId) {
+  const entry = META_MODEL_CATALOG[providerId]?.models?.[modelId];
+  return entry?.tier || (entry ? 'free' : null);
+}
+
+/** A known paid/preview model is refused while a lower tier is selected. */
+export function modelAllowedAtTier(providerId, modelId, tier = 'free') {
+  const rank = TIER_RANK[modelTier(providerId, modelId)];
+  if (rank === undefined) return true;
+  return rank <= (TIER_RANK[tier] ?? 0);
+}
+
 export const config = {
   host: process.env.HOST || '0.0.0.0',
   port: int(process.env.PORT, 8000),
@@ -323,8 +364,11 @@ export const config = {
   modalApiKey: (process.env.MODAL_API_KEY || '').trim(),
   modalBaseUrl: (process.env.MODAL_BASE_URL || '').trim(),
   modalModelId: (process.env.MODAL_MODEL_ID || 'meta-llama/Llama-4-Maverick-17B-128E-Instruct').trim(),
-  providerPriority: (process.env.PROVIDER_PRIORITY || 'openrouter,nvidia-nim,cloudflare-workers-ai,blockrun,modal,groq')
+  providerPriority: (process.env.PROVIDER_PRIORITY || DEFAULT_PROVIDER_PRIORITY)
     .split(',').map((s) => s.trim()).filter(Boolean),
+  // Free by default. Paid model names stay hidden/ineligible until the user
+  // explicitly switches this to preview or paid in provider setup.
+  accessTier: (process.env.MODEL_ACCESS_TIER || 'free').toLowerCase(),
   allowOutboundNetwork: bool(process.env.ALLOW_OUTBOUND_NETWORK, true),
   // Local speech-to-text. Empty unless STT_URL points at this machine.
   sttUrl: isLoopbackUrl(process.env.STT_URL) ? String(process.env.STT_URL).trim() : '',
@@ -362,14 +406,15 @@ function visionModel(providerId, modelId) {
   return META_MODEL_CATALOG[providerId]?.models?.[modelId]?.modality === 'vision';
 }
 
-/** Provider has credentials for a vision-capable Meta model. */
+/** Provider has credentials for a vision-capable Meta model allowed at the selected tier. */
 export function providerConfigured(id) {
-  if (id === 'nvidia-nim') return Boolean(config.nimApiKey && !isPlaceholderCredential(config.nimApiKey) && config.nimEnabled && visionModel(id, config.nimModelId));
-  if (id === 'cloudflare-workers-ai') return Boolean(config.cloudflareAccountId && !isPlaceholderCredential(config.cloudflareAccountId) && config.cloudflareApiToken && !isPlaceholderCredential(config.cloudflareApiToken) && visionModel(id, config.cloudflareModelId));
-  if (id === 'groq') return Boolean(config.groqApiKey && !isPlaceholderCredential(config.groqApiKey) && config.groqVisionModel && visionModel(id, config.groqVisionModel));
-  if (id === 'openrouter') return Boolean(config.openrouterApiKey && !isPlaceholderCredential(config.openrouterApiKey) && visionModel(id, config.openrouterModelId));
-  if (id === 'blockrun') return Boolean(config.blockrunApiKey && !isPlaceholderCredential(config.blockrunApiKey) && visionModel(id, config.blockrunModelId));
-  if (id === 'modal') return Boolean(config.modalApiKey && !isPlaceholderCredential(config.modalApiKey) && config.modalBaseUrl && isAllowedOutboundHost(config.modalBaseUrl) && visionModel(id, config.modalModelId));
+  const isVision = (model) => visionModel(id, model) && modelAllowedAtTier(id, model, config.accessTier);
+  if (id === 'nvidia-nim') return Boolean(config.nimApiKey && !isPlaceholderCredential(config.nimApiKey) && config.nimEnabled && isVision(config.nimModelId));
+  if (id === 'cloudflare-workers-ai') return Boolean(config.cloudflareAccountId && !isPlaceholderCredential(config.cloudflareAccountId) && config.cloudflareApiToken && !isPlaceholderCredential(config.cloudflareApiToken) && isVision(config.cloudflareModelId));
+  if (id === 'groq') return Boolean(config.groqApiKey && !isPlaceholderCredential(config.groqApiKey) && config.groqVisionModel && isVision(config.groqVisionModel));
+  if (id === 'openrouter') return Boolean(config.openrouterApiKey && !isPlaceholderCredential(config.openrouterApiKey) && isVision(config.openrouterModelId));
+  if (id === 'blockrun') return Boolean(config.blockrunApiKey && !isPlaceholderCredential(config.blockrunApiKey) && isVision(config.blockrunModelId));
+  if (id === 'modal') return Boolean(config.modalApiKey && !isPlaceholderCredential(config.modalApiKey) && config.modalBaseUrl && isAllowedOutboundHost(config.modalBaseUrl) && isVision(config.modalModelId));
   return false;
 }
 

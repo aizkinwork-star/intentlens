@@ -13,15 +13,18 @@ Scope: `pwa/`, `scripts/prepare-pwa.mjs`, `scripts/serve-pwa.mjs`, `.github/work
 > **full provider set**: OpenRouter, Groq, NVIDIA NIM, Cloudflare Workers AI,
 > BlockRun, Modal and Custom relay. Browser-blocked hosts are refused **before
 > the network call** with `PROVIDER_CORS_BLOCKED`, their exact endpoint, the CORS
-> evidence and the desktop/relay alternative. Meta models are now the default on
-> OpenRouter (`meta-llama/llama-4-maverick`) and Groq
-> (`meta-llama/llama-3.3-70b-versatile`). The desktop server gained OpenRouter,
-> BlockRun and Modal adapters, and provider gating now accepts any catalogued
-> vision model so paid/untested hosts can be configured and tested while the UI
-> keeps its unverified warning. Modal is paid and **not tested**; BlockRun is
-> paid and the supplied key still returns HTTP 402. The desktop encrypted
-> credential file was not read, printed, modified or deleted. The live Pages
-> deploy was re-verified at cache `intentlens-pwa-v13`.
+> evidence and the desktop/relay alternative. **Correction (later same day):**
+> free models are now the default. The phone defaults to the free vision model
+> `nvidia/nemotron-3.5-super-vl:free`, and paid Meta Maverick/Scout stay hidden
+> until paid access is enabled. Groq has **no default**: Llama 3.3 70B Versatile
+> is Enterprise-only, retired for Free/Developer on 2026-08-16, and text-only;
+> documented vision candidates are preview-only and unverified. The desktop
+> server gained OpenRouter, BlockRun and Modal adapters, and provider gating
+> accepts any catalogued vision model allowed at the selected access tier. Modal
+> is paid and **not tested**; BlockRun is paid and the supplied key still returns
+> HTTP 402. The desktop encrypted credential file was not read, printed, modified
+> or deleted. The live Pages deploy was re-verified at cache
+> `intentlens-pwa-v13`; the current shell cache is `intentlens-pwa-v14`.
 
 ---
 
@@ -261,15 +264,17 @@ OpenRouter model truth:
 - `meta-llama/llama-3.3-70b-instruct` and `meta-llama/llama-3.1-8b-instruct` —
   text only; images are refused.
 
-Groq model truth:
+Groq model truth (corrected after the audit):
 
-- Meta text: `meta-llama/llama-3.3-70b-versatile` — default, not listed on the
-  supplied restricted account, so Test may return 403/404.
+- **No default.** Access and vision support vary by account.
+- `meta-llama/llama-3.3-70b-versatile` — Enterprise-only, retired for Free and
+  Developer users on 2026-08-16, text-only. Never a default, never vision.
+- Documented vision candidates: `meta-models/muse-spark-open` (Meta, limited
+  preview) and `qwen/qwen3.8-27b` (non-Meta, preview). Both unverified here.
 - Non-Meta text: `openai/gpt-oss-120b` (verified), `openai/gpt-oss-20b`,
-  `qwen/qwen3.8-27b` (verified), `allam-2-7b`.
+  `allam-2-7b`.
 - Classifiers (never chat/vision): `meta-llama/llama-prompt-guard-2-22m`,
   `meta-llama/llama-prompt-guard-2-86m`.
-- No Meta vision model exists on this account.
 
 ### F3. Refusal behaviour
 

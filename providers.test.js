@@ -41,12 +41,13 @@ test('outbound hosts are HTTPS and allowlisted only', () => {
   assert.equal(isAllowedOutboundHost('not a url'), false);
 });
 
-test('default provider priority is Meta-first OpenRouter, then desktop hosts', () => {
+test('default provider priority is free-first, paid hosts last', () => {
   assert.deepEqual(
-    (process.env.PROVIDER_PRIORITY || 'openrouter,nvidia-nim,cloudflare-workers-ai,blockrun,modal,groq')
+    (process.env.PROVIDER_PRIORITY || 'nvidia-nim,cloudflare-workers-ai,groq,openrouter,blockrun,modal')
       .split(',').map((s) => s.trim()).filter(Boolean),
-    ['openrouter', 'nvidia-nim', 'cloudflare-workers-ai', 'blockrun', 'modal', 'groq'],
+    ['nvidia-nim', 'cloudflare-workers-ai', 'groq', 'openrouter', 'blockrun', 'modal'],
   );
+  assert.ok(config.providerPriority.indexOf('nvidia-nim') < config.providerPriority.indexOf('openrouter'));
 });
 
 test('placeholder keys never make a provider configured', () => {

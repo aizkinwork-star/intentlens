@@ -124,21 +124,27 @@
       </label>
       <p id="providerNote" class="meta"></p>
 
+      <label>Model access
+        <select id="accessTier">
+          <option value="free" selected>Free only (recommended)</option>
+          <option value="preview">Include limited-preview models</option>
+          <option value="paid">Include paid models (I have access)</option>
+        </select>
+      </label>
+      <p id="accessNote" class="meta"></p>
+
       <label>Model id
         <input id="modelInput" type="text" autocomplete="off" spellcheck="false" list="modelList">
       </label>
       <datalist id="modelList"></datalist>
       <p id="modelNote" class="meta"></p>
 
-      <label>API key (kept in memory for this tab only)
+      <label>API key (memory only, this tab)
         <input id="keyInput" type="password" autocomplete="off" spellcheck="false"
-               placeholder="Never saved; cleared when this tab closes or reloads">
+               placeholder="Never saved; cleared on reload">
       </label>
       <p class="warn">
-        The key is used directly from this browser in the Authorization header. It is not
-        written to localStorage, sessionStorage or IndexedDB. Anyone with access to this
-        unlocked device or a script running on this page can read it while the tab is open.
-        A phone cannot keep the key after a reload; re-enter it when needed.
+        Sent directly from this browser. Not stored; anyone using this unlocked device can read it while the tab is open.
       </p>
 
       <label id="baseUrlRow" hidden>Base URL (Modal deployment or custom relay only)

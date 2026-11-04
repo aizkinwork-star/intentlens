@@ -22,6 +22,10 @@ import {
   testProvider,
   modelFor,
   modelInfo,
+  modelsFor,
+  defaultModelFor,
+  modelAllowedAtTier,
+  modelAcceptsImages,
   providerSupportsImages,
 } from './provider.js';
 import { cameraErrorMessage, computeCaptureSize, tryLockLandscape, unlockOrientation } from './camera.js';
@@ -70,6 +74,8 @@ const els = {
   settingsDialog: $('settingsDialog'),
   providerSelect: $('providerSelect'),
   providerNote: $('providerNote'),
+  accessTier: $('accessTier'),
+  accessNote: $('accessNote'),
   modelInput: $('modelInput'),
   modelList: $('modelList'),
   modelNote: $('modelNote'),
@@ -102,6 +108,7 @@ const state = {
   gridSize: DEFAULT_GRID_SIZE,
   providerId: 'openrouter',
   model: '',
+  accessTier: 'free',
   baseUrl: '',
   apiKey: '',
   tts: true,
@@ -357,8 +364,8 @@ function updateRotateHint() {
 
 function updateCloudUi() {
   const provider = PROVIDERS[state.providerId];
-  const model = state.model || provider.defaultModel;
-  const images = providerSupportsImages(state.providerId);
+  const model = state.model || defaultModelFor(state.providerId, state.accessTier) || 'no model selected';
+  const images = modelAcceptsImages(state.providerId, state.model);
   const blocked = Boolean(provider.unavailableInBrowser);
   if (state.allowCloud) {
     els.cloudState.textContent = blocked
@@ -367,8 +374,8 @@ function updateCloudUi() {
     els.cloudDetail.textContent = blocked
       ? provider.blockedMessage
       : images
-        ? `${model} · only the still image you capture and this prompt leave the device when you press Send. Project history stays local.`
-        : `${model} · text only. This provider cannot accept images on this account, so use Chat; project history stays local.`;
+        ? `${model} · only the still you capture and this prompt leave the device.`
+        : `${model} · not a vision model. Use Chat; project history stays local.`;
     els.allowCloudBtn.textContent = 'Cloud is ON for this session';
     els.allowCloudBtn.disabled = true;
     els.cloudCard.classList.add('on');
@@ -640,6 +647,7 @@ async function sendChat(command) {
       providerId: state.providerId,
       apiKey: state.apiKey,
       model: modelFor(state.providerId, state.model),
+      accessTier: state.accessTier,
       baseUrl: state.baseUrl,
       prompt: `${instructions}\n\n${userText}`,
     });
@@ -745,6 +753,7 @@ async function send() {
       providerId: state.providerId,
       apiKey: state.apiKey,
       model: modelFor(state.providerId, state.model),
+      accessTier: state.accessTier,
       baseUrl: state.baseUrl,
       prompt,
       imageDataUrl: state.captured.dataUrl,
@@ -818,6 +827,7 @@ async function explain() {
       providerId: state.providerId,
       apiKey: state.apiKey,
       model: modelFor(state.providerId, state.model),
+      accessTier: state.accessTier,
       baseUrl: state.baseUrl,
       prompt: `${instructions}\n\n${userText}`,
     });
@@ -925,11 +935,12 @@ function toggleMic() {
 
 function updateModelNote() {
   const providerId = els.providerSelect.value || state.providerId;
-  const model = els.modelInput.value.trim() || PROVIDERS[providerId]?.defaultModel || '';
+  const tier = els.accessTier?.value || state.accessTier || 'free';
+  const model = els.modelInput.value.trim() || defaultModelFor(providerId, tier) || '';
   const info = modelInfo(providerId, model);
   if (!info) {
     els.modelNote.textContent = providerId === 'custom'
-      ? `Any model id your relay accepts can be typed here. Default example: ${PROVIDERS.custom.defaultModel}.`
+      ? 'Any model id your relay accepts can be typed here. It is sent exactly as typed.'
       : 'This model id is not in the verified catalogue. It will be sent as typed; the provider decides whether it exists and whether it can read images.';
     return;
   }
@@ -943,31 +954,37 @@ function updateModelNote() {
 function syncProviderDetail(providerId) {
   const provider = PROVIDERS[providerId];
   if (!provider) return;
+  const tier = els.accessTier?.value || state.accessTier || 'free';
   const cors = provider.unavailableInBrowser
     ? `Browser CORS: BLOCKED — ${provider.blockedMessage || 'the host does not allow this origin.'}`
     : `Browser CORS: ${provider.browserCors}.`;
-  // A blocked-host message may already name its endpoint; do not repeat it.
   const base = `${provider.note} ${cors}`;
   const endpointBit = provider.endpoint && !base.includes(provider.endpoint)
     ? ` Endpoint: ${provider.endpoint}`
     : '';
-  els.providerNote.textContent = `${base}${endpointBit} Retention: ${provider.retention}`;
-  els.modelInput.placeholder = provider.defaultModel;
+  els.providerNote.textContent = `${base}${endpointBit}`;
+  const defaultModel = defaultModelFor(providerId, tier);
+  els.modelInput.placeholder = defaultModel || 'Type the exact model id';
+  if (els.accessNote) {
+    els.accessNote.textContent = tier === 'paid'
+      ? 'Paid models are visible and may bill your account. Select one only if you have billing set up.'
+      : tier === 'preview'
+        ? 'Free and limited-preview models are visible. Preview models may need account approval and are not verified.'
+        : 'Free models only. Paid model names stay hidden until you enable paid access.';
+  }
   const baseUrlRow = $('baseUrlRow');
   if (baseUrlRow) baseUrlRow.hidden = !provider.requiresBaseUrl;
   els.baseUrlInput.disabled = !provider.requiresBaseUrl;
   els.baseUrlInput.placeholder = providerId === 'modal'
     ? 'https://your-workspace--your-app.modal.run'
     : 'https://your-relay.example.workers.dev';
-  const catalogue = PROVIDER_MODELS[providerId] || null;
+  const catalogue = modelsFor(providerId, tier);
   els.modelList.replaceChildren();
-  if (catalogue) {
-    for (const [id, info] of Object.entries(catalogue)) {
-      const option = document.createElement('option');
-      option.value = id;
-      option.label = `${info.label}${info.pricing ? ` — ${info.pricing}` : ''}`;
-      els.modelList.appendChild(option);
-    }
+  for (const [id, info] of Object.entries(catalogue)) {
+    const option = document.createElement('option');
+    option.value = id;
+    option.label = `${info.label}${info.pricing ? ` — ${info.pricing}` : ''}`;
+    els.modelList.appendChild(option);
   }
   updateModelNote();
 }
@@ -977,12 +994,18 @@ function updateProviderUi() {
     .map((id) => `<option value="${id}">${escapeHtml(PROVIDERS[id].label)}</option>`)
     .join('');
   els.providerSelect.value = state.providerId;
+  if (els.accessTier) els.accessTier.value = state.accessTier;
+  const defaultModel = defaultModelFor(state.providerId, state.accessTier);
+  if (!state.model || !modelAllowedAtTier(state.providerId, state.model, state.accessTier)) {
+    state.model = defaultModel;
+  }
   els.modelInput.value = state.model;
   syncProviderDetail(state.providerId);
 }
 
 function openSettings() {
   els.providerSelect.value = state.providerId;
+  els.accessTier.value = state.accessTier;
   els.modelInput.value = state.model;
   els.keyInput.value = state.apiKey;
   els.baseUrlInput.value = state.baseUrl;
@@ -997,6 +1020,7 @@ function readSettingsForm() {
   return {
     providerId,
     model: els.modelInput.value.trim(),
+    accessTier: els.accessTier.value,
     apiKey: els.keyInput.value.trim(),
     // Only keep a base URL for providers that actually use one, so a stale
     // relay/deployment URL is never carried into a fixed-host request.
@@ -1010,6 +1034,7 @@ async function saveSettings() {
   const values = readSettingsForm();
   state.providerId = values.providerId;
   state.model = values.model;
+  state.accessTier = values.accessTier;
   state.apiKey = values.apiKey;          // memory only, never persisted
   state.baseUrl = values.baseUrl;
   state.gridSize = values.gridSize;
@@ -1018,6 +1043,7 @@ async function saveSettings() {
   // Settings are not sensitive, so they may persist. The key never is.
   await db.setSetting('providerId', state.providerId);
   await db.setSetting('model', state.model);
+  await db.setSetting('accessTier', state.accessTier);
   await db.setSetting('baseUrl', state.baseUrl);
   await db.setSetting('gridSize', state.gridSize);
   await db.setSetting('tts', state.tts);
@@ -1173,11 +1199,17 @@ function wireEvents() {
 
   els.providerSelect.addEventListener('change', () => {
     const next = els.providerSelect.value;
-    const knownDefaults = new Set(Object.values(PROVIDERS).map((provider) => provider.defaultModel));
-    if (!els.modelInput.value || knownDefaults.has(els.modelInput.value)) {
-      els.modelInput.value = PROVIDERS[next]?.defaultModel || '';
-    }
+    const tier = els.accessTier.value;
+    els.modelInput.value = defaultModelFor(next, tier);
     syncProviderDetail(next);
+  });
+  els.accessTier.addEventListener('change', () => {
+    const tier = els.accessTier.value;
+    const providerId = els.providerSelect.value;
+    if (els.modelInput.value && !modelAllowedAtTier(providerId, els.modelInput.value, tier)) {
+      els.modelInput.value = defaultModelFor(providerId, tier);
+    }
+    syncProviderDetail(providerId);
   });
   els.modelInput.addEventListener('input', updateModelNote);
   els.modelInput.addEventListener('change', updateModelNote);
@@ -1262,10 +1294,17 @@ async function boot() {
   state.gridSize = Number(settings.gridSize) || DEFAULT_GRID_SIZE;
   const savedProvider = PROVIDERS[settings.providerId] ? settings.providerId : 'openrouter';
   state.providerId = savedProvider;
-  // Older builds saved retired or browser-blocked providers/models. Migrate only
-  // those exact values; a model the user typed themselves is left alone.
-  const legacyRetired = new Set(['nvidia/nemotron-3-nano-omni-30b-a3b-reasoning']);
-  state.model = settings.model && !legacyRetired.has(settings.model) ? settings.model : '';
+  state.accessTier = ['free', 'preview', 'paid'].includes(settings.accessTier)
+    ? settings.accessTier
+    : 'free';
+  // Older builds saved retired models. A model the user typed themselves is
+  // kept unless it is a known paid model while free access is selected.
+  const legacyRetired = new Set([
+    'meta-llama/llama-3.3-70b-versatile',
+    'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning',
+  ]);
+  const savedModel = settings.model && !legacyRetired.has(settings.model) ? settings.model : '';
+  state.model = modelAllowedAtTier(savedProvider, savedModel, state.accessTier) ? savedModel : '';
   state.baseUrl = settings.baseUrl || '';
   state.tts = settings.tts === true;
   // Legacy plaintext keys from older builds are deleted, not migrated.

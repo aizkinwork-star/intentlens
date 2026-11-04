@@ -63,15 +63,19 @@ of being described as working. Any catalogued vision model can be tested.
 3. Copy the **Account ID** and **API Token**.
 4. In IntentLens choose **Cloudflare Workers AI**, enter both values, and test.
 
-### Groq (text only on this account)
+### Groq (account-dependent preview; no default)
 
 1. Create a key at https://console.groq.com/.
-2. **Meta Llama 3.3 70B Versatile** is listed first because Meta models are the
-   priority. The supplied restricted account exposed only
-   `meta-llama/llama-prompt-guard-2-22m` and `-86m` among Meta models, so this
-   model may return 403/404; use **Test connection**.
-3. Prompt Guard entries are classifiers, not chat or vision models.
-4. IntentLens therefore refuses images for Groq. Use OpenRouter, NVIDIA NIM,
+2. There is **no default model**. Access and vision support depend on your
+   account, so choose a model explicitly and press **Test connection**.
+3. **Llama 3.3 70B Versatile is Enterprise-only**, was retired for Free and
+   Developer users on 2026-08-16, and is text-only. It is never a default and
+   never used for images.
+4. Documented vision candidates are **Meta Muse Spark Open** (limited preview)
+   and **Qwen 3.8 27B**. Enable Preview access before selecting one; neither is
+   verified on the supplied account.
+5. Prompt Guard entries are classifiers, not chat or vision models.
+6. If your account has no vision model, use OpenRouter, NVIDIA NIM,
    Cloudflare Workers AI, BlockRun or Modal for image analysis.
 
 ## How credentials are stored
@@ -101,9 +105,10 @@ MODAL_API_KEY=...
 MODAL_BASE_URL=https://your-workspace--your-app.modal.run
 
 GROQ_API_KEY=...
-GROQ_TEXT_MODEL=meta-llama/llama-3.3-70b-versatile
+GROQ_VISION_MODEL=
 
-PROVIDER_PRIORITY=openrouter,nvidia-nim,cloudflare-workers-ai,blockrun,modal,groq
+MODEL_ACCESS_TIER=free
+PROVIDER_PRIORITY=nvidia-nim,cloudflare-workers-ai,groq,openrouter,blockrun,modal
 ALLOW_OUTBOUND_NETWORK=true
 ```
 

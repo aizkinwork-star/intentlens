@@ -3809,17 +3809,26 @@ function setSetupMsg(text, tone = '') {
 }
 
 function selectedSetupProvider() {
-  return $('setupProv')?.value || 'openrouter';
+  return $('setupProv')?.value || 'nvidia-nim';
+}
+
+const SETUP_TIER_RANK = { free: 0, preview: 1, paid: 2, enterprise: 2 };
+
+function selectedSetupTier() {
+  return $('setupAccessTier')?.value || localModelStatus?.accessTier || 'free';
 }
 
 function setupVisionModels(provider) {
   const models = localModelStatus?.catalog?.[provider]?.models || {};
+  const limit = SETUP_TIER_RANK[selectedSetupTier()] ?? 0;
   return Object.entries(models)
     .filter(([, model]) => model.modality === 'vision')
+    .filter(([, model]) => (SETUP_TIER_RANK[model.tier || 'free'] ?? 0) <= limit)
     .map(([id, model]) => ({
       id,
       name: model.name,
       verified: model.verified === true,
+      tier: model.tier || 'free',
       note: model.note || '',
     }));
 }
@@ -3893,8 +3902,11 @@ function updateSetupForm({ keepModel = false, preferredProvider = null, preferre
     const chosen = models.find((m) => m.id === (modelSelect?.value || ''));
     const parts = [];
     if (!models.length) {
-      parts.push('This provider has no vision-capable Meta model on this account. It cannot be used for image analysis.');
-      parts.push('Prompt Guard and other text/classifier models are never used for images.');
+      const tier = selectedSetupTier();
+      parts.push(tier === 'free'
+        ? 'No free Meta vision model is available on this provider. Enable paid access only if you already have that account.'
+        : 'This provider has no vision-capable Meta model at this access level.');
+      parts.push('Text-only and classifier Meta models are never sent images.');
     } else {
       if (chosen?.verified) parts.push('Verified with a real image on this account.');
       else if (chosen) parts.push('Not verified with a real image yet — use Test connection.');
@@ -3906,11 +3918,21 @@ function updateSetupForm({ keepModel = false, preferredProvider = null, preferre
 
   const netRow = $('setupNetworkRow');
   if (netRow) netRow.hidden = localModelStatus?.allowOutboundNetwork !== false;
+
+  const accessNote = $('setupAccessNote');
+  if (accessNote) {
+    const tier = selectedSetupTier();
+    accessNote.textContent = tier === 'paid'
+      ? 'Paid Meta models are visible and may bill your account. Select one only if you have billing set up.'
+      : tier === 'preview'
+        ? 'Free and limited-preview models are visible. Preview models may need account approval and are not verified.'
+        : 'Free models only. Paid model names stay hidden until you enable paid access.';
+  }
 }
 
 function setupPayload({ includeKey = true } = {}) {
   const provider = selectedSetupProvider();
-  const payload = { provider };
+  const payload = { provider, accessTier: selectedSetupTier() };
   const key = $('setupKey')?.value?.trim() || '';
   if (includeKey && key) payload.apiKey = key;
   const modelId = $('setupModel')?.value || '';
@@ -3973,7 +3995,28 @@ async function saveSetupProvider() {
   const provider = selectedSetupProvider();
   const payload = setupPayload();
   if (!payload.apiKey) {
-    setSetupMsg('Enter an API key or token. Use Remove to delete a saved key.', 'error');
+    // No new key: still let the user change the access level for already-saved
+    // credentials, without pretending a key was saved or tested.
+    setSetupBusy(true);
+    try {
+      const res = await fetch('/api/providers', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ accessTier: payload.accessTier }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        setSetupMsg(data.error?.message || `Access level could not be saved (HTTP ${res.status}).`, 'error');
+        return;
+      }
+      await loadLocalModelStatus();
+      updateSetupForm({ keepModel: false });
+      setSetupMsg(`Access level set to ${payload.accessTier}. Enter a key to save and test a provider.`, 'ok');
+    } catch (err) {
+      setSetupMsg(`Access level could not be saved: ${err.message}`, 'error');
+    } finally {
+      setSetupBusy(false);
+    }
     return;
   }
   setSetupBusy(true);
@@ -4062,6 +4105,9 @@ function initSetupPopupListeners() {
   }
   if ($('setupProv')) {
     $('setupProv').addEventListener('change', () => updateSetupForm({ keepModel: false }));
+  }
+  if ($('setupAccessTier')) {
+    $('setupAccessTier').addEventListener('change', () => updateSetupForm({ keepModel: false }));
   }
   if ($('setupModel')) {
     $('setupModel').addEventListener('change', () => updateSetupForm({ keepModel: true }));

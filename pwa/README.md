@@ -16,7 +16,8 @@ Live URL: <https://aizkinwork-star.github.io/intentlens/>
 - Still capture using the true video frame size
 - IndexedDB projects, messages, captures and settings
 - Text-only project chat (no image is captured or sent)
-- Real image analysis through OpenRouter (Meta Llama 4 Maverick by default)
+- Real image analysis through OpenRouter (free NVIDIA vision model by default;
+  paid Meta models only after opting in)
 - Voice transcription through the browser speech API, with text fallback
 - Repeat = 0 AI requests; Explain = exactly 1
 - Same coordinate conversion and result validation as the desktop app
@@ -30,14 +31,14 @@ Every provider is visible in Settings. Browser-blocked hosts are refused before
 any network request with their exact endpoint and the reason, instead of being
 hidden. Nothing falls back silently.
 
-| Provider | Status in this PWA | Default / Meta model | Cost | Notes |
+| Provider | Status in this PWA | Default / model | Cost | Notes |
 |---|---|---|---|---|
-| **OpenRouter** | Browser CORS `*`, verified | `meta-llama/llama-4-maverick` (Meta vision) | Paid; price shown | Default and first choice. Maverick verified from GitHub Pages with a real image; Scout and Meta text models are listed. Free NVIDIA/Dots vision models remain selectable. |
-| **Groq** | Browser CORS `*`, text only | `meta-llama/llama-3.3-70b-versatile` (Meta text) | Account limits | Meta text is listed first. The supplied account exposed only Prompt Guard classifiers, so it may return 403/404. GPT-OSS/Qwen are labelled non-Meta fallbacks. No vision model: image requests are refused before any network call. |
+| **OpenRouter** | Browser CORS `*`, verified | `nvidia/nemotron-3.5-super-vl:free` (free vision) | Free by default; paid Meta optional | The free vision default was verified with a synthetic image. Paid Meta Llama 4 Maverick/Scout are hidden until **Model access → Paid** is selected. Maverick is **not free**: $0.1875/M input, $0.6525/M output. |
+| **Groq** | Browser CORS `*`, account-dependent | **No default.** Preview candidates: `meta-models/muse-spark-open` (Meta) and `qwen/qwen3.8-27b` | Account / preview | Access and vision support vary by account. Llama 3.3 70B Versatile is Enterprise-only, retired for Free/Developer on 2026-08-16, and text-only, so it is never a default or vision model. Choose a candidate, enable Preview, and Test before relying on it. |
 | **NVIDIA NIM** | **Blocked by CORS** | `meta/muse-glimmer-30b` (Meta vision) | NVIDIA account | Endpoint `https://integrate.api.nvidia.com/v1/chat/completions`. Verified with a real image on the desktop path. No `Access-Control-Allow-Origin`, so the phone refuses with `PROVIDER_CORS_BLOCKED`. Use the PC app or a relay. |
 | **Cloudflare Workers AI** | **Blocked by CORS** | `@cf/meta/llama-3.2-11b-vision-instruct` (Meta vision) | Free tier / account | Endpoint template `https://api.cloudflare.com/client/v4/accounts/{account}/ai/run/{model}`. Preflight returns 405 with no CORS. Desktop only. |
-| **BlockRun** | **Blocked by CORS + unpaid** | `meta-llama/llama-4-maverick` (Meta vision) | **Paid x402** | Endpoint `https://api.blockrun.ai/v1/chat/completions`. 115 models listed, but the supplied key returned HTTP 402 `Payment verification failed`; no CORS. Restored and visible, not working with that key. |
-| **Modal** | User-deployed endpoint | `meta-llama/Llama-4-Maverick-17B-128E-Instruct` | **Paid** / untested | Paste your `*.modal.run` OpenAI-compatible URL. **NOT TESTED** in the audit. CORS is whatever your deployment allows. |
+| **BlockRun** | **Blocked by CORS + unpaid** | `meta-llama/llama-4-maverick` (Meta vision) | **Paid x402** | Endpoint `https://api.blockrun.ai/v1/chat/completions`. Hidden from the free tier. The supplied key returned HTTP 402 `Payment verification failed`; no CORS. |
+| **Modal** | User-deployed endpoint | `meta-llama/Llama-4-Maverick-17B-128E-Instruct` | **Paid** / untested | Hidden from the free tier. Paste your `*.modal.run` OpenAI-compatible URL. **NOT TESTED** in the audit. CORS is whatever your deployment allows. |
 | **Custom relay** | User-owned HTTPS endpoint | Your choice | Your cost | Use only if you deploy a relay that forwards to a blocked host and returns `Access-Control-Allow-Origin` for this origin. IntentLens does not run a relay for you. |
 
 There is no silent fallback. A provider error is shown in the request log; the
@@ -48,12 +49,21 @@ names the endpoint, the CORS evidence and the desktop/relay alternative.
 
 - The model field is editable. You can type any model id the provider accepts.
 - Known text-only models are refused for images before a request is made.
+- A **Model access** selector controls visibility: **Free only** (default),
+  **Preview**, or **Paid**. Paid/preview model names stay hidden otherwise, and a
+  known locked model is refused with `MODEL_ACCESS_LOCKED` before the network.
 - A model not in the catalogue is sent as typed; the provider decides whether
-  it exists. The request log records the exact id sent and the model id returned.
+  it exists. The request body uses the exact typed id, and the request log shows
+  the id sent and the id returned.
 - Paid OpenRouter Meta models show their per-token price in the model note and
-  in the datalist. Nothing is charged unless you explicitly select one.
+  in the datalist. Nothing is charged unless you explicitly enable paid access
+  and select one.
 - Browser-blocked hosts still record the intended endpoint, model and
   `PROVIDER_CORS_BLOCKED` code in the request log, with no network call made.
+
+**Real-board status:** no physical-board test has been run. All image checks used
+a synthetic red-circle/blue-rectangle image. A real board photo, a real question
+and a live provider answer are still **NOT TESTED**.
 
 ## Install on a phone (GitHub Pages)
 
@@ -63,9 +73,11 @@ names the endpoint, the CORS evidence and the desktop/relay alternative.
    iOS Safari: Share → **Add to Home Screen**.
 3. Open the installed icon. Camera permission is requested only after tapping
    **Start camera**.
-4. Tap **Settings**, choose **OpenRouter**, paste your key, and press **Save**.
-   The key is kept in memory for this tab only. Meta Llama 4 Maverick is the
-   default; select a free model if you do not want a paid request.
+4. Tap **Settings**, choose **Model access → Free only**, choose **OpenRouter**,
+   paste your key, and press **Save**. The key is kept in memory for this tab
+   only. The default is the free vision model
+   `nvidia/nemotron-3.5-super-vl:free`; paid Meta models stay hidden unless you
+   enable paid access.
 5. Tap **Allow cloud for this session**.
 6. Frame a board in landscape, tap **Capture**, type a question, then **Send**.
 7. Check the **Provider request log** to see the exact endpoint and model used.

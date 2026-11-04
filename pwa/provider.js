@@ -2,43 +2,52 @@
 //
 // Browser CORS was checked with real preflight requests from this GitHub Pages
 // origin (2026-11-04):
-//   OpenRouter -> access-control-allow-origin: *   allowed, real image verified
-//   Groq       -> access-control-allow-origin: *   allowed, text verified
-//   NVIDIA NIM -> no allow-origin header           blocked, not offered here
-//   BlockRun   -> no allow-origin header           blocked, not offered here
+//   OpenRouter -> access-control-allow-origin: *   allowed
+//   Groq       -> access-control-allow-origin: *   allowed
+//   NVIDIA NIM -> no allow-origin header           blocked, desktop-only
+//   Cloudflare -> OPTIONS 405, no allow-origin     blocked, desktop-only
+//   BlockRun   -> no allow-origin header           blocked, desktop-only
 //
-// A static GitHub Pages app cannot hide a key or proxy a request. Only hosts
-// that a browser can actually read are offered. NVIDIA NIM stays in the desktop
-// app, where the local server makes the request. BlockRun is not offered
-// anywhere: the supplied key returned HTTP 402 and the host has no CORS.
+// A static GitHub Pages app cannot hide a key or proxy a request. Desktop-only
+// hosts stay visible with their endpoint and CORS reason, and are refused before
+// any network call.
 //
-// Nothing here invents a fallback: if the chosen provider or model cannot do
-// what was asked, the request fails with an explicit message.
+// Free models are the default. Paid model names stay hidden until the user
+// explicitly enables paid access; a known paid model is refused before the
+// network call when free mode is selected. Nothing here invents a fallback: if
+// the chosen provider or model cannot do what was asked, the request fails with
+// an explicit message.
 
 export const PROVIDERS = {
   openrouter: {
     id: 'openrouter',
-    label: 'OpenRouter — Meta Llama 4 (default)',
+    label: 'OpenRouter — free vision / paid Meta',
     endpoint: 'https://openrouter.ai/api/v1/chat/completions',
     host: 'openrouter.ai',
-    defaultModel: 'meta-llama/llama-4-maverick',
+    // Free by default so a first request does not bill the user. Paid Meta
+    // models are selectable only after paid access is enabled.
+    defaultModel: 'nvidia/nemotron-3.5-super-vl:free',
+    paidDefaultModel: 'meta-llama/llama-4-maverick',
     browserCors: 'verified-allowed',
     vision: 'verified',
     consent: false,
     retention: 'OpenRouter routes each request to the upstream model provider. Check that model page for its data policy; free does not automatically mean private.',
-    note: 'Meta-first catalogue. The default is Meta Llama 4 Maverick, a paid vision model with its price shown; Scout and Meta text models are also listed. Free NVIDIA/Dots vision models remain selectable if you want a no-cost request. Direct browser CORS and real image requests were verified on 2026-11-04.',
+    note: 'Free vision models are the default, so a first request does not bill you. Paid Meta Llama 4 Maverick and Scout are hidden until you enable paid access. Maverick is genuinely multimodal, but it is NOT free: $0.1875/M input and $0.6525/M output, and a small canary cost $0.0000219. Enable paid access only if you have billing set up on OpenRouter.',
   },
   groq: {
     id: 'groq',
-    label: 'Groq — Meta Llama text (account dependent)',
+    label: 'Groq — account-dependent vision/text',
     endpoint: 'https://api.groq.com/openai/v1/chat/completions',
     host: 'api.groq.com',
-    defaultModel: 'meta-llama/llama-3.3-70b-versatile',
+    // No automatic default. Groq access and vision support vary by account, so
+    // the model is chosen explicitly and must pass Test before it is trusted.
+    defaultModel: '',
+    previewDefaultModel: 'meta-models/muse-spark-open',
     browserCors: 'verified-allowed',
-    vision: 'none',
+    vision: 'conditional',
     consent: false,
-    retention: 'Groq API terms apply; text prompts are sent to Groq for this request.',
-    note: 'Meta Llama 3.3 70B Versatile is listed first because Meta models are the priority. The supplied restricted Groq account on 2026-11-04 exposed only Prompt Guard 2 classifiers among Meta models, so this model may return 403/404 on that account; use Test key. GPT-OSS/Qwen remain labelled non-Meta text fallbacks. Groq has no vision model here, so images are refused before any network call.',
+    retention: 'Groq API terms apply; prompts are sent to Groq for this request.',
+    note: 'No default: Groq access and vision capability depend on your account. Llama 3.3 70B Versatile is Enterprise-only, was retired for Free and Developer users on 2026-08-16, and is text-only, so it is never used for images. The documented vision candidates are Meta Muse Spark Open (limited preview) and Qwen 3.8 27B; neither is verified here. Enable preview access, choose a candidate, paste your key, and press Test before relying on it.',
   },
   'nvidia-nim': {
     id: 'nvidia-nim',
@@ -51,7 +60,7 @@ export const PROVIDERS = {
     consent: false,
     unavailableInBrowser: true,
     retention: 'NVIDIA account terms apply. Requests are made by the desktop app server, not by the phone browser.',
-    note: 'Meta Muse Glimmer 30B and Llama 3.2 Vision are hosted here. A real image request from the desktop path returned 200 and named a red circle and blue rectangle on 2026-11-04. The host sends no Access-Control-Allow-Origin, so a GitHub Pages browser cannot read the response. Use the PC app or your own relay.',
+    note: 'Meta Muse Glimmer 30B and Llama 3.2 Vision are hosted here. A real synthetic image request from the desktop path returned 200 and named a red circle and blue rectangle on 2026-11-04. The host sends no Access-Control-Allow-Origin, so a GitHub Pages browser cannot read the response. Use the PC app or your own relay.',
     blockedMessage: 'NVIDIA NIM cannot be called from the phone browser: https://integrate.api.nvidia.com returns no Access-Control-Allow-Origin, so the browser blocks the response. Use the desktop app (server-side request) or a user-owned relay. Endpoint: https://integrate.api.nvidia.com/v1/chat/completions.',
   },
   'cloudflare-workers-ai': {
@@ -73,13 +82,14 @@ export const PROVIDERS = {
     label: 'BlockRun — paid model marketplace',
     endpoint: 'https://api.blockrun.ai/v1/chat/completions',
     host: 'api.blockrun.ai',
-    defaultModel: 'meta-llama/llama-4-maverick',
+    defaultModel: '',
+    paidDefaultModel: 'meta-llama/llama-4-maverick',
     browserCors: 'blocked',
     vision: 'unverified',
     consent: true,
     unavailableInBrowser: true,
     retention: 'BlockRun is a paid x402 marketplace. Check its terms and your wallet/payment configuration before sending anything.',
-    note: 'BlockRun listed 115 models on 2026-11-04, including Meta models, but the supplied key returned HTTP 402 "Payment verification failed" and the host sends no Access-Control-Allow-Origin. It is paid and currently unusable with that key. The endpoint and reason are shown instead of hiding the provider.',
+    note: 'BlockRun listed 115 models on 2026-11-04, including Meta models, but the supplied key returned HTTP 402 "Payment verification failed" and the host sends no Access-Control-Allow-Origin. It is paid and currently unusable with that key. Paid models are hidden until paid access is enabled. The endpoint and reason are shown instead of hiding the provider.',
     blockedMessage: 'BlockRun cannot be called from the phone browser: https://api.blockrun.ai sends no Access-Control-Allow-Origin, and the supplied key returned HTTP 402 "Payment verification failed". It needs payment credit and desktop/server-side requests. Endpoint: https://api.blockrun.ai/v1/chat/completions.',
   },
   modal: {
@@ -87,26 +97,27 @@ export const PROVIDERS = {
     label: 'Modal — your deployed endpoint (paid, untested)',
     endpoint: '',
     host: '',
-    defaultModel: 'meta-llama/Llama-4-Maverick-17B-128E-Instruct',
+    defaultModel: '',
+    paidDefaultModel: 'meta-llama/Llama-4-Maverick-17B-128E-Instruct',
     browserCors: 'unknown',
     vision: 'unverified',
     consent: true,
     requiresBaseUrl: true,
     retention: 'Your Modal deployment decides retention. Modal is a paid compute platform; requests bill your Modal account.',
-    note: 'Modal does not expose one universal chat endpoint. Paste the HTTPS URL of the OpenAI-compatible endpoint you deployed (usually https://<workspace>--<app>-<function>.modal.run). This path was NOT tested in the 2026-11-04 audit. It is paid and the model must be one your deployment serves; CORS is whatever your endpoint allows.',
+    note: 'Modal does not expose one universal chat endpoint. Paste the HTTPS URL of the OpenAI-compatible endpoint you deployed (usually https://<workspace>--<app>--<function>.modal.run). This path was NOT tested in the 2026-11-04 audit. It is paid and the model must be one your deployment serves; CORS is whatever your endpoint allows. Paid models are hidden until paid access is enabled.',
   },
   custom: {
     id: 'custom',
     label: 'Custom OpenAI-compatible relay',
     endpoint: '',
     host: '',
-    defaultModel: 'meta-llama/llama-4-maverick',
+    defaultModel: '',
     browserCors: 'unknown',
     vision: 'unknown',
     consent: false,
     requiresBaseUrl: true,
     retention: 'Your relay decides retention and training. Do not point this at a service you do not trust.',
-    note: 'Use your own HTTPS relay when a provider blocks browser CORS (NVIDIA NIM, Cloudflare Workers AI, BlockRun). The relay must forward to the model you trust and return Access-Control-Allow-Origin for this Pages origin. This app never operates a relay for you.',
+    note: 'Use your own HTTPS relay when a provider blocks browser CORS (NVIDIA NIM, Cloudflare Workers AI, BlockRun). The relay must forward to the model you trust and return Access-Control-Allow-Origin for this Pages origin. Type the exact model id your relay serves; it is sent verbatim. This app never operates a relay for you.',
   },
 };
 
@@ -127,22 +138,58 @@ export const PROVIDER_HOSTS = Object.values(PROVIDERS)
   .filter(Boolean);
 
 // OpenRouter catalogue checked live on 2026-11-04 (GET /api/v1/models) and,
-// where marked verified, with a real synthetic image request.
-// Free does not mean private; the model page's data policy still applies.
+// where marked verified, with a real synthetic image request. Free models are
+// listed first; paid Meta models carry their exact prices and stay hidden until
+// the user enables paid access. Free does not mean private.
 export const OPENROUTER_MODELS = {
+  'nvidia/nemotron-3.5-super-vl:free': {
+    label: 'NVIDIA Nemotron 3.5 Super VL — free, vision (non-Meta fallback)',
+    pricing: 'free',
+    tier: 'free',
+    modalities: ['text', 'image', 'video'],
+    vision: true,
+    verified: true,
+    jsonMode: true,
+    reasoning: true,
+    note: 'Verified with a synthetic image: correctly named a red circle and blue rectangle. Reasoning uses output tokens, so allow enough max_tokens. Non-Meta fallback.',
+  },
+  'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free': {
+    label: 'NVIDIA Nemotron 3 Nano Omni — free, vision (non-Meta fallback)',
+    pricing: 'free',
+    tier: 'free',
+    modalities: ['text', 'image', 'video', 'audio'],
+    vision: true,
+    verified: true,
+    jsonMode: false,
+    reasoning: true,
+    note: 'Verified with a synthetic image in this audit. Non-Meta fallback.',
+  },
+  'dots-studio/dots-3-note-preview:free': {
+    label: 'Dots 3 Note Preview — free, vision (non-Meta fallback)',
+    pricing: 'free',
+    tier: 'free',
+    modalities: ['text', 'image'],
+    vision: true,
+    verified: true,
+    jsonMode: true,
+    reasoning: true,
+    note: 'Verified with a synthetic image in this audit. Non-Meta fallback.',
+  },
   'meta-llama/llama-4-maverick': {
     label: 'Meta Llama 4 Maverick — vision, paid per token',
     pricing: '$0.1875/M input, $0.6525/M output',
+    tier: 'paid',
     modalities: ['text', 'image'],
     vision: true,
     verified: true,
     jsonMode: true,
     reasoning: false,
-    note: 'Paid Meta model. Verified with a real image; a small canary cost $0.0000219.',
+    note: 'Genuinely multimodal and verified with a synthetic image, but it is NOT free: $0.1875/M input and $0.6525/M output; a small canary cost $0.0000219. Enable paid access before selecting it.',
   },
   'meta-llama/llama-4-scout': {
     label: 'Meta Llama 4 Scout — vision, paid per token',
     pricing: '$0.10/M input, $0.30/M output',
+    tier: 'paid',
     modalities: ['text', 'image'],
     vision: true,
     verified: false,
@@ -153,6 +200,7 @@ export const OPENROUTER_MODELS = {
   'meta-llama/llama-3.3-70b-instruct': {
     label: 'Meta Llama 3.3 70B Instruct — text only, paid',
     pricing: '$0.10/M input, $0.32/M output',
+    tier: 'paid',
     modalities: ['text'],
     vision: false,
     verified: false,
@@ -161,88 +209,79 @@ export const OPENROUTER_MODELS = {
   'meta-llama/llama-3.1-8b-instruct': {
     label: 'Meta Llama 3.1 8B Instruct — text only, paid',
     pricing: '$0.05/M input, $0.08/M output',
+    tier: 'paid',
     modalities: ['text'],
     vision: false,
     verified: false,
     note: 'Text-only. The app refuses to attach an image to this model.',
   },
-  'nvidia/nemotron-3.5-super-vl:free': {
-    label: 'NVIDIA Nemotron 3.5 Super VL — free, vision (non-Meta fallback)',
-    pricing: 'free',
-    modalities: ['text', 'image', 'video'],
-    vision: true,
-    verified: true,
-    jsonMode: true,
-    reasoning: true,
-    note: 'Verified with a real image: correctly named a red circle and blue rectangle. Reasoning uses output tokens, so allow enough max_tokens.',
-  },
-  'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free': {
-    label: 'NVIDIA Nemotron 3 Nano Omni — free, vision (non-Meta fallback)',
-    pricing: 'free',
-    modalities: ['text', 'image', 'video', 'audio'],
-    vision: true,
-    verified: true,
-    jsonMode: false,
-    reasoning: true,
-    note: 'Verified with a real image in this audit.',
-  },
-  'dots-studio/dots-3-note-preview:free': {
-    label: 'Dots 3 Note Preview — free, vision (non-Meta fallback)',
-    pricing: 'free',
-    modalities: ['text', 'image'],
-    vision: true,
-    verified: true,
-    jsonMode: true,
-    reasoning: true,
-    note: 'Verified with a real image in this audit.',
-  },
 };
 
-// Groq account models checked live on 2026-11-04. Whisper entries are audio
-// transcription and Prompt Guard entries are classifiers, so neither is listed
-// as a chat model. gpt-oss/qwen/allam are not Meta models; they are offered only
-// for text chat and are labelled as such.
+// Groq account models. Access varies by account, so nothing here is a default
+// and nothing is verified on the supplied account. Llama 3.3 70B Versatile is
+// Enterprise-only, retired for Free/Developer on 2026-08-16, and text-only.
+// Documented vision candidates are Meta Muse Spark Open (limited preview) and
+// Qwen 3.8 27B (non-Meta). Both are unverified here; Test before relying on them.
 export const GROQ_TEXT_MODELS = {
-  'meta-llama/llama-3.3-70b-versatile': {
-    label: 'Meta Llama 3.3 70B Versatile — text, Meta',
-    pricing: 'Groq account limits apply',
-    modalities: ['text'],
-    vision: false,
+  'meta-models/muse-spark-open': {
+    label: 'Meta Muse Spark Open — vision, limited preview',
+    pricing: 'Limited preview; account access required',
+    tier: 'preview',
+    modalities: ['text', 'image'],
+    vision: true,
     verified: false,
     meta: true,
-    note: 'Preferred Meta text model. It was not listed on the supplied restricted Groq account on 2026-11-04; Test key will show whether your account has it. It is text-only; images are refused.',
+    note: 'Documented Groq vision candidate on a limited preview. It is NOT verified on the supplied account; Test key will show whether your account has it. Enable preview access before selecting it.',
+  },
+  'qwen/qwen3.8-27b': {
+    label: 'Qwen 3.8 27B — vision candidate, limited preview (non-Meta)',
+    pricing: 'Limited preview; account access required',
+    tier: 'preview',
+    modalities: ['text', 'image'],
+    vision: true,
+    verified: false,
+    meta: false,
+    note: 'Documented Groq vision candidate per the current provider docs, but not image-tested here. It is not a Meta model. Enable preview access and Test before relying on it.',
   },
   'openai/gpt-oss-120b': {
     label: 'OpenAI GPT-OSS 120B — text, verified (non-Meta)',
     pricing: 'Groq account limits apply',
+    tier: 'free',
     modalities: ['text'],
     vision: false,
     verified: true,
-    note: 'Verified with a text-only request. Not a Meta model; kept as a fallback when a Meta model is unavailable on the account.',
+    meta: false,
+    note: 'Verified with a text-only request on 2026-11-04. Not a Meta model; kept as a labelled text-only fallback.',
   },
   'openai/gpt-oss-20b': {
     label: 'OpenAI GPT-OSS 20B — text (non-Meta)',
     pricing: 'Groq account limits apply',
+    tier: 'free',
     modalities: ['text'],
     vision: false,
     verified: false,
-    note: 'Not a Meta model.',
-  },
-  'qwen/qwen3.8-27b': {
-    label: 'Qwen 3.8 27B — text, verified',
-    pricing: 'Groq account limits apply',
-    modalities: ['text'],
-    vision: false,
-    verified: true,
-    note: 'Verified with a text-only request. Not a Meta model.',
+    meta: false,
+    note: 'Not a Meta model. Text only.',
   },
   'allam-2-7b': {
     label: 'ALLaM 2 7B — text',
     pricing: 'Groq account limits apply',
+    tier: 'free',
     modalities: ['text'],
     vision: false,
     verified: false,
-    note: 'Not a Meta model.',
+    meta: false,
+    note: 'Not a Meta model. Text only.',
+  },
+  'meta-llama/llama-3.3-70b-versatile': {
+    label: 'Meta Llama 3.3 70B Versatile — Enterprise only, text',
+    pricing: 'Enterprise plan only',
+    tier: 'enterprise',
+    modalities: ['text'],
+    vision: false,
+    verified: false,
+    meta: true,
+    note: 'Enterprise-only model, retired for Free and Developer users on 2026-08-16. It is text-only and is never used for images or as the app default.',
   },
 };
 
@@ -259,6 +298,7 @@ export const NVIDIA_MODELS = {
   'meta/muse-glimmer-30b': {
     label: 'Meta Muse Glimmer 30B — vision, verified on desktop',
     pricing: 'NVIDIA account limits apply',
+    tier: 'free',
     modalities: ['text', 'image'],
     vision: true,
     verified: true,
@@ -267,6 +307,7 @@ export const NVIDIA_MODELS = {
   'meta/llama-3.2-11b-vision-instruct': {
     label: 'Meta Llama 3.2 Vision 11B — vision, desktop',
     pricing: 'NVIDIA account limits apply',
+    tier: 'free',
     modalities: ['text', 'image'],
     vision: true,
     verified: false,
@@ -275,6 +316,7 @@ export const NVIDIA_MODELS = {
   'meta/llama-3.2-90b-vision-instruct': {
     label: 'Meta Llama 3.2 Vision 90B — vision, desktop',
     pricing: 'NVIDIA account limits apply',
+    tier: 'free',
     modalities: ['text', 'image'],
     vision: true,
     verified: false,
@@ -286,6 +328,7 @@ export const CLOUDFLARE_MODELS = {
   '@cf/meta/llama-3.2-11b-vision-instruct': {
     label: 'Meta Llama 3.2 Vision 11B — vision, verified on desktop',
     pricing: 'Cloudflare Workers AI pricing applies',
+    tier: 'free',
     modalities: ['text', 'image'],
     vision: true,
     verified: true,
@@ -294,6 +337,7 @@ export const CLOUDFLARE_MODELS = {
   '@cf/meta/llama-4-scout-17b-16e-instruct': {
     label: 'Meta Llama 4 Scout 17B — vision, desktop',
     pricing: 'Cloudflare Workers AI pricing applies',
+    tier: 'free',
     modalities: ['text', 'image'],
     vision: true,
     verified: false,
@@ -302,6 +346,7 @@ export const CLOUDFLARE_MODELS = {
   '@cf/meta/llama-3.3-70b-instruct-fp8-fast': {
     label: 'Meta Llama 3.3 70B Instruct — text, desktop',
     pricing: 'Cloudflare Workers AI pricing applies',
+    tier: 'free',
     modalities: ['text'],
     vision: false,
     verified: false,
@@ -313,6 +358,7 @@ export const BLOCKRUN_MODELS = {
   'meta-llama/llama-4-maverick': {
     label: 'Meta Llama 4 Maverick — vision, paid',
     pricing: 'Paid x402 marketplace; price shown by BlockRun',
+    tier: 'paid',
     modalities: ['text', 'image'],
     vision: true,
     verified: false,
@@ -321,6 +367,7 @@ export const BLOCKRUN_MODELS = {
   'meta-llama/llama-4-scout': {
     label: 'Meta Llama 4 Scout — vision, paid',
     pricing: 'Paid x402 marketplace; price shown by BlockRun',
+    tier: 'paid',
     modalities: ['text', 'image'],
     vision: true,
     verified: false,
@@ -329,6 +376,7 @@ export const BLOCKRUN_MODELS = {
   'meta-llama/llama-3.3-70b-instruct': {
     label: 'Meta Llama 3.3 70B Instruct — text, paid',
     pricing: 'Paid x402 marketplace; price shown by BlockRun',
+    tier: 'paid',
     modalities: ['text'],
     vision: false,
     verified: false,
@@ -340,6 +388,7 @@ export const MODAL_MODELS = {
   'meta-llama/Llama-4-Maverick-17B-128E-Instruct': {
     label: 'Meta Llama 4 Maverick — vision, your Modal deployment',
     pricing: 'Paid Modal compute; your deployment price',
+    tier: 'paid',
     modalities: ['text', 'image'],
     vision: true,
     verified: false,
@@ -348,6 +397,7 @@ export const MODAL_MODELS = {
   'meta-llama/Llama-3.3-70B-Instruct': {
     label: 'Meta Llama 3.3 70B Instruct — text, your Modal deployment',
     pricing: 'Paid Modal compute; your deployment price',
+    tier: 'paid',
     modalities: ['text'],
     vision: false,
     verified: false,
@@ -380,10 +430,48 @@ function endpointFor(providerId, baseUrl) {
   return `${clean}/v1/chat/completions`;
 }
 
+export const ACCESS_TIERS = ['free', 'preview', 'paid'];
+
+const TIER_RANK = { free: 0, preview: 1, paid: 2, enterprise: 2 };
+
+/** The default model for a provider at the selected access tier. */
+export function defaultModelFor(providerId, tier = 'free') {
+  const provider = PROVIDERS[providerId];
+  if (!provider) return '';
+  if (tier === 'paid' && provider.paidDefaultModel) return provider.paidDefaultModel;
+  if ((tier === 'preview' || tier === 'paid') && provider.previewDefaultModel) {
+    return provider.previewDefaultModel;
+  }
+  return provider.defaultModel || '';
+}
+
+/** Catalogue entries visible at the selected access tier. */
+export function modelsFor(providerId, tier = 'free') {
+  const catalogue = PROVIDER_MODELS[providerId];
+  if (!catalogue) return {};
+  const limit = TIER_RANK[tier] ?? 0;
+  return Object.fromEntries(
+    Object.entries(catalogue).filter(([, info]) => (TIER_RANK[info.tier] ?? 2) <= limit),
+  );
+}
+
+export function modelTier(providerId, model) {
+  const info = PROVIDER_MODELS[providerId]?.[String(model || '').trim()];
+  return info?.tier || null;
+}
+
+/** Known paid/preview models are refused while free mode is selected. */
+export function modelAllowedAtTier(providerId, model, tier = 'free') {
+  const rank = TIER_RANK[modelTier(providerId, model)];
+  if (rank === undefined) return true; // unknown typed id: the provider decides
+  return rank <= (TIER_RANK[tier] ?? 0);
+}
+
 export function modelFor(providerId, override) {
   const chosen = String(override || '').trim();
   if (chosen) return chosen;
-  return PROVIDERS[providerId]?.defaultModel || PROVIDERS.openrouter.defaultModel;
+  // Never fall back to another provider's model.
+  return defaultModelFor(providerId, 'free');
 }
 
 export function modelInfo(providerId, model) {
@@ -391,14 +479,18 @@ export function modelInfo(providerId, model) {
   return PROVIDER_MODELS[providerId]?.[id] || null;
 }
 
-/** Whether this provider can accept an image at all. Groq has no vision model. */
+/** Whether this provider has any catalogued model that can accept an image. */
 export function providerSupportsImages(providerId) {
-  return providerId !== 'groq';
+  const catalogue = PROVIDER_MODELS[providerId];
+  if (catalogue) return Object.values(catalogue).some((info) => info.vision === true);
+  return providerId === 'custom'; // a user relay decides for itself
 }
 
 /** Known text-only models are refused before a request is made. */
 export function modelAcceptsImages(providerId, model) {
-  const info = modelInfo(providerId, model);
+  const chosen = modelFor(providerId, model);
+  if (!chosen) return false;
+  const info = modelInfo(providerId, chosen);
   if (info) return Boolean(info.vision);
   return providerSupportsImages(providerId);
 }
@@ -485,6 +577,7 @@ export async function callModel({
   prompt,
   imageDataUrl = null,
   baseUrl = '',
+  accessTier = 'free',
   timeoutMs = 180000,
   expectJson = true,
   requestMode = '',
@@ -515,10 +608,22 @@ export async function callModel({
     endpoint,
     host,
     model: requestedModel,
+    modelTier: modelTier(providerId, requestedModel),
     mode,
     requestId,
     startedAt: new Date().toISOString(),
   };
+
+  if (!requestedModel) {
+    return fail('NO_MODEL', 'Choose or type a model id in Settings. No model is sent and no request is made.', meta);
+  }
+  if (!modelAllowedAtTier(providerId, requestedModel, accessTier)) {
+    return fail(
+      'MODEL_ACCESS_LOCKED',
+      `${requestedModel} is a ${modelTier(providerId, requestedModel)} model and paid access is off. Enable preview/paid access in Settings only if you have that account, or choose a free model.`,
+      meta,
+    );
+  }
 
   if (!key) return fail('NO_KEY', 'Add a provider key in Settings first.', meta);
 
@@ -532,14 +637,14 @@ export async function callModel({
   if (imageDataUrl && !providerSupportsImages(providerId)) {
     return fail(
       'VISION_UNSUPPORTED',
-      `${provider.label} has no vision model on this account. Its Meta entries are Prompt Guard classifiers, not visual models. Switch to OpenRouter, NVIDIA NIM (desktop) or Cloudflare (desktop), or use Chat for text.`,
+      `${provider.label} has no catalogued vision model. Switch to a vision provider or use Chat for text.`,
       { ...meta, imageAttached: false },
     );
   }
   if (imageDataUrl && !modelAcceptsImages(providerId, requestedModel)) {
     return fail(
       'MODEL_TEXT_ONLY',
-      `The selected model (${requestedModel}) is text-only. Choose a vision model such as ${PROVIDERS.openrouter.defaultModel}.`,
+      `The selected model (${requestedModel}) is text-only or not a vision model. Choose a vision model.`,
       { ...meta, imageAttached: false },
     );
   }
@@ -640,12 +745,13 @@ export async function callModel({
 }
 
 /** A cheap key/model check. Sends text only — never a photo. */
-export async function testProvider({ providerId, apiKey, model, baseUrl, fetchImpl }) {
+export async function testProvider({ providerId, apiKey, model, baseUrl, accessTier = 'free', fetchImpl }) {
   return callModel({
     providerId,
     apiKey,
     model,
     baseUrl,
+    accessTier,
     fetchImpl,
     requestMode: 'test',
     prompt: 'Reply with exactly one JSON object: {"ok":true}',
