@@ -2,7 +2,7 @@
 
 This is the deliverable note for the 10-hour MVP refocus.
 
-**Status in one line:** the full local workflow (project → align → still capture → local reference lookup → AI analysis request → validated box → evidence panel → spoken step) is implemented and verified on Windows with a configured-but-offline provider gate. Live Meta vision reasoning was **not** exercised, because outbound network access to a provider was not approved in this environment.
+**Status in one line:** the full local workflow (project → align → still capture → local reference lookup → AI analysis request → validated box → evidence panel → written step) is implemented and verified on Windows with a configured-but-offline provider gate. Live Meta vision reasoning was **not** exercised, because outbound network access to a provider was not approved in this environment.
 
 ---
 
@@ -10,7 +10,7 @@ This is the deliverable note for the 10-hour MVP refocus.
 
 IntentLens is now a beginner electronics assistant rather than a real-time tracking demo.
 
-A beginner describes what they want to build. IntentLens turns that sentence into a small structured project (goal, parts, safety notes, ordered steps). When the beginner is unsure about a part or a connection, they align the board, take **one still capture**, and the app asks a vision model to identify the part **in the context of that project**. The answer comes back as a boxed region on that specific capture, an evidence panel showing the same still with the region outlined, a spoken instruction, and a next step.
+A beginner describes what they want to build. IntentLens turns that sentence into a small structured project (goal, parts, safety notes, ordered steps). When the beginner is unsure about a part or a connection, they align the board, take **one still capture**, and the app asks a vision model to identify the part **in the context of that project**. The answer comes back as a boxed region on that specific capture, an evidence panel showing the same still with the region outlined, a written instruction, and a next step.
 
 Nothing is tracked between frames. There is no continuous hand, person, or object tracking in this workflow.
 
@@ -18,7 +18,7 @@ Nothing is tracked between frames. There is no continuous hand, person, or objec
 
 Kept and extended:
 
-- Camera adapter, 64×64 product grid, provider router, SQLite store, TTS, desktop shell and installer.
+- Camera adapter, 64×64 product grid, provider router, SQLite store, desktop shell and installer.
 
 Frozen for this release (code present, UI hidden, runtime disabled):
 
@@ -80,7 +80,7 @@ project doc updated: object record + capturedImages + lastAnalysis + lastAnswer
 evidence panel (original + overlay + validated corners + honest status)
       │
       ▼
-speech (TTS) ──► step instruction ──► "Next step"
+text instruction ──► step instruction ──► "Next step"
 ```
 
 ### 3.2 Client modules (new)
@@ -91,7 +91,7 @@ speech (TTS) ──► step instruction ──► "Next step"
 | `componentResult.js` | Strict 0–1000 → 0–1 conversion, four-corner consistency, center-in-polygon, derived grid cell, client-side validation. No clamping. |
 | `captureOverlay.js` | Pure `buildGridOverlaySvg()` plus browser `drawGridOnCanvas()`; 1-based row/column labels, origin top-left. |
 | `evidencePanel.js` | Builds the evidence-card model: capture, object, `analysisState`, corners, meta. |
-| `assistantActions.js` | Repeat (reuse stored answer, zero requests), Explain (exactly one request), `safeSpeak` that keeps text when TTS fails. |
+| `assistantActions.js` | Repeat (reuse stored answer, zero requests), Explain (exactly one request); both are text-only. |
 | `localReferenceLookup.js` | Turns k-NN output into explicitly unverified candidates; never a probability. |
 | `mobileSupport.js` | Detects secure context / camera capability and explains the LAN-HTTP limitation without weakening auth. |
 
@@ -149,7 +149,6 @@ All `/api/*` routes except `/api/health` require the session token header `x-int
 - Invalid coordinates → `rejected`/`invalid`, no box, no invented component.
 - Local k-NN → "unverified candidate", distance shown as distance, never a percentage.
 - Evidence statuses are literal: `Captured — waiting for analysis`, `Captured — AI unavailable, saved locally`, `Captured — AI result rejected, no box drawn`, `Captured — coordinates failed validation`, `AI candidate — confirm or correct`, `Confirmed by you`.
-- TTS failure keeps the text on screen.
 
 ## 4. Files changed
 
@@ -169,7 +168,7 @@ Modified:
 - `server/index.js` — new routes wired; `/api/analyze` kept intact.
 - `server/store.js` — `project_docs`, `captures`, immutable file writes, project/capture helpers, cleanup on delete.
 - `server/services/nimProvider.js`, `cloudflareProvider.js`, `groqProvider.js` — optional `schema` and multi-image `imageDataUrls`, backward compatible with `GROUNDING_SCHEMA` / `imageDataUrl`.
-- `server/config.js`, `server/lib/env.js`, `server/routes/providers.js`, `server/routes/transcribe.js`, `electron/main.js` — strict Meta-only runtime, provider credential handling and startup diagnostics in the same release window.
+- `server/config.js`, `server/lib/env.js`, `server/routes/providers.js`, `electron/main.js` — strict Meta-only runtime, provider credential handling and startup diagnostics in the same release window.
 - `electron/package.json` — `extraResources` now includes the new client modules and the frozen `datasets/processed/feature_scaler.json`.
 - `server.auth.test.js` — replaced fixed 2 s startup sleeps with health-readiness polling and guaranteed server shutdown (fixes parallel-run flakiness and hangs).
 
@@ -210,7 +209,7 @@ Behaviour that is implemented but provider-dependent:
 ## 7. Tests and evidence
 
 - **Source suite:** 25 test files via `node scripts/run-source-tests.mjs` (excludes build output). Latest run: **201 tests, 0 failures**.
-  - Includes coordinate rejection cases (out-of-range, fewer than four corners, center outside outline, bow-tie order, model self-confirmation), overlay determinism, Repeat/Explain request counts, TTS-failure text retention, capture immutability, and project-resume persistence.
+  - Includes coordinate rejection cases (out-of-range, fewer than four corners, center outside outline, bow-tie order, model self-confirmation), overlay determinism, Repeat/Explain request counts, capture immutability, and project-resume persistence.
 - **HTTP smoke:** `node scripts/smoke-mvp.mjs` → 14/14, run against both the source tree (8011) and packaged resources (8012).
 - **UI smoke:** scripted browser session described in section 5.
 - **Packaged launch:** `electron/release/win-unpacked/IntentLens.exe` starts, serves the API, and renders the new UI.
@@ -267,7 +266,7 @@ Then open `http://localhost:8011`.
 3. Press **I'm aligned**, then **Capture component**.
    Expected status: `Captured — waiting for analysis`, then `Captured — AI unavailable, saved locally`. The evidence panel shows the original and the grid overlay. If the local lookup returns anything, it appears as an **unverified candidate** with a raw distance.
 4. Press **Next step**.
-   Expected: the step advances and the workspace progress bar moves; the spoken instruction matches the new step.
+   Expected: the step advances and the workspace progress bar moves; the written instruction matches the new step.
 5. Reload the page. Open **Project → Resume last project**.
    Expected: the same project, the real capture redrawn on the canvas, and the advanced step — all restored from SQLite.
 6. Press **Repeat** with no stored answer.
@@ -281,7 +280,7 @@ Same steps 1–3, then:
 5. Press **Repeat**.
    Expected: the same stored answer is shown; the server log shows **no** new `/api/component/analyze` or `/api/explain` request.
 6. Press **Explain**.
-   Expected: exactly one `POST /api/explain`; the expanded text is spoken. If TTS is unavailable, the text stays on screen.
+   Expected: exactly one `POST /api/explain`; the expanded text appears on screen.
 7. Press **Confirm** (or **Correct name**, type `LDR`, **Save**).
    Expected: status becomes `Confirmed by you`; the object is tied to this capture only.
 8. Press **Next step**, then reload and resume as in 11.1.
@@ -325,11 +324,7 @@ node scripts\smoke-mvp.mjs
 - When `ALLOW_OUTBOUND_NETWORK=false`, setup offers a confirm-gated
   **Allow cloud requests for this session** button. It never persists; a restart
   returns to the configured default.
-- The microphone starts automatically by default (persistent `Mic on start`
-  toggle). Browsers that refuse a gestureless start show "Mic idle — tap the mic
-  to speak" instead of looping.
-- TTS no longer requires a `localService` voice (Android Chrome exposes Google
-  voices) and there is a **Test voice** button. A TTS failure still keeps text.
+- Desktop and PWA commands and answers are text-only.
 - Cloudflare models the user listed are in the catalog (Llama 3.1 8B/FP8,
   3.2 1B/3B/11B/90B vision, 3.3 70B FP8, Llama Guard 3, Llama 4 Scout).
   The supplied Cloudflare token was invalid (HTTP 401), so none is verified yet.

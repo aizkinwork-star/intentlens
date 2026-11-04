@@ -259,29 +259,6 @@ export function isAllowedOutboundHost(url) {
   }
 }
 
-/**
- * Local speech-to-text only. The transcription endpoint is a process on this
- * machine (whisper.cpp, faster-whisper, ...), so a non-loopback STT_URL is
- * rejected instead of silently shipping audio to a remote host.
- */
-export function isLoopbackHost(hostname) {
-  const host = String(hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
-  return host === 'localhost'
-    || host === '127.0.0.1'
-    || host === '::1'
-    || host === '0:0:0:0:0:0:0:1';
-}
-
-export function isLoopbackUrl(value) {
-  try {
-    const u = new URL(String(value || '').trim());
-    if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
-    return isLoopbackHost(u.hostname);
-  } catch {
-    return false;
-  }
-}
-
 export function isMetaModel(modelId) {
   return Object.values(META_MODEL_CATALOG).some((provider) =>
     Object.prototype.hasOwnProperty.call(provider.models, modelId));
@@ -319,7 +296,7 @@ export const localModelConfig = LOCAL_MODEL_DEFAULTS;
 export const MAX_JSON_BODY_BYTES = 12 * 1024 * 1024;
 export const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
-// Vision-capable Meta hosts come first; Groq is text/voice only and last. Paid hosts only
+// Vision-capable Meta hosts come first; Groq is text-only and last. Paid hosts only
 // become eligible after the user explicitly enables paid access.
 const DEFAULT_PROVIDER_PRIORITY = 'openrouter,cloudflare-workers-ai,nvidia-nim,blockrun,modal,groq';
 
@@ -375,13 +352,6 @@ export const config = {
   // paid or account-gated, so a free-only tier left the app with no usable model.
   accessTier: normalizeTier(process.env.MODEL_ACCESS_TIER),
   allowOutboundNetwork: bool(process.env.ALLOW_OUTBOUND_NETWORK, true),
-  // Local speech-to-text. Empty unless STT_URL points at this machine.
-  sttUrl: isLoopbackUrl(process.env.STT_URL) ? String(process.env.STT_URL).trim() : '',
-  sttUrlRejected: Boolean(String(process.env.STT_URL || '').trim()) && !isLoopbackUrl(process.env.STT_URL),
-  sttModel: (process.env.STT_MODEL || 'whisper-1').trim(),
-  sttApiKey: (process.env.STT_API_KEY || '').trim(),
-  sttLanguage: (process.env.STT_LANGUAGE || 'en').trim(),
-  sttTimeoutMs: int(process.env.STT_TIMEOUT_MS, 60000),
   localSourceDir: process.env.LOCAL_SOURCE_DIR || './intentlens-data/sources',
   sam2Enabled: false,
   dinoV2Enabled: false,

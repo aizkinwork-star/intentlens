@@ -14,7 +14,6 @@ const lib = join(pwa, 'lib');
 const shared = [
   'grid.js',
   'componentResult.js',
-  'intentlens_tts.js',
 ];
 
 mkdirSync(lib, { recursive: true });

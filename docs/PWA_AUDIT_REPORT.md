@@ -96,7 +96,7 @@ this audit. Its encrypted credential file was not touched or deleted.
 | Projects | IndexedDB `intentlens-pwa` / `projects` | `pwa/store.js` |
 | Messages (vision + chat) | IndexedDB / `messages` index `projectId` | `addMessage`, `listMessages` |
 | Captured image blob + data URL | IndexedDB / `images` index `projectId` | `putImage`, `listImages` |
-| Settings (provider/model/grid/TTS/base URL) | IndexedDB / `settings` | `setSetting`, `allSettings` |
+| Settings (provider/model/grid/base URL) | IndexedDB / `settings` | `setSetting`, `allSettings` |
 | API key | JavaScript memory only | `state.apiKey` in `pwa/app.js` |
 | Provider request log | JavaScript memory only | `state.requestLog` in `pwa/app.js` |
 | Camera stream | RAM; tracks stopped on stop/hide/pagehide | `startCamera`, `stopCamera` |

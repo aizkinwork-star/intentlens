@@ -112,7 +112,6 @@ export class Store {
         id TEXT PRIMARY KEY,
         project_id TEXT NOT NULL,
         user_command TEXT NOT NULL,
-        transcript TEXT,
         answer_short TEXT NOT NULL,
         active_object_ids TEXT,
         source_frame_ids TEXT,
@@ -346,12 +345,12 @@ export class Store {
     const id = record.id || randomUUID();
     const ts = now();
     this.db.prepare(`
-      INSERT INTO tasks (id, project_id, user_command, transcript, answer_short,
+      INSERT INTO tasks (id, project_id, user_command, answer_short,
         active_object_ids, source_frame_ids, provider_used, fallback_occurred,
         citations, unresolved_items, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
-      id, record.projectId, record.userCommand, record.transcript || null, record.answerShort,
+      id, record.projectId, record.userCommand, record.answerShort,
       record.activeObjectIds ? JSON.stringify(record.activeObjectIds) : '[]',
       record.sourceFrameIds ? JSON.stringify(record.sourceFrameIds) : '[]',
       record.providerUsed || null, record.fallbackOccurred ? 1 : 0,
@@ -422,7 +421,6 @@ export class Store {
       id: row.id,
       projectId: row.project_id,
       userCommand: row.user_command,
-      transcript: row.transcript,
       answerShort: row.answer_short,
       activeObjectIds: row.active_object_ids ? JSON.parse(row.active_object_ids) : [],
       sourceFrameIds: row.source_frame_ids ? JSON.parse(row.source_frame_ids) : [],

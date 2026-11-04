@@ -9,7 +9,7 @@ import { join, resolve } from 'node:path';
  *   1. INTENTLENS_ENV_FILE (explicit)
  *   2. the current working directory (development)
  *   3. the per-user IntentLens config directory (the packaged desktop app has
- *      no writable project folder, so this is where desktop users put STT_URL)
+ *      no writable project folder, so this is where desktop users put their local .env configuration)
  * Earlier files win; real environment variables win over all of them.
  */
 export function envFileCandidates() {

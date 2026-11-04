@@ -127,7 +127,6 @@ window.OpticalFlowTrackerCtor = OpticalFlowTracker;
 window.BoardRegistrarCtor = BoardRegistrar;
 window.ComponentPresenceVerifierCtor = ComponentPresenceVerifier;
 import { initComponentDetector, detectComponents, getComponentDetectorMode } from './componentDetector.js';
-import { IntentLensTTS } from './intentlens_tts.js';
 import { buildGridOverlaySvg, drawGridOnCanvas } from './captureOverlay.js';
 import {
   createProjectFromIntent,
@@ -144,15 +143,6 @@ import { inspectMobileSupport, describeMobileSupport } from './mobileSupport.js'
 import { validateNormalizedComponentResult } from './componentResult.js';
 
 const $ = (id) => document.getElementById(id);
-
-// TTS state (§15 — voice output for hands-free hardware assistance)
-// Browser SpeechSynthesis is default; MMS-TTS is opt-in fallback only.
-// Speech completion never proves task completion — task state is separate.
-let ttsEnabled = false;
-const ttsStatusEl = $('ttsStatus');
-const ttsSpeakBtn = $('ttsSpeak');
-const ttsStopBtn = $('ttsStop');
-const ttsVoiceEl = $('ttsVoice');
 
 // Cloud provider diagnostics state (§6 — hamburger menu item 6)
 let localModelStatus = null;
@@ -171,14 +161,14 @@ trackCanvas.height = H;
 const trackCtx = trackCanvas.getContext('2d');
 const statusEl = $('status'), answerEl = $('answer'), metaEl = $('meta'), sourcesEl = $('sources'), input = $('command');
 const modeEl = $('mode');
-const submitBtn = $('submit'), cancelBtn = $('cancel'), micBtn = $('mic');
+const submitBtn = $('submit'), cancelBtn = $('cancel');
 const camBtn = $('cam'), liveBtn = $('live'), uploadBtn = $('upload'), clearBtn = $('clear'), fileIn = $('file');
 
 // Beginner workflow UI
 const wsEl = $('workspace'), wsTitle = $('wsTitle'), wsGoal = $('wsGoal'), wsStep = $('wsStep');
 const wsParts = $('wsParts'), wsSafety = $('wsSafety'), wsBar = $('wsBar'), wsStatus = $('wsStatus');
 const wsAlignBtn = $('wsAlign'), wsCaptureBtn = $('wsCapture'), wsNextBtn = $('wsNext');
-const wsRepeatBtn = $('wsRepeat'), wsStopBtn = $('wsStop'), wsEditBtn = $('wsEdit');
+const wsRepeatBtn = $('wsRepeat'), wsEditBtn = $('wsEdit');
 const wsExplainBtn = $('wsExplain');
 const evPanel = $('evidencePanel'), evTitle = $('evTitle'), evStatus = $('evStatus');
 const evOriginal = $('evOriginal'), evOverlay = $('evOverlay'), evCorners = $('evCorners'), evEmpty = $('evEmpty');
@@ -316,62 +306,6 @@ if ($('lmTest')) {
   });
 }
 
-function updateTTSVoiceLabel() {
-  const voices = IntentLensTTS.getVoices();
-  const v = voices.find((v) => v.voiceURI === IntentLensTTS.currentVoiceURI) || voices[0] || {};
-  if (ttsVoiceEl) ttsVoiceEl.textContent = v.name ? `${v.name} · ${v.lang}` : '—';
-}
-
-async function initTTS() {
-  const adapter = await IntentLensTTS.init({ onStatus: (info) => {
-    if (ttsStatusEl) {
-      ttsStatusEl.hidden = false;
-      ttsStatusEl.textContent = `Voice: ${info.message}`;
-      if (info.state === 'error') ttsStatusEl.style.color = 'var(--target)';
-      else ttsStatusEl.style.color = '';
-    }
-  }});
-  ttsEnabled = Boolean(adapter);
-  const voices = IntentLensTTS.getVoices();
-  if (voices.length) {
-    IntentLensTTS.setVoiceByURI(voices[0].voiceURI);
-    updateTTSVoiceLabel();
-  } else if ('speechSynthesis' in window) {
-    window.speechSynthesis.addEventListener('voiceschanged', () => {
-      const loaded = IntentLensTTS.getVoices();
-      if (loaded.length) {
-        IntentLensTTS.setVoiceByURI(loaded[0].voiceURI);
-        updateTTSVoiceLabel();
-      }
-    });
-  }
-  if (!ttsEnabled && ttsStatusEl) {
-    ttsStatusEl.hidden = false;
-    ttsStatusEl.textContent = 'Voice unavailable in this browser — text answers still work.';
-  }
-}
-
-function speakCurrentAnswer() {
-  const answer = state.lastResult?.answerShort
-    || state.assistant?.evidence?.instruction
-    || ($('answer')?.textContent || '').trim();
-  if (!answer) return;
-  if (!('speechSynthesis' in window)) {
-    if (ttsStatusEl) {
-      ttsStatusEl.hidden = false;
-      ttsStatusEl.textContent = 'Voice is not available in this browser — the text answer is kept.';
-    }
-    return;
-  }
-  void IntentLensTTS.init().then(() => IntentLensTTS.speak(answer)).catch((err) => {
-    console.warn('TTS speak failed:', err);
-    if (ttsStatusEl) {
-      ttsStatusEl.hidden = false;
-      ttsStatusEl.textContent = `Voice error: ${err.message}. The text answer is kept.`;
-    }
-  });
-}
-
 const W2 = 1280, H2 = 720; // frame pixels; also the SVG viewBox and what the model sees
 
 const state = {
@@ -389,16 +323,13 @@ const state = {
   imageRect: null,        // where real image content sits inside the frame (letterboxing)
   active: null,           // { requestId, controller, frameId } while a request is in flight
   busy: false,
-  fromVoice: false,       // true only while the command text came from speech
   modelMode: 'unknown',
   taskSummary: 'Inspecting an unpowered phone motherboard with a phone camera',
-  listening: false,
 
   // UI chrome (§6)
   logs: [],           // { when, stage, provider, ms, kind, text }
   menuOpen: false,
   gridOn: true,
-  transcript: '',
   contextBudget: null,
   handTrackerMode: 'uninitialized',
   componentDetectorMode: 'uninitialized',
@@ -758,7 +689,7 @@ function renderMenu() {
       }
     } else {
       const empty = document.createElement('div');
-      empty.textContent = 'No remembered objects yet. Point the camera at an object and say “remember this component”.';
+      empty.textContent = 'No remembered objects yet. Point the camera at an object and type “remember this component”.';
       empty.style.color = 'var(--muted)';
       menuObjects.append(empty);
     }
@@ -776,7 +707,7 @@ function renderMenu() {
       }
     } else {
       const empty = document.createElement('div');
-      empty.textContent = 'No remembered objects yet. Point the camera at an object and say “remember this component”.';
+      empty.textContent = 'No remembered objects yet. Point the camera at an object and type “remember this component”.';
       empty.style.color = 'var(--muted)';
       menuQA.append(empty);
     }
@@ -792,11 +723,11 @@ function renderProviders() {
 }
 
 // ---------------------------------------------------------------------------
-// Pipeline bars — animated audiobar style (§6)
+// Pipeline bars — current analysis stages (§6)
 // ---------------------------------------------------------------------------
 const pipeEls = {};
 document.querySelectorAll('.pipe-bar').forEach((el) => { pipeEls[el.dataset.key] = el.querySelector('.pipe-fill'); });
-const PIPE_KEYS = ['recording', 'transcribing', 'contextualizing', 'api', 'searching', 'localising'];
+const PIPE_KEYS = ['contextualizing', 'api', 'searching', 'localising'];
 const pipeStatusEl = $('pipeStatus');
 
 const setPipe = (key, stateName) => {
@@ -1460,7 +1391,7 @@ async function startCamera() {
     });
     camBtn.textContent = 'Stop camera';
     resumeLive();
-    setAnswer('Camera is live. Point it at the board, type or say a command, then press Find it.');
+    setAnswer('Camera is live. Point it at the board, type a command, then press Find it.');
     log({ stage: 'camera', kind: 'ok', text: `Camera connected: ${camera.video?.videoWidth || 1280}x${camera.video?.videoHeight || 720}` });
   } catch (err) {
     const msg = err.message || String(err);
@@ -1743,27 +1674,8 @@ async function assistantApi(url, { method = 'GET', body = null } = {}) {
   return data;
 }
 
-function speechFn() {
-  if (!ttsEnabled || typeof IntentLensTTS?.speak !== 'function') return null;
-  return (text) => IntentLensTTS.speak(text);
-}
-
-function announce(text) {
-  setAnswer(text);
-  const speak = speechFn();
-  if (!speak) {
-    if (ttsStatusEl) {
-      ttsStatusEl.hidden = false;
-      ttsStatusEl.textContent = 'Voice unavailable in this browser — the text answer is kept.';
-    }
-    return;
-  }
-  speak(text).catch((err) => {
-    if (ttsStatusEl) {
-      ttsStatusEl.hidden = false;
-      ttsStatusEl.textContent = `Voice error: ${err.message}. The text answer is kept.`;
-    }
-  });
+function showInstructionText(text) {
+  if (text) setAnswer(String(text));
 }
 
 function renderWorkspace() {
@@ -2095,7 +2007,7 @@ async function loadAssistantProject(projectId) {
   showProjectPopup(false);
   setWsStatus(`Loaded "${project.title}". Align the board and capture a component.`, 'ok');
   const step = currentStepOf(project);
-  if (step) announce(step.instructionText);
+  if (step) showInstructionText(step.instructionText);
 }
 
 async function createAssistantProject() {
@@ -2129,7 +2041,7 @@ async function createAssistantProject() {
     const step = currentStepOf(project);
     const text = step ? step.instructionText : project.userGoal;
     setWsStatus('Project created. Press "I\'m aligned", then capture a component.', 'ok');
-    announce(text);
+    showInstructionText(text);
     log({ stage: 'project', kind: 'ok', text: `Created ${project.projectId} (${project.title})` });
   } catch (err) {
     projectMsg.className = 'setupMsg error';
@@ -2329,7 +2241,7 @@ async function captureComponent() {
 
     setWsStatus(`Coordinate received (${latency} ms). Confirm or correct the component.`, 'ok');
     setStatus('Coordinate received', 'done');
-    announce(result.analysis.instruction);
+    showInstructionText(result.analysis.instruction);
     log({
       stage: 'model',
       kind: 'ok',
@@ -2354,18 +2266,13 @@ function findLastAnswer() {
 }
 
 async function handleRepeat() {
-  const result = await repeatAnswer({ lastAnswer: findLastAnswer(), speak: speechFn() });
+  const result = await repeatAnswer({ lastAnswer: findLastAnswer() });
   if (!result.ok) {
-    setWsStatus(result.reason === 'no_previous_answer'
-      ? 'There is no previous answer to repeat yet.'
-      : `Could not repeat: ${result.reason}`, 'warn');
+    setWsStatus('There is no previous answer to repeat yet.', 'warn');
     return;
   }
   setAnswer(result.text);
-  setWsStatus(result.speech?.ok
-    ? 'Repeating the stored answer. No AI request was made.'
-    : `Text kept. Voice unavailable: ${result.speech?.error || result.speech?.reason}. No AI request was made.`,
-  result.speech?.ok ? 'ok' : 'warn');
+  setWsStatus('Showing the stored answer again. No AI request was made.', 'ok');
 }
 
 async function handleExplain() {
@@ -2386,7 +2293,6 @@ async function handleExplain() {
         question: state.assistant.project?.userGoal || '',
       },
     }),
-    speak: speechFn(),
   });
 
   if (!result.ok) {
@@ -2403,10 +2309,7 @@ async function handleExplain() {
     state.assistant.project = { ...state.assistant.project, lastAnswer: state.assistant.lastAnswer };
   }
   setAnswer(result.text);
-  setWsStatus(result.speech?.ok
-    ? 'Explanation received and spoken.'
-    : `Explanation received. Voice unavailable: ${result.speech?.error || result.speech?.reason}.`,
-  result.speech?.ok ? 'ok' : 'warn');
+  setWsStatus('Explanation received.', 'ok');
 }
 
 async function confirmCurrentObject(correctedName = null) {
@@ -2440,7 +2343,7 @@ async function nextProjectStep() {
   renderWorkspace();
   await persistAssistantProject(next);
   const step = currentStepOf(next);
-  if (step) announce(step.instructionText);
+  if (step) showInstructionText(step.instructionText);
   setWsStatus(step ? `Next step: ${step.action}.` : 'All planned steps are done.', 'ok');
 }
 
@@ -2507,10 +2410,6 @@ function wireAssistant() {
   wsNextBtn?.addEventListener('click', nextProjectStep);
   wsRepeatBtn?.addEventListener('click', handleRepeat);
   wsExplainBtn?.addEventListener('click', handleExplain);
-  wsStopBtn?.addEventListener('click', () => {
-    try { IntentLensTTS.stop(); } catch { /* already stopped */ }
-    setWsStatus('Voice stopped. The text answer is kept.', 'ready');
-  });
 
   evExpandBtn?.addEventListener('click', () => {
     if (!state.assistant.evidence) return;
@@ -2730,24 +2629,14 @@ const FRIENDLY = {
 
 async function submit() {
   if (state.busy) return;
-  if (state.listening) stopListening();
-
   const command = input.value.trim();
   if (!command) { setAnswer('Type a command first.', 'warn'); input.focus(); return; }
-
-  state.transcript = command;
-  const tr = $('transcript');
-  tr.textContent = state.fromVoice ? `You said: ${command}` : `You typed: ${command}`;
-  tr.dataset.tone = state.fromVoice ? 'voice' : '';
-  tr.hidden = false;
 
   state.busy = true;
   submitBtn.disabled = true;
   cancelBtn.hidden = false;
   resetPipes();
   setPipeStatus('Starting…');
-  if (state.fromVoice) { setPipe('recording', 'done'); setPipe('transcribing', 'done'); }
-  else { setPipe('recording', 'skipped'); setPipe('transcribing', 'skipped'); }
 
   try {
     setStatus('Capturing current frame…', 'busy');
@@ -2823,7 +2712,6 @@ async function submit() {
   } finally {
     state.busy = false;
     state.active = null;
-    state.fromVoice = false;
     submitBtn.disabled = false;
     cancelBtn.hidden = true;
     drawLive();
@@ -3033,14 +2921,11 @@ function applyResult(result, frame) {
     setStatus('No target in this view', 'warn');
   }
 
-  // Speak the current instruction aloud (TTS, hands-free hardware assistance)
-  speakCurrentAnswer();
 }
 
 submitBtn.addEventListener('click', submit);
 cancelBtn.addEventListener('click', () => state.active?.controller.abort());
 input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
-input.addEventListener('input', () => { state.fromVoice = false; });
 
 // ---------------------------------------------------------------------------
 // Clear session (§13.1)
@@ -3065,26 +2950,6 @@ clearBtn.addEventListener('click', () => {
   setPipeStatus('Idle');
   setStatus('Ready');
   setAnswer('Session cleared. Cached scene information and corrections are gone.');
-});
-
-// TTS button listeners
-ttsSpeakBtn.addEventListener('click', () => speakCurrentAnswer());
-if ($('ttsTest')) {
-  $('ttsTest').addEventListener('click', () => {
-    const sample = 'Voice test. Find the black rectangle just to the right of the large square chip.';
-    void IntentLensTTS.init()
-      .then(() => IntentLensTTS.speak(sample))
-      .catch((err) => {
-        if (ttsStatusEl) {
-          ttsStatusEl.hidden = false;
-          ttsStatusEl.textContent = `Voice error: ${err.message}. Text answers still work.`;
-        }
-      });
-  });
-}
-ttsStopBtn.addEventListener('click', () => {
-  IntentLensTTS.stop();
-  if (ttsStatusEl) ttsStatusEl.hidden = true;
 });
 
 // Silhouette & Outline tracking toggles
@@ -3139,362 +3004,6 @@ if ($('looseModeToggle')) {
         : 'Loose tracking could not load its local reference index. See logs.';
     }
   });
-}
-
-// ---------------------------------------------------------------------------
-// Speech recognition (§6.1)
-// ---------------------------------------------------------------------------
-// Two paths:
-//   1. The browser's built-in SpeechRecognition. It works in Chrome/Edge, but
-//      Electron ships no Google speech backend, so it fails with "network".
-//   2. Local recording -> POST /api/transcribe -> a whisper process on this
-//      machine. Used in Electron and whenever (1) fails for a network reason.
-//      Audio never leaves the machine; STT_URL is loopback-only on the server.
-let recognition = null;
-let recognizing = false;
-let mediaRecorder = null;
-let mediaChunks = [];
-let recordingStream = null;
-let recordTimer = null;
-let preferServerStt = /Electron/i.test(navigator.userAgent || '');
-let sttState = null;
-
-// Microphone auto-start: ON by default, user can disable it and the choice is
-// remembered. Browsers may still require a tap before they grant microphone
-// audio; in that case we show a hint instead of retrying in a loop.
-const MIC_AUTOSTART_KEY = 'intentlens.micAutoStart';
-let micAutoStartAttempted = false;
-let lastStartWasAuto = false;
-
-function micAutoStartPref() {
-  try {
-    const raw = localStorage.getItem(MIC_AUTOSTART_KEY);
-    return raw === null ? true : raw === 'true';
-  } catch {
-    return true;
-  }
-}
-
-function setMicAutoStartPref(on) {
-  try { localStorage.setItem(MIC_AUTOSTART_KEY, on ? 'true' : 'false'); } catch { /* private mode */ }
-}
-
-const SERVER_STT_HELP =
-  'Local transcription is not configured. Set STT_URL in .env to your local speech-to-text '
-  + 'endpoint (for example http://127.0.0.1:8080/inference for whisper.cpp) and restart IntentLens. '
-  + 'Typing still works meanwhile.';
-
-async function refreshSttStatus() {
-  try {
-    const res = await fetch('/api/transcribe', { cache: 'no-store' });
-    sttState = await res.json().catch(() => null);
-    return sttState;
-  } catch {
-    sttState = null;
-    return null;
-  }
-}
-
-function resetSpeechUi() {
-  recognizing = false;
-  if (micBtn) {
-    micBtn.textContent = 'Start listening';
-    micBtn.disabled = false;
-  }
-  setStatus('Ready', 'ready');
-  setPipeStatus('Idle');
-}
-
-function stopRecordingStream() {
-  if (recordingStream) {
-    for (const track of recordingStream.getTracks()) track.stop();
-    recordingStream = null;
-  }
-}
-
-function pickAudioMime() {
-  if (typeof MediaRecorder === 'undefined' || !MediaRecorder.isTypeSupported) return '';
-  const candidates = [
-    'audio/webm;codecs=opus',
-    'audio/webm',
-    'audio/ogg;codecs=opus',
-    'audio/mp4',
-  ];
-  return candidates.find((m) => MediaRecorder.isTypeSupported(m)) || '';
-}
-
-function blobToBase64(blob) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || '').split(',')[1] || '');
-    reader.onerror = () => reject(reader.error || new Error('Could not read the recording.'));
-    reader.readAsDataURL(blob);
-  });
-}
-
-async function startServerRecording() {
-  if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-    setAnswer('Recording is not supported in this environment. Please type your command below.', 'warn');
-    return;
-  }
-  if (recognizing) return;
-  try {
-    recordingStream = await navigator.mediaDevices.getUserMedia({
-      audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
-    });
-  } catch (err) {
-    setAnswer(`Microphone unavailable: ${err.message || err}`, 'error');
-    stopRecordingStream();
-    return;
-  }
-
-  const mime = pickAudioMime();
-  try {
-    mediaRecorder = mime
-      ? new MediaRecorder(recordingStream, { mimeType: mime })
-      : new MediaRecorder(recordingStream);
-  } catch (err) {
-    stopRecordingStream();
-    setAnswer(`Could not start recording: ${err.message || err}`, 'error');
-    return;
-  }
-
-  mediaChunks = [];
-  mediaRecorder.ondataavailable = (event) => {
-    if (event.data && event.data.size) mediaChunks.push(event.data);
-  };
-  mediaRecorder.onstop = () => {
-    clearTimeout(recordTimer);
-    recordTimer = null;
-    stopRecordingStream();
-    void sendRecording();
-  };
-  mediaRecorder.onerror = (event) => {
-    clearTimeout(recordTimer);
-    recordTimer = null;
-    stopRecordingStream();
-    resetSpeechUi();
-    setAnswer(`Speech error: ${event.error?.message || 'recording failed'}`, 'warn');
-  };
-
-  mediaRecorder.start();
-  recognizing = true;
-  if (micBtn) micBtn.textContent = 'Stop listening';
-  setStatus('Listening…', 'busy');
-  setPipeStatus('Listening');
-  const tr = $('transcript');
-  if (tr) { tr.hidden = false; tr.textContent = 'Listening… (local transcription)'; }
-
-  // Hard stop so a forgotten recording cannot fill memory.
-  recordTimer = setTimeout(() => {
-    if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
-  }, 30000);
-}
-
-function stopServerRecording() {
-  clearTimeout(recordTimer);
-  recordTimer = null;
-  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-    mediaRecorder.stop();
-  } else {
-    stopRecordingStream();
-    resetSpeechUi();
-  }
-}
-
-async function sendRecording() {
-  const blob = new Blob(mediaChunks, { type: mediaRecorder?.mimeType || 'audio/webm' });
-  mediaChunks = [];
-  if (!blob.size) {
-    resetSpeechUi();
-    setAnswer('No audio was captured. Try again closer to the microphone.', 'warn');
-    return;
-  }
-
-  if (micBtn) micBtn.disabled = true;
-  setStatus('Transcribing…', 'busy');
-  setPipeStatus('Transcribing');
-  try {
-    const audio = await blobToBase64(blob);
-    const res = await fetch('/api/transcribe', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ audio, mimeType: blob.type || 'audio/webm' }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data.ok) {
-      const code = data?.error?.code;
-      if (code === 'STT_NOT_CONFIGURED') {
-        setAnswer(SERVER_STT_HELP, 'warn');
-      } else if (code === 'STT_UNREACHABLE' || code === 'STT_TIMEOUT') {
-        setAnswer(`Speech error: ${data.error.message || 'the local speech service is unavailable'}. `
-          + 'Start your local whisper server (STT_URL) and try again.', 'warn');
-      } else {
-        setAnswer(`Speech error: ${data?.error?.message || `HTTP ${res.status}`}`, 'warn');
-      }
-      return;
-    }
-
-    const text = String(data.text || '').trim();
-    input.value = text;
-    state.fromVoice = true;
-    const tr = $('transcript');
-    if (tr) { tr.hidden = false; tr.textContent = `"${text}"`; }
-    setAnswer(`Voice command: "${text}". Press Find it to run.`);
-    log({ stage: 'speech', provider: 'local', kind: 'ok', text: `Transcribed ${text.length} characters locally.` });
-  } catch (err) {
-    setAnswer(`Speech error: ${err.message || err}`, 'warn');
-  } finally {
-    resetSpeechUi();
-  }
-}
-
-function initSpeech() {
-  void refreshSttStatus();
-  const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-
-  if (SpeechRec) {
-    recognition = new SpeechRec();
-    recognition.continuous = false;
-    recognition.interimResults = true;
-    recognition.lang = 'en-US';
-
-    recognition.onstart = () => {
-      recognizing = true;
-      micBtn.textContent = 'Stop listening';
-      setStatus('Listening…', 'busy');
-      setPipeStatus('Listening');
-      const tr = $('transcript');
-      if (tr) { tr.hidden = false; tr.textContent = 'Listening…'; }
-    };
-
-    recognition.onresult = (event) => {
-      let transcriptText = '';
-      for (let i = event.resultIndex; i < event.results.length; ++i) {
-        transcriptText += event.results[i][0].transcript;
-      }
-      input.value = transcriptText;
-      state.fromVoice = true;
-      const tr = $('transcript');
-      if (tr) { tr.hidden = false; tr.textContent = `"${transcriptText}"`; }
-    };
-
-    recognition.onerror = (event) => {
-      recognizing = false;
-      micBtn.textContent = 'Start listening';
-      setStatus('Ready', 'ready');
-      setPipeStatus('Idle');
-      // Electron and locked-down networks cannot reach Google's speech backend.
-      if (event.error === 'network' || event.error === 'service-not-allowed') {
-        if (lastStartWasAuto) {
-          lastStartWasAuto = false;
-          setStatus('Mic idle — tap the mic to speak', 'ready');
-          return;
-        }
-        preferServerStt = true;
-        setAnswer('The browser speech service is unavailable here, so the app switched to local transcription.', 'warn');
-        void startServerRecording();
-        return;
-      }
-      if (event.error === 'not-allowed' || event.error === 'audio-capture') {
-        if (lastStartWasAuto) {
-          lastStartWasAuto = false;
-          setStatus('Mic idle — tap the mic to allow voice input', 'ready');
-          return;
-        }
-        setAnswer('Microphone access is blocked. Allow microphone permission for IntentLens and tap the mic to try again.', 'warn');
-        return;
-      }
-      if (event.error !== 'no-speech') {
-        setAnswer(`Speech error: ${event.error}`, 'warn');
-      }
-    };
-
-    recognition.onend = () => {
-      recognizing = false;
-      micBtn.textContent = 'Start listening';
-      setStatus('Ready', 'ready');
-      setPipeStatus('Idle');
-      if (input.value.trim()) {
-        setAnswer(`Voice command: "${input.value.trim()}". Press Find it to run.`);
-      }
-    };
-  }
-
-  async function beginListening({ auto = false } = {}) {
-    if (recognizing) {
-      if (mediaRecorder && mediaRecorder.state !== 'inactive') stopServerRecording();
-      else if (recognition) recognition.stop();
-      return;
-    }
-    lastStartWasAuto = auto;
-    if (preferServerStt) {
-      await refreshSttStatus();
-      if (sttState && sttState.configured === false) {
-        if (auto) setStatus('Mic idle — tap the mic to record', 'ready');
-        else {
-          setAnswer(
-            sttState.rejectedUrl
-              ? 'STT_URL must point at a localhost endpoint, for example http://127.0.0.1:8080/inference.'
-              : SERVER_STT_HELP,
-            'warn',
-          );
-        }
-        return;
-      }
-    }
-    if (preferServerStt || !recognition) {
-      void startServerRecording();
-      return;
-    }
-    try {
-      recognition.start();
-    } catch (err) {
-      console.warn('Speech recognition start failed:', err);
-      if (auto) {
-        setStatus('Mic idle — tap the mic to speak', 'ready');
-        return;
-      }
-      preferServerStt = true;
-      void startServerRecording();
-    }
-  }
-
-  if (micBtn) {
-    micBtn.addEventListener('click', () => { void beginListening(); });
-  }
-
-  const autoBox = $('micAuto');
-  if (autoBox) {
-    autoBox.checked = micAutoStartPref();
-    autoBox.addEventListener('change', () => {
-      setMicAutoStartPref(autoBox.checked);
-      if (!autoBox.checked && recognizing) {
-        if (mediaRecorder && mediaRecorder.state !== 'inactive') stopServerRecording();
-        else if (recognition) recognition.stop();
-      }
-    });
-  }
-
-  async function autoStartMic() {
-    if (micAutoStartAttempted) return;
-    micAutoStartAttempted = true;
-    if (!micAutoStartPref()) return;
-    if (preferServerStt) {
-      const status = await refreshSttStatus();
-      if (!status || status.configured === false) {
-        setStatus('Mic idle — tap the mic to record', 'ready');
-        return;
-      }
-    }
-    await beginListening({ auto: true });
-  }
-
-  if (micAutoStartPref()) {
-    // Give the page a moment to settle, then start once per launch. A browser
-    // that refuses a gestureless start simply leaves the mic idle with a hint.
-    setTimeout(() => { void autoStartMic(); }, 700);
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -4333,8 +3842,6 @@ drawLive();
 checkHealth();
 checkFirstRun();
 loadLocalModelStatus();
-initTTS();
-initSpeech();
 initMenuAndControls();
 initSetupPopupListeners();
 initGlobalDismiss();

@@ -45,7 +45,6 @@ import {
 import { json, logRequest, logError, getServerLogs, clearServerLogs } from './lib/http.js';
 import { serveStatic } from './lib/static.js';
 import { handleGetScaler } from './routes/scaler.js';
-import { handleTranscribe, handleTranscribeStatus } from './routes/transcribe.js';
 import { initSessionToken, getSessionToken, validateSessionToken, authMiddleware } from './lib/auth.js';
 import { providerHealthSnapshot } from './services/provider.js';
 import { Store } from './store.js';
@@ -200,14 +199,6 @@ const server = createServer(async (req, res) => {
       } else {
         json(res, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'Use GET or POST.', retryable: false } });
       }
-    } else if (path === '/api/transcribe') {
-      if (req.method === 'GET') {
-        handleTranscribeStatus(res);
-      } else if (req.method === 'POST') {
-        await handleTranscribe(req, res);
-      } else {
-        json(res, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'Use GET or POST.', retryable: false } });
-      }
     } else if (path.startsWith('/api/providers/') && req.method === 'DELETE') {
       const id = decodeURIComponent(path.slice('/api/providers/'.length));
       await handleDeleteCloudProvider(req, res, id);
@@ -353,7 +344,7 @@ async function handleGetContext(req, res, projectId) {
 }
 
 async function handleEndSession(req, res, projectId) {
-  // v7: Finalize the session: stop tracking on the server side (client stops camera/mic),
+  // v7: Finalize the session: stop tracking on the server side (client stops the camera),
   // write a summary and preserve history until the user deletes it.
   const body = await readJsonBody(req, config.maxBodyBytes);
   const summary = body && body.summary ? String(body.summary) : null;

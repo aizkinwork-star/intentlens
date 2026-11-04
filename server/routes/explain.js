@@ -1,7 +1,7 @@
 // POST /api/explain — exactly one new AI request for a simpler explanation.
 //
 // REPEAT is deliberately not an endpoint: it reuses the stored answer on the
-// client and only calls text-to-speech. That keeps the inference count at zero.
+// client and returns text only. That keeps the inference count at zero.
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { json, readJson, recordServerLog } from '../lib/http.js';

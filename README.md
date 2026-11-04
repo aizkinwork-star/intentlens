@@ -1,7 +1,7 @@
 # IntentLens
 
 IntentLens is a local-first visual grounding prototype for electronics work.
-Point a camera at a board, ask a question by text or voice, and get a short answer
+Point a camera at a board, type a question, and get a short answer
 plus a target position on a normalized overlay grid. The default grid is **64×64**;
 16×16, 24×24, 32×32, 64×64 and 128×128 are available in Settings.
 
@@ -78,7 +78,6 @@ analytics, no account system, no APK, no Meta glasses integration.
 │  Node server on 127.0.0.1:8000                                     │
 │    /api/analyze   validation · context · provider router           │
 │    /api/providers credentials (never returned to the page)         │
-│    /api/transcribe local whisper.cpp only (loopback)               │
 │                         │                                          │
 │        ┌────────────────┼─────────────────┬────────────────┐       │
 │        ▼                ▼                 ▼                ▼       │
@@ -112,7 +111,7 @@ without pretending it already works.
 │                         │                                          │
 │         ┌───────────────┴────────────────┐                         │
 │         ▼                                ▼                         │
-│   OpenRouter API                   Groq API (text/voice only)      │
+│   OpenRouter API                   Groq API (text only)      │
 │   Meta Llama 4 Maverick (paid)     no image input                  │
 │         │                                                          │
 │         └──────── HTTPS + CORS ─────────► upstream model           │
@@ -149,7 +148,7 @@ between desktop and phone so coordinate conversion and validation cannot drift.
 2. **Start camera** (permission is requested only then) or upload a photo.
 3. **Frame** the board; rotate the phone to landscape for a wider view.
 4. **Capture** one still. The live stream is never sent to a model.
-5. **Ask** a question by typing or voice, e.g. “where is the battery connector?”.
+5. **Ask** a question by typing, e.g. “where is the battery connector?”.
 6. **Allow cloud** for the session (off by default).
 7. **Send**. One still image, the prompt and a trimmed project context leave the
    device. Repeat and Explain are explicit: Repeat reuses the stored answer with
@@ -167,7 +166,7 @@ between desktop and phone so coordinate conversion and validation cannot drift.
 - Node.js **22.5 or newer** from <https://nodejs.org/>
 - Internet on the first run (Electron is installed once)
 - A provider key for cloud AI (OpenRouter recommended; Cloudflare Workers AI,
-  NVIDIA NIM, BlockRun or Modal also work on the PC; Groq is text/voice only)
+  NVIDIA NIM, BlockRun or Modal also work on the PC; Groq is text-only)
 
 ### A. Download the ZIP and run it (recommended)
 
@@ -318,7 +317,7 @@ works through the Electron server but cannot be read by a browser because of COR
 | **NVIDIA NIM** | **Yes** | **Listed, blocked** | `meta/muse-glimmer-30b` (Meta vision) | NVIDIA account | Hosts Meta models only here. No `Access-Control-Allow-Origin`, so the phone refuses before network. |
 | **BlockRun** | **Yes (paid)** | **Listed, blocked** | `meta-llama/llama-4-maverick` (Meta vision) | **Paid x402** | The supplied key returned HTTP 402 `Payment verification failed` and the host sends no CORS. |
 | **Modal** | **Yes (paid)** | **Listed, user endpoint** | `meta-llama/Llama-4-Maverick-17B-128E-Instruct` | **Paid** | Paste your deployed `*.modal.run` OpenAI-compatible URL. **NOT tested** in the audit. |
-| **Groq** | **Text/voice only** | **Text/voice only** | None | Groq account | **No image input, ever.** Chat and voice transcripts only; image requests are refused before any network call. Llama 3.3 70B Versatile is Enterprise-only on Groq, so a free account may expose no Meta chat model. |
+| **Groq** | **Text only** | **Text only** | None | Groq account | **No image input, ever.** Text chat only; image requests are refused before any network call. Llama 3.3 70B Versatile is Enterprise-only on Groq, so a free account may expose no Meta chat model. |
 | **Custom relay** | Not wired | **Yes** | Your choice (Meta ids only) | Your cost | Your HTTPS relay must allow this Pages origin. Non-Meta model ids are still refused. |
 
 **Limitations of the paid-only setup.** On the phone, every provider call goes
@@ -333,7 +332,7 @@ physical phone**. Free tiers on the listed hosts may exist but are not relied on
 2. **Model access** is **All Meta models (paid per token)**. Only Meta models
    are ever offered or sent.
 3. Choose OpenRouter, Cloudflare Workers AI, NVIDIA NIM, BlockRun, Modal or Groq
-   (Groq is text/voice only).
+   (Groq is text-only).
 4. Enter the key. Cloudflare also needs the Account ID; Modal also needs the
    HTTPS URL of your deployed endpoint.
 5. Choose a vision model from that provider's Meta catalogue.
@@ -415,7 +414,7 @@ rectangle), never private photos.
 | Host | What was checked | Result |
 |---|---|---|
 | `openrouter.ai` | CORS preflight; paid Meta vision | CORS `*`. `meta-llama/llama-4-maverick` returned 200 and correctly named the shapes; a small canary cost about $0.00002. |
-| `api.groq.com` | CORS; model list; text | CORS `*`. Meta entries on the tested account were only Prompt Guard 2 22M/86M classifiers; no Meta chat or vision model. Groq is therefore text/voice only in IntentLens. |
+| `api.groq.com` | CORS; model list; text | CORS `*`. Meta entries on the tested account were only Prompt Guard 2 22M/86M classifiers; no Meta chat or vision model. Groq is therefore text-only in IntentLens. |
 | `integrate.api.nvidia.com` | CORS; Muse image | No CORS. `meta/muse-glimmer-30b` returned 200 and correctly named the shapes. 11B returned 404; 90B timed out. |
 | `api.cloudflare.com` | CORS; Workers AI image | No CORS (OPTIONS 405). `@cf/meta/llama-3.2-11b-vision-instruct` returned 200 after licence acceptance and correctly named the shapes. |
 | `api.blockrun.ai` | Text and image | 115 models listed, but both calls returned 402 `Payment verification failed`; no CORS. Paid and currently unusable with the supplied key. |
@@ -443,7 +442,7 @@ describe the shipped inference path:
   if a non-Meta model appears in a catalogue.
 - Vision: OpenRouter and BlockRun to Llama 4 Maverick, Modal to Llama 4
   Maverick, Cloudflare to Llama 3.2 11B Vision, NVIDIA-hosted Meta Muse Glimmer.
-- Groq is **text and voice only**; it never receives an image.
+- Groq is **text only**; it never receives an image.
 - Classifiers (Prompt Guard, Llama Guard) are never presented as chat or vision
   models.
 

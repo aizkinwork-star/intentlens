@@ -12,7 +12,7 @@ Cloud image analysis is optional and uses Meta-published vision models only.
   - OpenRouter (recommended, paid per token): https://openrouter.ai/keys
   - Cloudflare Workers AI: https://dash.cloudflare.com/
   - NVIDIA NIM (hosts Meta models): https://build.nvidia.com/
-  - Groq: text and voice only. It never receives images.
+  - Groq: text-only. It never receives images.
 - **Phone:** no download. Open https://aizkinwork-star.github.io/intentlens/ ,
   served straight from this repository. See [../pwa/README.md](../pwa/README.md).
 
@@ -74,7 +74,7 @@ Supported Meta-model options (audit snapshot 2026-11-04):
 | 3 | NVIDIA NIM | `meta/muse-glimmer-30b` | Real image returned valid JSON. 11B returned 404; 90B timed out. |
 | 4 | BlockRun | `meta-llama/llama-4-maverick` | Paid x402 marketplace. The supplied key returned HTTP 402; restored for retry after credit. |
 | 5 | Modal | `meta-llama/Llama-4-Maverick-17B-128E-Instruct` | Paid and **NOT tested**. Needs your deployed `*.modal.run` URL. |
-| 6 | Groq | **text/voice only** | Never receives images. Meta Llama 3.3 70B Versatile is Enterprise-only on Groq. |
+| 6 | Groq | **text only** | Never receives images. Meta Llama 3.3 70B Versatile is Enterprise-only on Groq. |
 
 Enter the key, select a vision model, and press **Save & test**. A placeholder
 key is never treated as configured. Non-Meta models are rejected. Any catalogued
@@ -141,25 +141,6 @@ This app is **local-first, not fully offline**. It sends a captured frame, your
 command and relevant task/object context to the selected Meta model host only when you
 press **Find it**.
 
-## Voice input (optional, local)
-
-Electron cannot use Google's browser speech service, so voice input needs a local
-speech-to-text process. Start whisper.cpp's server, then point `STT_URL` at it:
-
-```text
-whisper-server -m ggml-base.en.bin --host 127.0.0.1 --port 8080
-```
-
-```text
-STT_URL=http://127.0.0.1:8080/inference
-STT_LANGUAGE=en
-```
-
-Restart the app after changing `.env`. In the packaged desktop app the file lives at
-`%APPDATA%\IntentLens\.env`; when running from source, the project `.env` also works.
-`STT_URL` must be loopback-only; remote hosts are rejected. If it is not set, the mic
-button shows the configuration hint and typing still works.
-
 ## Camera notes
 
 - Laptop/USB camera usually works on `localhost`, which is a secure browser context.
@@ -182,8 +163,6 @@ button shows the configuration hint and typing still works.
 
 - **`NO CLOUD AI KEY` / `AI_NOT_CONFIGURED`** - open provider setup and save a real key.
 - **`NETWORK_DISABLED`** - set `ALLOW_OUTBOUND_NETWORK=true` and restart.
-- **`Speech error: network`** - Electron has no browser speech backend. Configure a
-  local `STT_URL` (see Voice input) and use the mic again, or type the command.
 - **`MODEL_AUTH_FAILED`** - replace the provider key.
 - **`MODEL_NOT_META`** - choose a model from the Meta-only catalog.
 - **`MODEL_QUOTA_EXHAUSTED`** - add credit or switch providers.

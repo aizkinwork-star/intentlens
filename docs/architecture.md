@@ -10,7 +10,7 @@
 
 **Document status:** Build specification for a time-boxed hackathon prototype  
 **Date:** 26 October 2026  
-**Primary MVP:** Phone-camera visual grounding + voice/text command + Meta Model API image understanding/search grounding + cached context + 16×16 overlay grid  
+**Primary MVP:** Phone-camera visual grounding + text command + Meta Model API image understanding/search grounding + cached context + 16×16 overlay grid
 **Target build window:** 7–8 days  
 **Prototype hardware available:** Android/iPhone camera, RAM stick, and possibly an old non-working phone. No assumed soldering station, bench supply, oscilloscope, or Meta display glasses.
 
@@ -20,7 +20,7 @@
 
 ## 1. Product definition
 
-IntentLens is a task-aware visual assistance prototype. A user points a phone camera at a physical object, gives a voice command, and receives a concise answer grounded in the current image, relevant saved context, and—when necessary—web sources. The interface identifies the target region with a coordinate-based overlay.
+IntentLens is a task-aware visual assistance prototype. A user points a phone camera at a physical object, types a command, and receives a concise answer grounded in the current image, relevant saved context, and—when necessary—web sources. The interface identifies the target region with a coordinate-based overlay.
 
 The first product hypothesis is:
 
@@ -29,8 +29,8 @@ The first product hypothesis is:
 The MVP should be able to demonstrate this loop:
 
 1. Open a phone camera and see a live preview.
-2. Tap a microphone control and speak a command, or type the command.
-3. Display the transcript so the user can correct it.
+2. Type a command in the text input.
+3. Display the typed command so the user can correct it.
 4. Capture one current frame when the command is submitted.
 5. Build a compact context package from the frame, session state, saved scene map, command and relevant sources.
 6. Call Meta Model API (Muse Spark) for image understanding and, when appropriate, web-search grounding.
@@ -41,7 +41,7 @@ The MVP should be able to demonstrate this loop:
 ### 1.1 What the MVP proves
 
 - Camera capture and command submission work together.
-- The request contains the current frame and the user's transcribed command.
+- The request contains the current frame and the user's typed command.
 - The application builds explicit, inspectable context instead of sending an unstructured prompt alone.
 - The model can return a target proposal in a schema the UI can render.
 - A 16×16 grid can show the approximate region, while a finer normalized point/box anchors the marker.
@@ -92,7 +92,7 @@ The long-term system may generalise to step-by-step engineering and physical-wor
 
 ```mermaid
 flowchart TD
-    U[User voice or typed command] --> STT[Speech transcription / text input]
+    U[User typed command] --> ORCH
     C[Phone camera preview] --> CAP[Capture current frame]
     STT --> ORCH[Request orchestrator]
     CAP --> ORCH
@@ -111,8 +111,8 @@ flowchart TD
 ### 3.1 Major components
 
 1. **Camera layer** — requests camera permission, previews the current frame and captures a still image on command submission.
-2. **Speech/text layer** — collects a voice command and transcript. Text input is always available as fallback.
-3. **UI state machine** — tracks recording, transcription, context preparation, model analysis, search grounding, target localization, completion and errors.
+2. **Command layer** — collects the user's typed text command.
+3. **UI state machine** — tracks context preparation, model analysis, search grounding, target localization, completion and errors.
 4. **Scene map** — stores IDs, labels, normalized locations, source frame ID, confidence, and whether the location is current or stale.
 5. **Context builder** — builds a compact request from the latest command, current image, saved scene map, task summary, prior accepted targets and verified reference data.
 6. **Meta API adapter** — calls the Meta Model API from the server, not directly from browser code. Uses image understanding and structured output; optionally enables the built-in web search tool through the Responses API.
@@ -127,11 +127,11 @@ Use the existing repository's stack if already established. If starting fresh, p
 - **Frontend:** Vite + React + TypeScript.
 - **Styling:** CSS modules or a single well-organised stylesheet; avoid introducing a large UI framework solely for this MVP.
 - **Camera:** `navigator.mediaDevices.getUserMedia()` and canvas frame capture.
-- **Speech:** browser `SpeechRecognition`/`webkitSpeechRecognition` where supported; always provide a text-command fallback. Keep the speech layer behind a provider interface so a different transcription service can be added later.
+- **Commands:** users enter and edit commands in a text field; responses are displayed as text.
 - **Backend:** Node.js + Express + TypeScript (or the repository's existing server framework).
 - **Model access:** official Meta Model API using the OpenAI SDK compatibility documented by Meta. Keep the API key server-side in `.env`.
 - **Session storage:** in-memory state plus optional localStorage for non-sensitive scene metadata. Avoid adding Supabase/auth unless an already-existing project requires it.
-- **Testing:** unit tests for coordinate math and output validation; manual phone-browser tests for camera and voice.
+- **Testing:** unit tests for coordinate math and output validation; manual phone-browser tests for camera and text interaction.
 
 If the repository already has an established architecture, inspect it first and adapt the design instead of replacing a working stack.
 
@@ -147,10 +147,6 @@ Design for a phone portrait viewport first. Keep the UI legible outdoors and whi
 ┌─────────────────────────────────────┐
 │ IntentLens                 ● READY  │  Header / session status
 ├─────────────────────────────────────┤
-│                         ┌─────────┐ │
-│                         │ MIC /   │ │  Top-right voice bar
-│                         │ STOP    │ │
-│                         └─────────┘ │
 │                                     │
 │  Live camera preview                │
 │  ┌─┬─┬─┬─┬─┬─┬─┬─┬─┬─┬─┬─┬─┬─┬─┬─┐ │
@@ -162,7 +158,7 @@ Design for a phone portrait viewport first. Keep the UI legible outdoors and whi
 │  └─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┘ │
 │                                     │
 ├─────────────────────────────────────┤
-│ Heard: “Point to the connector…”    │  Editable transcript
+│ Command: “Point to the connector…” │  Typed command
 │ STATUS: Analysing current image     │  Real pipeline status
 ├─────────────────────────────────────┤
 │ TARGET: J2 (proposed)               │
@@ -178,13 +174,10 @@ This is a layout contract, not a pixel-perfect final design. Camera preview take
 
 ### 4.2 Interface behaviour
 
-- **Top-right voice control:** `Start listening` when idle, `Stop` while recording/listening, with a visible recording indicator.
-- **Transcript:** show recognized words; allow editing before sending. Never send an unfinished transcript automatically.
+- **Command input:** allow the user to type and edit a command before sending.
 - **Current-frame action:** capture the latest frame when the user submits a command. Do not send an uncontrolled stream of video frames to the model in the first MVP.
 - **Progress/status:** show truthful pipeline states, for example:
   - `Ready`
-  - `Listening…`
-  - `Transcribing…`
   - `Capturing current frame…`
   - `Building context…`
   - `Analysing image…`
@@ -196,7 +189,7 @@ This is a layout contract, not a pixel-perfect final design. Camera preview take
 - **Bottom answer:** one or two short sentences, with a target label and confidence/uncertainty phrased clearly. Details and citations can expand in a secondary panel.
 - **Grid inputs:** a user may tap a cell to identify a region or correct a target. Tapped cell coordinates can be passed as additional evidence to the next request.
 - **Source display:** show source title/domain and link when web-search grounding returns citations. Never render a “searched” state unless the API response confirms that search occurred.
-- **Retry:** preserve the typed/transcribed command and allow retry with the same image or capture a new image.
+- **Retry:** preserve the typed command and allow retry with the same image or capture a new image.
 - **Camera denied/unavailable:** show a clear message and allow an uploaded image in development/demo mode.
 
 ### 4.3 Visual style
@@ -277,35 +270,23 @@ Triangulation usually implies geometry from multiple viewpoints/rays or sensors.
 
 ---
 
-## 6. Voice, transcription and command lifecycle
+## 6. Text command lifecycle
 
-### 6.1 MVP speech design
+### 6.1 Text-only command input
 
-Create a `SpeechProvider` interface. First implementation:
-
-1. Request microphone permission only when the user taps the voice button.
-2. Use browser speech recognition where supported.
-3. Display partial transcript while listening, but only allow submit after the transcript is finalized or the user edits it.
-4. Let the user cancel recording and clear the transcript.
-5. Always provide a typed command fallback.
-
-Do not assume browser speech recognition is supported in every browser. If the user explicitly expects an audio file to be recorded, `MediaRecorder` can be added, but audio should be retained only as long as needed and must not be silently uploaded. An audio-transcription provider can be added behind the same interface later.
+The desktop app and PWA accept commands through a text field. The user reviews and submits each command explicitly.
 
 ### 6.2 Command pipeline
 
 ```text
 IDLE
-  └─ tap microphone → LISTENING
-       ├─ cancel → IDLE
-       └─ final transcript → TRANSCRIPT_REVIEW
-             ├─ edit / type → TRANSCRIPT_REVIEW
-             └─ submit → CAPTURING_FRAME
-                   → BUILDING_CONTEXT
-                   → ANALYSING_IMAGE
-                   → [SEARCHING_WEB if a real search call occurs]
-                   → VALIDATING_RESULT
-                   → LOCALISING_TARGET
-                   → COMPLETE
+  └─ type command and submit → CAPTURING_FRAME
+        → BUILDING_CONTEXT
+        → ANALYSING_IMAGE
+        → [SEARCHING_WEB if a real search call occurs]
+        → VALIDATING_RESULT
+        → LOCALISING_TARGET
+        → COMPLETE
 ```
 
 All transitions must be controlled in code, not inferred from timers. A status must correspond to a real operation. Show a maximum elapsed time or cancel option, and handle failures without trapping the user in a spinner.
@@ -333,7 +314,7 @@ The system should not ask the model to rediscover every detail on every command.
 3. **Scene map** — visible object/component IDs, labels, normalized bounding boxes/points, confidence, frame association and freshness.
 4. **Reference pack** — optional user-provided PDFs/images/text, verified datasheet, schematic, official manual, or structured circuit/netlist data.
 5. **Web evidence** — source URLs, titles, brief excerpts/summaries and retrieval time from the web-search tool.
-6. **Decision history** — only a small log of recent actions and user corrections, not a transcript dump of every model token.
+6. **Decision history** — only a small log of recent actions and user corrections, not a dump of every model token.
 
 ### 7.3 Context builder policy
 
@@ -556,15 +537,15 @@ src/
   components/
     CameraView.tsx
     GridOverlay.tsx
-    VoiceCommandBar.tsx
-    TranscriptEditor.tsx
+
+
     PipelineStatus.tsx
     AnswerPanel.tsx
     EvidenceList.tsx
     TargetControls.tsx
   hooks/
     useCamera.ts
-    useSpeechCommand.ts
+
   lib/
     coordinates.ts
     imageCapture.ts
@@ -599,18 +580,7 @@ Responsibilities:
 
 Must not call the model directly.
 
-### 10.2 `VoiceCommandBar`
-
-Responsibilities:
-
-- start/stop listening;
-- display microphone permission and recognition errors;
-- show partial/final transcript;
-- allow user to edit transcript;
-- submit only a finalized command;
-- provide typed-command fallback.
-
-### 10.3 `GridOverlay`
+### 10.2 `GridOverlay`
 
 Responsibilities:
 
@@ -749,12 +719,11 @@ If the model marks the wrong object, the user can tap the correct cell/region an
 ### 13.1 Privacy defaults
 
 - Camera starts only after the user chooses to start it.
-- Recording/transcription must have a visible active state.
 - Capture only the frame needed for the current command in the first MVP.
-- No persistent frame or audio storage by default.
+- No persistent frame storage by default.
 - Do not record continuously in the background.
-- Do not send the camera feed or transcript to any other service without making that provider path explicit.
-- Keep logs to request ID, timing, success/failure and non-sensitive metadata. Never log raw image base64, audio data or API keys.
+- Do not send the camera feed or typed command to any other service without making that provider path explicit.
+- Keep logs to request ID, timing, success/failure and non-sensitive metadata. Never log raw image base64 or API keys.
 - Include a “Clear session” action that removes cached scene data from app state/local storage.
 
 ### 13.2 Physical-world safety
@@ -778,8 +747,7 @@ Text read from a web page, schematic annotation, screenshot, sticker or document
 The MVP is considered working when all of these pass:
 
 1. Camera permission works on at least one target browser/device; camera failure produces a useful fallback.
-2. Typed command works even when speech recognition is unavailable.
-3. On a supported browser, speech recognition produces a transcript visible for review before submission.
+2. Typed command can be entered, edited and submitted from the desktop app and PWA.
 4. A submitted command sends the current frame and command to the backend.
 5. The backend calls the model and returns a validated structured result.
 6. A valid normalized target renders in the correct cell and at the correct image location; invalid coordinates are rejected.
@@ -835,7 +803,7 @@ The schedule is a prioritisation plan, not a guarantee. Do not begin optional ha
 ### Day 1 — repo inspection and static UI
 
 - Inspect existing repository, package manager, scripts, deployment target and available API keys.
-- Build the camera layout, grid overlay, bottom answer panel, voice-bar placeholder and finite status enum using mock data.
+- Build the camera layout, grid overlay, bottom answer panel, text command input and finite status enum using mock data.
 - Implement coordinate conversion and its tests.
 - Confirm mobile layout on the actual phone/browser.
 
@@ -844,11 +812,11 @@ The schedule is a prioritisation plan, not a guarantee. Do not begin optional ha
 ### Day 2 — camera and command input
 
 - Implement camera permissions and still-frame capture.
-- Implement speech recognition with transcript review and typed fallback.
+- Implement typed command input and submission.
 - Add loading/error/cancel states.
 - Ensure the submitted frame corresponds to the command being sent.
 
-**Exit condition:** user can speak/type a command, review it, capture a frame and submit a mocked analysis request.
+**Exit condition:** user can type a command, review it, capture a frame and submit a mocked analysis request.
 
 ### Day 3 — backend and model integration
 
@@ -883,7 +851,7 @@ The schedule is a prioritisation plan, not a guarantee. Do not begin optional ha
 - Test in mobile Chrome on the phone.
 - Adjust image/grid coordinate mapping for real layout and object-fit behaviour.
 - Add tap-to-select/correct target.
-- Test API failures, denied camera/microphone, slow network and repeated submissions.
+- Test API failures, denied camera permission, slow network and repeated submissions.
 
 **Exit condition:** a user can complete the full demo loop on the phone without developer tools.
 
@@ -925,8 +893,8 @@ Keep the demo under roughly two minutes and show actual working behaviour.
 
 1. Open IntentLens on the phone and point it at the RAM stick or safe, unpowered motherboard.
 2. Show the 16×16 grid over the camera feed.
-3. Tap the microphone and say: “Identify the visible connector near the lower edge.”
-4. Show the finalized transcript and submit.
+3. Type: “Identify the visible connector near the lower edge.”
+4. Review the typed command and submit.
 5. Show truthful progress states as the image and command are analysed.
 6. Show the proposed target marker and short answer, including an uncertainty label when appropriate.
 7. Ask a follow-up: “Keep that target in context and identify the nearby component.”
@@ -934,7 +902,7 @@ Keep the demo under roughly two minutes and show actual working behaviour.
 9. If tracking has not been implemented, clearly show a fresh re-localization step rather than pretending the marker is locked to moving hardware.
 10. Briefly show the source evidence and the baseline-vs-context test results.
 
-The core narrative is not “AI can describe a motherboard.” It is: **IntentLens turns a spoken task into a grounded, inspectable target reference, reuses compact task context, and refuses to present stale or weak evidence as certainty.**
+The core narrative is not “AI can describe a motherboard.” It is: **IntentLens turns a typed task into a grounded, inspectable target reference, reuses compact task context, and refuses to present stale or weak evidence as certainty.**
 
 ---
 
@@ -948,7 +916,6 @@ The core narrative is not “AI can describe a motherboard.” It is: **IntentLe
 | Search returns bad sources | Web results may be irrelevant or wrong | Prefer official sources, display citations, keep web evidence distinct from verified circuit data |
 | UI pretends to do work | Fake statuses damage trust and demo credibility | Status derives from actual async steps and API response contents |
 | API key leaks | Browser code is inspectable | Backend-only secret and `.gitignore` |
-| Voice API unsupported | Browser speech support varies | Typed command fallback is always visible |
 | API limits or latency | Demo can fail on a slow network | Clear timeout/retry state; prepare a static fallback demo, but label it as fallback |
 | Model invents electrical connection | A wrong connection can damage hardware | Do not generate executable wiring without verified schematic/netlist; initial demo is visual-only |
 | Full build exceeds time | Hardware integration and tracking add complexity | Finish phone MVP first; scope-cut order above |
@@ -983,7 +950,7 @@ The core narrative is not “AI can describe a motherboard.” It is: **IntentLe
 
 Meta currently documents two broad routes:
 
-- **Wearables Device Access Toolkit:** extend an iOS/Android app to supported glasses for camera, speech/audio, and other capabilities that vary by device.
+- **Wearables Device Access Toolkit:** extend an iOS/Android app to supported glasses for camera and other capabilities that vary by device.
 - **Web Apps:** standalone experiences on Meta Ray-Ban Display with a 600×600 additive display and browser/web APIs.
 
 These are distinct integration paths and not interchangeable. Standard camera-equipped displayless glasses do not provide the same in-lens display experience as Meta Ray-Ban Display. Use a browser simulation or phone UI until the relevant hardware, country/device access and developer permissions are confirmed.
@@ -997,9 +964,9 @@ Official docs: https://developers.meta.com/wearables/faq/ , https://developers.m
 When implementing this spec in the repository:
 
 1. **Inspect before editing.** List the existing files, read `package.json`, identify the current framework, and check what already works. Do not overwrite functioning code or silently replace the stack.
-2. **Build in vertical slices.** First make camera/image + mock command + grid work. Then speech. Then backend/model. Then real targets. Then context/search.
+2. **Build in vertical slices.** First make camera/image + typed command + grid work. Then backend/model. Then real targets. Then context/search.
 3. **Keep types and coordinate math centralized.** Use a single schema and a single coordinate utility. Add tests before styling extra effects.
-4. **Never fake functionality.** If tracking, citations, recording, or a search has not actually occurred, the UI must not claim it has.
+4. **Never fake functionality.** If tracking, citations, or a search has not actually occurred, the UI must not claim it has.
 5. **Use the official Meta Model API docs** linked above to confirm current model ID, endpoint, image format, search tool and structured-output syntax at implementation time.
 6. **Do not call the Meta consumer assistant as though it were a generic API.** Use the developer Model API credentials and interfaces documented by Meta, unless a distinct approved Meta AI Connector integration is specifically configured.
 7. **Keep secrets server-side.** Do not place the API key in `VITE_*`, client source, or committed files.
@@ -1010,9 +977,9 @@ When implementing this spec in the repository:
 ### Suggested first tasks for the coding agent
 
 1. Inspect the repository and report its current stack briefly.
-2. Implement a responsive static screen with a mock camera image, 16×16 overlay, transcript area, status pipeline and answer panel.
+2. Implement a responsive static screen with a mock camera image, 16×16 overlay, command input, status pipeline and answer panel.
 3. Implement and test coordinate conversion and tap-to-cell mapping.
-4. Only then connect real camera and transcription.
+4. Only then connect real camera and backend/model requests.
 
 ---
 
