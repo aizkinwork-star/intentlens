@@ -6,11 +6,10 @@
 //   camera -> capture -> IndexedDB -> prompt -> direct Meta provider -> validate -> draw
 //
 // It reuses the same pure modules as the desktop app (grid, componentResult,
-// TTS), so coordinate and validation behavior cannot drift.
+// text-only interactions, so coordinate and validation behavior cannot drift.
 
 import { DEFAULT_GRID_SIZE } from './lib/grid.js';
 import { toComponentResult } from './lib/componentResult.js';
-import { IntentLensTTS } from './lib/intentlens_tts.js';
 import { buildComponentPrompt, buildChatPrompt, buildExplainPrompt } from './prompt.js';
 import * as db from './store.js';
 import {
@@ -58,7 +57,6 @@ const els = {
   exportBtn: $('exportBtn'),
   importBtn: $('importBtn'),
   importInput: $('importInput'),
-  micBtn: $('micBtn'),
   chatBtn: $('chatBtn'),
   chatCard: $('chatCard'),
   chatLog: $('chatLog'),
@@ -73,7 +71,6 @@ const els = {
   evidence: $('evidence'),
   repeatBtn: $('repeatBtn'),
   explainBtn: $('explainBtn'),
-  speakBtn: $('speakBtn'),
   cloudState: $('cloudState'),
   cloudDetail: $('cloudDetail'),
   allowCloudBtn: $('allowCloudBtn'),
@@ -89,7 +86,6 @@ const els = {
   keyInput: $('keyInput'),
   baseUrlInput: $('baseUrlInput'),
   gridSelect: $('gridSelect'),
-  ttsToggle: $('ttsToggle'),
   testProviderBtn: $('testProviderBtn'),
   clearKeyBtn: $('clearKeyBtn'),
   saveSettingsBtn: $('saveSettingsBtn'),
@@ -118,12 +114,9 @@ const state = {
   accessTier: 'paid',
   baseUrl: '',
   apiKey: '',
-  tts: true,
   allowCloud: false,
   mode: 'vision',       // 'vision' sends one still; 'chat' sends text only
   busy: false,
-  listening: false,
-  recognition: null,
   installPrompt: null,
   lastModel: null,
   requestLog: [],       // in-memory only; never persisted
@@ -933,7 +926,6 @@ async function send() {
     state.messages = await db.listMessages(state.project.id);
     renderResult(state.result, response.latencyMs);
     setStatus(`Done via ${response.returnedModel || response.model}. The box, if any, passed coordinate validation.`, 'ok');
-    await speak(normalized.result.instruction);
   } catch (error) {
     setStatus(String(error?.message || error), 'error');
   } finally {
@@ -985,7 +977,6 @@ async function explain() {
     state.messages = await db.listMessages(state.project.id);
     renderResult(state.result, response.latencyMs);
     setStatus('Explained in one request.', 'ok');
-    await speak(answer);
   } catch (error) {
     setStatus(String(error?.message || error), 'error');
   } finally {
@@ -997,70 +988,6 @@ async function repeat() {
   if (!state.result) return;
   renderResult(state.result, state.lastLatency);
   setStatus('Repeated the stored answer. 0 AI requests.', 'ok');
-  await speak(state.result.instruction);
-}
-
-async function speak(text) {
-  if (!state.tts || !text) return;
-  try {
-    await IntentLensTTS.speak(text);
-  } catch {
-    setStatus('Text shown; speech is unavailable on this device.', 'error');
-  }
-}
-
-function setupSpeech() {
-  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!Recognition) {
-    els.micBtn.disabled = true;
-    els.micBtn.title = 'Speech recognition is not available in this browser';
-    return;
-  }
-  const recognition = new Recognition();
-  recognition.lang = navigator.language || 'en-US';
-  recognition.interimResults = true;
-  recognition.continuous = false;
-
-  recognition.onstart = () => {
-    state.listening = true;
-    els.micBtn.textContent = 'Stop';
-    setStatus('Listening…', 'busy');
-  };
-  recognition.onend = () => {
-    state.listening = false;
-    els.micBtn.textContent = 'Mic';
-  };
-  recognition.onerror = (event) => {
-    state.listening = false;
-    els.micBtn.textContent = 'Mic';
-    setStatus(`Voice error: ${event.error}. Type the command instead.`, 'error');
-  };
-  recognition.onresult = (event) => {
-    let finalText = '';
-    let interim = '';
-    for (let i = event.resultIndex; i < event.results.length; i += 1) {
-      const result = event.results[i];
-      if (result.isFinal) finalText += result[0].transcript;
-      else interim += result[0].transcript;
-    }
-    if (interim) setStatus(`Listening… ${interim}`, 'busy');
-    if (finalText.trim()) {
-      els.command.value = finalText.trim();
-      setStatus('Transcript ready. Edit it or Send.', 'ok');
-    }
-  };
-  state.recognition = recognition;
-  els.micBtn.disabled = false;
-}
-
-function toggleMic() {
-  if (!state.recognition) return;
-  try {
-    if (state.listening) state.recognition.stop();
-    else state.recognition.start();
-  } catch {
-    setStatus('Microphone could not start. Check site permission.', 'error');
-  }
 }
 
 function updateModelNote() {
@@ -1138,7 +1065,6 @@ function openSettings() {
   els.keyInput.value = state.apiKey;
   els.baseUrlInput.value = state.baseUrl;
   els.gridSelect.value = String(state.gridSize);
-  els.ttsToggle.checked = state.tts;
   updateProviderUi();
   if (!els.settingsDialog.open) els.settingsDialog.showModal();
 }
@@ -1154,7 +1080,6 @@ function readSettingsForm() {
     // relay/deployment URL is never carried into a fixed-host request.
     baseUrl: PROVIDERS[providerId]?.requiresBaseUrl ? els.baseUrlInput.value.trim() : '',
     gridSize: Number(els.gridSelect.value) || DEFAULT_GRID_SIZE,
-    tts: els.ttsToggle.checked,
   };
 }
 
@@ -1166,7 +1091,6 @@ async function saveSettings() {
   state.apiKey = values.apiKey;          // memory only, never persisted
   state.baseUrl = values.baseUrl;
   state.gridSize = values.gridSize;
-  state.tts = values.tts;
 
   // Settings are not sensitive, so they may persist. The key never is.
   await db.setSetting('providerId', state.providerId);
@@ -1174,7 +1098,6 @@ async function saveSettings() {
   await db.setSetting('accessTier', state.accessTier);
   await db.setSetting('baseUrl', state.baseUrl);
   await db.setSetting('gridSize', state.gridSize);
-  await db.setSetting('tts', state.tts);
   await db.deleteSetting('rememberKey');
   await db.deleteSetting('apiKey');
 
@@ -1329,11 +1252,9 @@ function wireEvents() {
     }
   });
   navigator.mediaDevices?.addEventListener?.('devicechange', refreshCameraList);
-  els.micBtn.addEventListener('click', toggleMic);
   els.sendBtn.addEventListener('click', send);
   els.repeatBtn.addEventListener('click', repeat);
   els.explainBtn.addEventListener('click', explain);
-  els.speakBtn.addEventListener('click', () => speak(state.result?.instruction || els.instruction.textContent));
 
   els.allowCloudBtn.addEventListener('click', () => {
     state.allowCloud = true;
@@ -1429,7 +1350,6 @@ function wireEvents() {
 async function boot() {
   updateNetDot();
   wireEvents();
-  setupSpeech();
   updateCloudUi();
   registerServiceWorker();
 
@@ -1453,7 +1373,7 @@ async function boot() {
   const savedModel = settings.model && isMetaModelId(settings.model) && !legacyRetired.has(settings.model) ? settings.model : '';
   state.model = modelAllowedAtTier(savedProvider, savedModel, state.accessTier) ? savedModel : '';
   state.baseUrl = settings.baseUrl || '';
-  state.tts = settings.tts === true;
+  await db.deleteSetting('tts'); // remove the legacy voice preference
   // Legacy plaintext keys from older builds are deleted, not migrated.
   await db.deleteSetting('apiKey');
   await db.deleteSetting('rememberKey');
@@ -1461,17 +1381,10 @@ async function boot() {
 
   els.gridSelect.value = String(state.gridSize);
   els.gridLabel.textContent = `Grid ${state.gridSize}×${state.gridSize}`;
-  els.ttsToggle.checked = state.tts;
   updateProviderUi();
   updateCloudUi();
   updateChatModeUi();
   clearRequestLog();
-
-  try {
-    await IntentLensTTS.init({ onStatus: () => {} });
-  } catch {
-    /* text answers still work */
-  }
 
   await refreshProjects();
   setStatus('Ready. Camera permission is asked only when you tap Start camera.', '');

@@ -3,7 +3,7 @@
 //
 // Strategy: network-first for the shell and code so a rebuilt app is not stuck
 // on an old cached UI. Cached copies are only an offline fallback.
-const CACHE = 'intentlens-v2';
+const CACHE = 'intentlens-v4';
 const ASSETS = [
   './index.html',
   './style.css',

@@ -34,7 +34,7 @@ export const PROVIDERS = {
   },
   groq: {
     id: 'groq',
-    label: 'Groq — Meta text/voice only (no image input)',
+    label: 'Groq — Meta text only (no image input)',
     endpoint: 'https://api.groq.com/openai/v1/chat/completions',
     host: 'api.groq.com',
     // No automatic default. Groq access and vision support vary by account, so
@@ -44,7 +44,7 @@ export const PROVIDERS = {
     vision: 'none',
     consent: false,
     retention: 'Groq API terms apply; prompts are sent to Groq for this request.',
-    note: 'Text, chat and voice input only. Images cannot be sent to Groq: it has no vision access in this app, so image requests are refused before any network call. Use OpenRouter (or the desktop app) for photos. Llama 3.3 70B Versatile is Enterprise-only; your account may expose no Meta chat model at all, so press Test before relying on it.',
+    note: 'Text and chat only. Images cannot be sent to Groq: it has no vision access in this app, so image requests are refused before any network call. Use OpenRouter (or the desktop app) for photos. Llama 3.3 70B Versatile is Enterprise-only; your account may expose no Meta chat model at all, so press Test before relying on it.',
   },
   'nvidia-nim': {
     id: 'nvidia-nim',
@@ -180,7 +180,7 @@ export const OPENROUTER_MODELS = {
   },
 };
 
-// Groq models. Groq is text/voice only in IntentLens: no model here accepts an
+// Groq models. Groq is text-only in IntentLens: no model here accepts an
 // image. Llama 3.3 70B Versatile is Enterprise-only on Groq, so your account may
 // expose no Meta chat model at all; press Test before relying on it.
 export const GROQ_TEXT_MODELS = {
@@ -192,7 +192,7 @@ export const GROQ_TEXT_MODELS = {
     vision: false,
     verified: false,
     meta: true,
-    note: 'Text, chat and voice transcript only. Images are always refused for Groq. Enterprise-only on Groq, so it may not exist on your account.',
+    note: 'Text and chat only. Images are always refused for Groq. Enterprise-only on Groq, so it may not exist on your account.',
   },
   'meta-models/muse-spark-open': {
     label: 'Meta Muse Spark Open — text only here (limited preview)',

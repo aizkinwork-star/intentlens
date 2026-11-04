@@ -114,10 +114,7 @@ ALLOW_OUTBOUND_NETWORK=true
 `ALLOW_OUTBOUND_NETWORK=false` disables cloud analysis and provider tests. Local
 camera, grid, tracking and k-NN still work.
 
-Voice input is local: start a whisper.cpp server and set
-`STT_URL=http://127.0.0.1:8080/inference` (loopback only). In the packaged desktop app
-put that in `%APPDATA%\IntentLens\.env`; from source, the project `.env` works too.
-Without it, typing works and the mic button explains what is missing.
+IntentLens uses text-only commands and responses.
 
 ## Verify
 

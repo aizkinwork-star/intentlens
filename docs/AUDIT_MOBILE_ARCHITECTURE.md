@@ -1,8 +1,6 @@
 # IntentLens — Mobile PWA Architecture Audit (Phase 0)
 
-Status: **read-only audit of the existing app, plus the provider/mic/TTS fixes made in
-this pass.** No PWA refactor has started. This document does not claim Android
-support, offline inference, or GitHub Pages deployment.
+Status: historical architecture audit. **Superseded on 2026-11-04:** the current desktop app and PWA use text-only commands and responses. Historical implementation notes below are not a description of the current UI.
 
 Audit date: 2026-11-03
 Repository: `C:\Users\hp\Desktop\IntentLens` (not a git repository at audit time)
@@ -24,9 +22,7 @@ Repository: `C:\Users\hp\Desktop\IntentLens` (not a git repository at audit time
 | Install UI | `#installPopup` / `#installApp` in `index.html`, wired in `app.js`. |
 | Mobile helpers | `mobileSupport.js` reports secure-origin / camera / APK facts; `platform/` has browser/Electron adapter stubs. |
 
-`app.js` is ~4,000 lines and mixes UI, camera, tracking, provider setup, speech,
-TTS, and the beginner project workflow. It is the main monolith to split before a
-PWA build.
+`app.js` is a large module mixing UI, camera, tracking, provider setup and the beginner project workflow. It remains the main monolith to split.
 
 ### 1.2 Electron
 
@@ -47,7 +43,6 @@ PWA build.
 | Routes used by the beginner workflow | `POST /api/projects`, `GET/PATCH /api/projects/:id`, `POST /api/captures`, `GET /api/captures/:id`, `POST /api/component/analyze`, `POST /api/explain`, `GET/POST /api/providers`, `POST /api/providers/test`, `POST /api/providers/network`. |
 | Provider adapters | `server/services/nimProvider.js`, `cloudflareProvider.js`, `groqProvider.js`, routed by `server/services/provider.js`. |
 | Static serving | `server/lib/static.js` serves the repo root, blocks `.sqlite`, `.env`, logs, credential files. |
-| STT | `POST /api/transcribe` proxies to a **loopback-only** whisper endpoint (`STT_URL`); unset by default. |
 
 ### 1.4 Tests
 
@@ -111,10 +106,9 @@ These files have no Node imports and can be used by a static PWA:
 | `grid.js` / `schema.js` | Grid math and result schema | Pure; tested. |
 | `evidencePanel.js` | Evidence card data + drawing contract | Pure helpers; tested. |
 | `captureOverlay.js` | Four-corner overlay drawing | Pure; tested. |
-| `assistantActions.js` | Repeat/Explain/speech gating | Pure; tested. |
+| `assistantActions.js` | Text-only Repeat/Explain actions | Pure; tested. |
 | `observerContext.js` / `observationContext.js` | Context summaries | Pure. |
 | `localReferenceLookup.js` | k-NN candidates (advisory only) | Needs the frozen index; must stay advisory. |
-| `intentlens_tts.js` | Browser SpeechSynthesis adapter | Fixed in this pass (Android voices). |
 | `mobileSupport.js` | Secure-origin/camera capability report | Pure. |
 | `cameraAdapter.js` / `platform/browser/cameraAdapter.js` | Rear-camera getUserMedia + capture | Reusable with permission-flow work. |
 | `handTracker.js` / `componentDetector.js` | Optional local perception | Heavy (OpenCV.js); not required for the PWA. |
@@ -222,10 +216,9 @@ then paste the token + the 32-char Account ID in setup.
 | `server/routes/providers.js` | Same default; model list now exposes `verified`/`note`/`modelVerified`; new confirm-gated `handleSetOutboundNetwork`. |
 | `server/services/nimProvider.js` | Reads `reasoning_content`/`reasoning` when `content` is null; extracts JSON from mixed text; 180s timeout; 3072 max tokens; 30s health check. |
 | `server/index.js` | Route `POST /api/providers/network`. |
-| `app.js` | Mic auto-start (default on, persistent `Mic on start` toggle, one attempt per launch, graceful gesture-failure hint); TTS init fixed (async, status callback, Android voices); `Test voice` button; provider test messages now explain network/auth/model errors; secure-storage message; model dropdown shows verified/not verified; session-only outbound button. |
-| `index.html` | `Mic on start` toggle; `Test voice`; Cloudflare/NVIDIA/Groq help rewritten to match reality; outbound opt-in row. |
-| `style.css` | Styling for the mic toggle. |
-| `intentlens_tts.js` | Do not filter to `localService` voices (Android Chrome); accept all voices; treat SpeechSynthesis as available while voices load; `init(options)` now wires `onStatus`. |
+| `app.js` | Text-only command submission; provider test messages explain network/auth/model errors; secure-storage message; model dropdown shows verified/not verified; session-only outbound button. |
+| `index.html` | Text-only command controls; Cloudflare/NVIDIA/Groq help rewritten to match reality; outbound opt-in row. |
+| `style.css` | Simplified command-interface styles. |
 | `providerCatalog.test.js` | Updated for the corrected catalog. |
 | `.gitignore` | Secret filenames and key extensions. |
 | `API(SECRETS).txt` (repo + Desktop) | Deleted after testing. |
@@ -245,10 +238,7 @@ then paste the token + the 32-char Account ID in setup.
   - Packaged `POST /api/providers/test` with the saved key: **ok: true**, 1.7s.
   - Packaged outbound toggle: enabled -> true, then restored to false.
   - `app.asar` contains the new UI strings, and contains no `nvapi-`/`gsk_` key patterns.
-- **Mic auto-start caveat:** it attempts once per launch. Chrome may refuse a
-  gestureless `SpeechRecognition.start()`; the app then shows
-  "Mic idle — tap the mic to speak" instead of looping. The toggle is
-  `Mic on start`, persisted in `localStorage`, default ON.
+- **Text-only interaction:** both clients submit typed commands and display written responses.
 
 ---
 
@@ -276,8 +266,7 @@ then paste the token + the 32-char Account ID in setup.
    one active target per project.
 7. **Evidence + guidance (Phase 5.4–5.5).** Original image, expandable card,
    aligned marker after resize/rotation, plain-language + simplified location.
-8. **Repeat/Explain + speech (Phase 6).** Keep Repeat at 0 requests, Explain at
-   exactly 1. Keep the text answer when TTS fails.
+8. **Repeat/Explain (Phase 6).** Keep Repeat at 0 requests and Explain at exactly 1; both return text only.
 9. **Optional ZIP export (Phase 7).** Local-only, user-selected, manifest,
    explicit consent, no upload.
 10. **Android tests (Phase 9.2).** Real phone, Chrome, documented model/version.

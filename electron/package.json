@@ -52,7 +52,6 @@
           "cameraAdapter.js",
           "componentDetector.js",
           "handTracker.js",
-          "intentlens_tts.js",
           "looseObjectTracker.js",
           "observationContext.js",
           "opencv.js",

@@ -195,7 +195,7 @@ test('provider presets expose every host and label the browser-blocked ones', ()
   assert.equal(OPENROUTER_MODELS[PROVIDERS.openrouter.defaultModel].vision, true);
   assert.equal(OPENROUTER_MODELS[PROVIDERS.openrouter.defaultModel].tier, 'paid');
 
-  // Groq: text/voice only, no default, no image input.
+  // Groq: text-only, no default, no image input.
   assert.equal(PROVIDERS.groq.vision, 'none');
   assert.equal(PROVIDERS.groq.defaultModel, '');
   assert.equal(PROVIDERS.groq.previewDefaultModel, undefined);

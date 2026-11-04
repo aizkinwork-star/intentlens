@@ -13,6 +13,10 @@ API Keys*.txt
 # Dependencies (this project has none, but future edits might add some)
 node_modules/
 
+# Python cache / bytecode (generated locally)
+__pycache__/
+*.py[cod]
+
 # Logs and OS noise
 *.log
 .DS_Store

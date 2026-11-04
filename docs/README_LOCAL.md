@@ -15,7 +15,7 @@ limitations, see [../README.md](../README.md).
 - Tap/drag local tracking
 - Compact k-NN reference classifier: 2,027-dim features, 305 references, 61 classes
 - SQLite project memory, images and task history
-- Browser Web Speech API for speech recognition and TTS (platform-dependent)
+- Text-only command and response interface
 
 ## What uses the cloud
 

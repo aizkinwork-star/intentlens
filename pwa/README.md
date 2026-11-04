@@ -32,7 +32,7 @@ Every provider is visible in Settings. Browser-blocked hosts are refused before 
 7. Type a question and press Send.
 8. Check the Provider request log to see the exact endpoint and model used.
 
-Camera and microphone need a secure context. GitHub Pages is HTTPS, so the installed PWA works. A plain http://192.168.x.x LAN address will not get camera permission on Android Chrome.
+Camera access needs a secure context. GitHub Pages is HTTPS, so the installed PWA works. A plain http://192.168.x.x LAN address will not get camera permission on Android Chrome.
 
 ## Local preview
 

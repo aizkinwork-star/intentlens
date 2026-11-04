@@ -151,7 +151,7 @@ async function handleGetContext(req, res, projectId) {
 }
 
 async function handleEndSession(req, res, projectId) {
-  // Finalize the session: stop tracking on the server side (client stops camera/mic),
+  // Finalize the session: stop tracking on the server side (client stops the camera),
   // write a summary and preserve history until the user deletes it.
   const body = await readJsonBody(req, config.maxBodyBytes);
   const summary = body && body.summary ? String(body.summary) : null;
