@@ -189,7 +189,8 @@ re-enter every key.
 git clone https://github.com/aizkinwork-star/intentlens.git
 cd intentlens
 npm install
-start.cmd                 :: Electron desktop app
+start.cmd                 :: desktop app, run from THIS folder's source (always current)
+start.cmd --packaged      :: use an installed/built IntentLens.exe (frozen snapshot)
 start.cmd --online        :: desktop app with cloud providers enabled
 ```
 

@@ -25,8 +25,7 @@ start.cmd            # launches the Electron desktop app
 start.cmd --online   # same, with allowlisted provider hosts enabled
 ```
 
-`start.cmd` opens the installed app if present, otherwise the packaged build in
-`electron\release\win-unpacked\IntentLens.exe`.
+`start.cmd` runs the desktop app from this folder's source, so it always matches the code you cloned. The first run installs Electron once. Close any installed `IntentLens.exe` first: it is an older frozen build and holds the single-instance lock. Use `start.cmd --packaged` only if you want an installed or built exe.
 
 The desktop app keeps cloud access **off by default** (`ALLOW_OUTBOUND_NETWORK=false`).
 Pass `--online` when you want to use NVIDIA, Cloudflare or Groq in that session.
