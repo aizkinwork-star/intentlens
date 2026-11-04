@@ -73,7 +73,7 @@ analytics, no account system, no APK, no Meta glasses integration.
 │                         ▼                                          │
 │  Node server on 127.0.0.1:8000                                     │
 │    /api/analyze   validation · context · provider router           │
-│    /api/providers credentials (never returned to the page)          │
+│    /api/providers credentials (never returned to the page)         │
 │    /api/transcribe local whisper.cpp only (loopback)               │
 │                         │                                          │
 │        ┌────────────────┼─────────────────┐                        │
