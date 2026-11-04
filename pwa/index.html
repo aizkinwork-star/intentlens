@@ -1,10 +1,11 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <!-- connect-src allows any HTTPS origin only because the optional "Custom
-       relay" provider must point at a relay the user deploys. Fixed providers
-       remain OpenRouter and Groq. GitHub Pages cannot set response headers, so
-       this CSP is delivered as a meta tag only. -->
+  <!-- connect-src allows any HTTPS origin only because Modal deployments and the
+       optional "Custom relay" provider must point at a user-owned URL. Fixed
+       providers are OpenRouter, Groq, NVIDIA NIM, Cloudflare Workers AI and
+       BlockRun. GitHub Pages cannot set response headers, so this CSP is
+       delivered as a meta tag only. -->
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0b1118">
@@ -140,8 +141,8 @@
         A phone cannot keep the key after a reload; re-enter it when needed.
       </p>
 
-      <label>Custom base URL (only for “Custom relay”)
-        <input id="baseUrlInput" type="url" placeholder="https://your-relay.example.workers.dev" autocomplete="off" spellcheck="false">
+      <label>Base URL (Modal deployment or custom relay only)
+        <input id="baseUrlInput" type="url" placeholder="https://your-workspace--your-app.modal.run" autocomplete="off" spellcheck="false">
       </label>
 
       <div class="twoCol">

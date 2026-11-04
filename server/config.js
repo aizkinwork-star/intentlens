@@ -76,12 +76,20 @@ export const META_MODEL_CATALOG = {
     },
   },
   'groq': {
-    label: 'Groq (classifier only on this account)',
+    label: 'Groq (Meta text; account dependent)',
     host: 'api.groq.com',
     models: {
-      // The live Groq account on 2026-11-04 listed only these Meta models.
+      // Preferred Meta text model. The supplied restricted account exposed
+      // only Prompt Guard classifiers, so this stays unverified here and is
+      // not eligible for vision.
+      'meta-llama/llama-3.3-70b-versatile': {
+        name: 'Meta Llama 3.3 70B Versatile',
+        modality: 'text',
+        verified: false,
+        note: 'Meta text model. Not listed on the supplied Groq account on 2026-11-04; Test connection shows whether your account has it.',
+      },
       // Prompt Guard is a prompt-injection classifier; it must never be used
-      // for chat or vision. No Meta chat or vision model was available.
+      // for chat or vision.
       'meta-llama/llama-prompt-guard-2-22m': {
         name: 'Meta Llama Prompt Guard 2 22M (classifier only)',
         modality: 'classifier',
@@ -93,6 +101,78 @@ export const META_MODEL_CATALOG = {
         modality: 'classifier',
         verified: false,
         note: 'Classifier only: not a chat model and not a vision model.',
+      },
+    },
+  },
+  openrouter: {
+    label: 'OpenRouter (Meta models; paid)',
+    host: 'openrouter.ai',
+    models: {
+      'meta-llama/llama-4-maverick': {
+        name: 'Meta Llama 4 Maverick',
+        modality: 'vision',
+        verified: true,
+        note: 'Verified with a real image on 2026-11-04; canary cost $0.0000219. Paid: $0.1875/M input, $0.6525/M output.',
+      },
+      'meta-llama/llama-4-scout': {
+        name: 'Meta Llama 4 Scout',
+        modality: 'vision',
+        verified: false,
+        note: 'Paid Meta vision model listed on the account; not image-tested. $0.10/M input, $0.30/M output.',
+      },
+      'meta-llama/llama-3.3-70b-instruct': {
+        name: 'Meta Llama 3.3 70B Instruct',
+        modality: 'text',
+        verified: false,
+        note: 'Text-only; never used for vision. Paid.',
+      },
+      'meta-llama/llama-3.1-8b-instruct': {
+        name: 'Meta Llama 3.1 8B Instruct',
+        modality: 'text',
+        verified: false,
+        note: 'Text-only; never used for vision. Paid.',
+      },
+    },
+  },
+  blockrun: {
+    label: 'BlockRun (paid marketplace; HTTP 402 on supplied key)',
+    host: 'api.blockrun.ai',
+    models: {
+      'meta-llama/llama-4-maverick': {
+        name: 'Meta Llama 4 Maverick',
+        modality: 'vision',
+        verified: false,
+        note: 'Supplied key returned HTTP 402 Payment verification failed. Paid x402 marketplace; no browser CORS.',
+      },
+      'meta-llama/llama-4-scout': {
+        name: 'Meta Llama 4 Scout',
+        modality: 'vision',
+        verified: false,
+        note: 'Paid x402 marketplace; untested beyond the payment error.',
+      },
+      'meta-llama/llama-3.3-70b-instruct': {
+        name: 'Meta Llama 3.3 70B Instruct',
+        modality: 'text',
+        verified: false,
+        note: 'Text-only; paid marketplace.',
+      },
+    },
+  },
+  modal: {
+    label: 'Modal (your paid deployment; untested)',
+    host: 'api.modal.com',
+    models: {
+      'meta-llama/Llama-4-Maverick-17B-128E-Instruct': {
+        name: 'Meta Llama 4 Maverick',
+        modality: 'vision',
+        verified: false,
+        note: 'NOT TESTED. Requires your Modal deployment URL. Paid Modal compute.',
+      },
+      'meta-llama/Llama-3.3-70B-Instruct': {
+        name: 'Meta Llama 3.3 70B Instruct',
+        modality: 'text',
+        verified: false,
+        note: 'NOT TESTED. Text-only; requires your Modal deployment URL.',
       },
     },
   },
@@ -111,12 +191,18 @@ export const CLOUD_PROVIDER_FIELDS = {
   'cloudflare-workers-ai': ['CLOUDFLARE_ACCOUNT_ID', 'CLOUDFLARE_API_TOKEN'],
   'nvidia-nim': ['NIM_API_KEY'],
   'groq': ['GROQ_API_KEY'],
+  openrouter: ['OPENROUTER_API_KEY'],
+  blockrun: ['BLOCKRUN_API_KEY'],
+  modal: ['MODAL_API_KEY', 'MODAL_BASE_URL'],
 };
 
 export const ALLOWED_HOSTS = [
   'api.cloudflare.com',
   'integrate.api.nvidia.com',
   'api.groq.com',
+  'openrouter.ai',
+  'api.blockrun.ai',
+  'api.modal.com',
 ];
 
 /**
@@ -141,7 +227,12 @@ export function isAllowedOutboundHost(url) {
   try {
     const u = new URL(url);
     if (u.protocol !== 'https:') return false;
-    return ALLOWED_HOSTS.includes(u.hostname.toLowerCase());
+    const host = u.hostname.toLowerCase();
+    if (ALLOWED_HOSTS.includes(host)) return true;
+    // Modal serves user-deployed endpoints from *.modal.run. The exact
+    // workspace/app is user-owned; no other wildcard is accepted.
+    if (host.endsWith('.modal.run')) return true;
+    return false;
   } catch {
     return false;
   }
@@ -225,7 +316,14 @@ export const config = {
   // retired or non-Meta model.
   groqTextModel: (process.env.GROQ_TEXT_MODEL || '').trim(),
   groqVisionModel: (process.env.GROQ_VISION_MODEL || '').trim(),
-  providerPriority: (process.env.PROVIDER_PRIORITY || 'nvidia-nim,cloudflare-workers-ai,groq')
+  openrouterApiKey: (process.env.OPENROUTER_API_KEY || '').trim(),
+  openrouterModelId: (process.env.OPENROUTER_MODEL_ID || 'meta-llama/llama-4-maverick').trim(),
+  blockrunApiKey: (process.env.BLOCKRUN_API_KEY || '').trim(),
+  blockrunModelId: (process.env.BLOCKRUN_MODEL_ID || 'meta-llama/llama-4-maverick').trim(),
+  modalApiKey: (process.env.MODAL_API_KEY || '').trim(),
+  modalBaseUrl: (process.env.MODAL_BASE_URL || '').trim(),
+  modalModelId: (process.env.MODAL_MODEL_ID || 'meta-llama/Llama-4-Maverick-17B-128E-Instruct').trim(),
+  providerPriority: (process.env.PROVIDER_PRIORITY || 'openrouter,nvidia-nim,cloudflare-workers-ai,blockrun,modal,groq')
     .split(',').map((s) => s.trim()).filter(Boolean),
   allowOutboundNetwork: bool(process.env.ALLOW_OUTBOUND_NETWORK, true),
   // Local speech-to-text. Empty unless STT_URL points at this machine.
@@ -259,17 +357,19 @@ export function isPlaceholderCredential(value) {
   return false;
 }
 
-/** A model is only eligible when it has an explicit modality and is verified. */
-function verifiedVisionModel(providerId, modelId) {
-  const model = META_MODEL_CATALOG[providerId]?.models?.[modelId];
-  return Boolean(model && model.modality === 'vision' && model.verified === true);
+/** A model is eligible when it has an explicit vision modality. */
+function visionModel(providerId, modelId) {
+  return META_MODEL_CATALOG[providerId]?.models?.[modelId]?.modality === 'vision';
 }
 
-/** Provider has credentials for a verified, vision-capable Meta model. */
+/** Provider has credentials for a vision-capable Meta model. */
 export function providerConfigured(id) {
-  if (id === 'nvidia-nim') return Boolean(config.nimApiKey && !isPlaceholderCredential(config.nimApiKey) && config.nimEnabled && verifiedVisionModel(id, config.nimModelId));
-  if (id === 'cloudflare-workers-ai') return Boolean(config.cloudflareAccountId && !isPlaceholderCredential(config.cloudflareAccountId) && config.cloudflareApiToken && !isPlaceholderCredential(config.cloudflareApiToken) && verifiedVisionModel(id, config.cloudflareModelId));
-  if (id === 'groq') return Boolean(config.groqApiKey && !isPlaceholderCredential(config.groqApiKey) && config.groqVisionModel && verifiedVisionModel(id, config.groqVisionModel));
+  if (id === 'nvidia-nim') return Boolean(config.nimApiKey && !isPlaceholderCredential(config.nimApiKey) && config.nimEnabled && visionModel(id, config.nimModelId));
+  if (id === 'cloudflare-workers-ai') return Boolean(config.cloudflareAccountId && !isPlaceholderCredential(config.cloudflareAccountId) && config.cloudflareApiToken && !isPlaceholderCredential(config.cloudflareApiToken) && visionModel(id, config.cloudflareModelId));
+  if (id === 'groq') return Boolean(config.groqApiKey && !isPlaceholderCredential(config.groqApiKey) && config.groqVisionModel && visionModel(id, config.groqVisionModel));
+  if (id === 'openrouter') return Boolean(config.openrouterApiKey && !isPlaceholderCredential(config.openrouterApiKey) && visionModel(id, config.openrouterModelId));
+  if (id === 'blockrun') return Boolean(config.blockrunApiKey && !isPlaceholderCredential(config.blockrunApiKey) && visionModel(id, config.blockrunModelId));
+  if (id === 'modal') return Boolean(config.modalApiKey && !isPlaceholderCredential(config.modalApiKey) && config.modalBaseUrl && isAllowedOutboundHost(config.modalBaseUrl) && visionModel(id, config.modalModelId));
   return false;
 }
 

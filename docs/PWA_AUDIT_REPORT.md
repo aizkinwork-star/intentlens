@@ -7,6 +7,21 @@ Scope: `pwa/`, `scripts/prepare-pwa.mjs`, `scripts/serve-pwa.mjs`, `.github/work
 
 > Status vocabulary: **PASS** = verified in this environment; **PASS (live)** = verified against the real provider with the supplied key; **PASS (simulated)** = verified with a mocked browser/provider; **NOT TESTED — DEVICE REQUIRED** = needs a physical phone; **BLOCKED** = host or account prevents the action.
 
+> **Provider restoration addendum (2026-11-04, after the audit runs below).**
+> The phone previously hid NVIDIA NIM and BlockRun. That made the phone look
+> smaller than the PC and explained nothing. The current build (`v10`) shows the
+> **full provider set**: OpenRouter, Groq, NVIDIA NIM, Cloudflare Workers AI,
+> BlockRun, Modal and Custom relay. Browser-blocked hosts are refused **before
+> the network call** with `PROVIDER_CORS_BLOCKED`, their exact endpoint, the CORS
+> evidence and the desktop/relay alternative. Meta models are now the default on
+> OpenRouter (`meta-llama/llama-4-maverick`) and Groq
+> (`meta-llama/llama-3.3-70b-versatile`). The desktop server gained OpenRouter,
+> BlockRun and Modal adapters, and provider gating now accepts any catalogued
+> vision model so paid/untested hosts can be configured and tested while the UI
+> keeps its unverified warning. Modal is paid and **not tested**; BlockRun is
+> paid and the supplied key still returns HTTP 402. The desktop encrypted
+> credential file was not read, printed, modified or deleted.
+
 ---
 
 ## A. Executive result
@@ -25,14 +40,15 @@ What is verified:
   `[hidden] { display: none !important; }`. Verified in a browser with a mocked
   `MediaStream`.
 - **Text-only Chat** sends one `text` part and **no** `image_url`.
-- **Vision Send** sends one still image through OpenRouter's free vision model.
-  A real image request returned HTTP 200 and correctly named a synthetic red
-  circle and blue rectangle.
-- The phone provider list is now **OpenRouter**, **Groq (text only)** and an
-  optional **user-owned custom relay**. NVIDIA NIM and BlockRun were removed
-  because a browser cannot read their responses (no
-  `Access-Control-Allow-Origin`), and BlockRun also returned HTTP 402 with the
-  supplied key.
+- **Vision Send** sends one still image through OpenRouter. A real image request
+  returned HTTP 200 and correctly named a synthetic red circle and blue
+  rectangle. The current default is the paid Meta Llama 4 Maverick; the earlier
+  free-model run is preserved below as historical evidence.
+- The phone provider list now shows **OpenRouter**, **Groq (text only)**,
+  **NVIDIA NIM**, **Cloudflare Workers AI**, **BlockRun**, **Modal** and an
+  optional **user-owned custom relay**. NIM, Cloudflare and BlockRun are marked
+  blocked with their endpoint and refused before any network call; they are not
+  hidden. BlockRun also returned HTTP 402 with the supplied key.
 - Groq is labelled **text only**. The live account exposes no Meta chat or
   vision model; its only Meta entries are Prompt Guard 2 22M/86M classifiers,
   which are never offered for Q&A or images.
@@ -43,7 +59,7 @@ What is verified:
 - API keys are memory-only in the phone build. Legacy plaintext key slots are
   deleted on boot; no key is written to localStorage, sessionStorage,
   IndexedDB, Cache Storage or the URL.
-- The service-worker shell cache is **v9**. Install fetches use
+- The service-worker shell cache is **v10**. Install fetches use
   `cache: 'reload'` so a new version cannot copy stale assets, and registration
   uses `updateViaCache: 'none'` so GitHub Pages' 10-minute HTTP cache cannot
   delay a worker update check.
@@ -80,7 +96,7 @@ this audit. Its encrypted credential file was not touched or deleted.
 | API key | JavaScript memory only | `state.apiKey` in `pwa/app.js` |
 | Provider request log | JavaScript memory only | `state.requestLog` in `pwa/app.js` |
 | Camera stream | RAM; tracks stopped on stop/hide/pagehide | `startCamera`, `stopCamera` |
-| Service worker shell | Cache Storage `intentlens-pwa-v9` | `pwa/sw.js` |
+| Service worker shell | Cache Storage `intentlens-pwa-v10` | `pwa/sw.js` |
 
 ### B2. Data flow
 
@@ -109,13 +125,14 @@ this audit. Its encrypted credential file was not touched or deleted.
 | `aizkinwork-star.github.io` | Static shell, JS, CSS, icons, manifest, SW | GitHub Pages assets |
 | `openrouter.ai` | Only if OpenRouter selected + Send/Explain/Test | Selected AI provider (CORS verified) |
 | `api.groq.com` | Only if Groq selected + text Send/Test | Selected AI provider (CORS verified, text only) |
-| User-entered custom HTTPS relay | Only if Custom selected + Send | User-chosen provider |
+| User-entered Modal / custom HTTPS endpoint | Only if that provider selected + Send | User-chosen provider |
 | `fonts`/CDN/analytics | None | Not present |
 
 NVIDIA NIM (`integrate.api.nvidia.com`), Cloudflare Workers AI
-(`api.cloudflare.com`) and BlockRun (`api.blockrun.ai`) are **not** destinations
-of the phone build. They remain available only through a user-owned relay or the
-desktop app.
+(`api.cloudflare.com`) and BlockRun (`api.blockrun.ai`) are **listed on the
+phone but are not contacted**. They are refused before `fetch` with
+`PROVIDER_CORS_BLOCKED`, their endpoint and the CORS evidence. They remain usable
+through the desktop app or a user-owned relay.
 
 No analytics, telemetry, cloud sync, hosted database or IntentLens-owned backend
 exists.
@@ -219,23 +236,25 @@ a blue rectangle.
 | `api.cloudflare.com` | `OPTIONS` 405, no allow-origin | 9 Meta models in search | `@cf/meta/llama-3.2-11b-vision-instruct` image | 200, correct shapes after licence acceptance |
 | `api.blockrun.ai` | no allow-origin | 115 models | text + image | 402 `Payment verification failed`; unusable |
 
-### F2. Phone provider/model catalogue after the audit
+### F2. Phone provider/model catalogue after the restoration
 
 | Provider | Offered on phone | Vision | Reason |
 |---|---|---|---|
-| OpenRouter | Yes | Yes | CORS `*`; free vision verified; paid Meta models explicit with prices |
-| Groq | Yes (text only) | No | CORS `*`; no Meta chat/vision model on the account |
-| Custom relay | Yes (opt-in) | User decides | Only workaround for CORS-blocked hosts such as NIM/Cloudflare |
-| NVIDIA NIM | **Removed** | — | No CORS; desktop-only |
-| BlockRun | **Removed** | — | HTTP 402 and no CORS |
+| OpenRouter | Yes | Yes | CORS `*`; Meta Llama 4 Maverick default; free vision models selectable |
+| Groq | Yes (text only) | No | CORS `*`; no Meta chat/vision model on the supplied account |
+| NVIDIA NIM | Yes, **listed blocked** | Desktop-only | No CORS; `PROVIDER_CORS_BLOCKED` before network |
+| Cloudflare Workers AI | Yes, **listed blocked** | Desktop-only | OPTIONS 405, no CORS; refused before network |
+| BlockRun | Yes, **listed blocked** | Desktop-only | HTTP 402 + no CORS; paid |
+| Modal | Yes, user endpoint | User endpoint | Paid and **NOT TESTED**; CORS decided by the deployment |
+| Custom relay | Yes (opt-in) | User decides | Workaround for CORS-blocked hosts |
 
 OpenRouter model truth:
 
-- `nvidia/nemotron-3.5-super-vl:free` — default, vision, verified.
+- `meta-llama/llama-4-maverick` — **default**, paid Meta vision, verified with a
+  real image; `$0.1875/M` input, `$0.6525/M` output.
+- `nvidia/nemotron-3.5-super-vl:free` — free vision, verified (fallback).
 - `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` — vision, verified.
 - `dots-studio/dots-3-note-preview:free` — vision, verified.
-- `meta-llama/llama-4-maverick` — paid Meta, verified; `$0.1875/M` input,
-  `$0.6525/M` output.
 - `meta-llama/llama-4-scout` — paid Meta, listed but not image-tested in this
   audit.
 - `meta-llama/llama-3.3-70b-instruct` and `meta-llama/llama-3.1-8b-instruct` —
@@ -243,11 +262,13 @@ OpenRouter model truth:
 
 Groq model truth:
 
-- Text: `openai/gpt-oss-120b` (verified), `openai/gpt-oss-20b`,
+- Meta text: `meta-llama/llama-3.3-70b-versatile` — default, not listed on the
+  supplied restricted account, so Test may return 403/404.
+- Non-Meta text: `openai/gpt-oss-120b` (verified), `openai/gpt-oss-20b`,
   `qwen/qwen3.8-27b` (verified), `allam-2-7b`.
 - Classifiers (never chat/vision): `meta-llama/llama-prompt-guard-2-22m`,
   `meta-llama/llama-prompt-guard-2-86m`.
-- No Meta chat or vision model exists on this account.
+- No Meta vision model exists on this account.
 
 ### F3. Refusal behaviour
 
@@ -255,6 +276,9 @@ Groq model truth:
 - A vision request to Groq fails with `VISION_UNSUPPORTED` before `fetch`.
 - A vision request to a known text-only OpenRouter model fails with
   `MODEL_TEXT_ONLY` before `fetch`.
+- A request to NVIDIA NIM, Cloudflare Workers AI or BlockRun on the phone fails
+  with `PROVIDER_CORS_BLOCKED` before `fetch`; the message names the endpoint and
+  the desktop/relay alternative.
 - An unknown typed model id is sent as typed; the provider decides whether it
   exists and whether it can read images. Nothing is substituted silently.
 
@@ -273,7 +297,7 @@ node --check server\routes\analyze.js
 node --check app.js
 ```
 
-Final result: **221 tests, 221 passed, 0 failed** across **27 source test files**
+Final result: **223 tests, 223 passed, 0 failed** across **27 source test files**
 (excluding `node_modules`, `datasets`, `intentlens-data` and build output).
 
 Relevant coverage:
@@ -284,8 +308,10 @@ Relevant coverage:
 - Provider request metadata includes endpoint, host, model, mode, HTTP status,
   request id and latency; the sentinel key is absent from the result.
 - Groq and known text-only models refuse images before any network call.
-- Provider catalogue excludes NIM/BlockRun; OpenRouter default is the verified
-  free vision model.
+- Browser-blocked hosts are still in the catalogue and refuse with
+  `PROVIDER_CORS_BLOCKED` before `fetch`.
+- Provider catalogue restores NIM, Cloudflare, BlockRun and Modal; OpenRouter and
+  Groq default to Meta models.
 - Camera error mapping and true-frame capture dimensions.
 - Four edge midpoints and polygon points.
 - HTML escaping and `javascript:`/`data:` rejection.
@@ -294,8 +320,9 @@ Relevant coverage:
   requests.
 - A deployed worker change triggers one controlled reload; a new shell cache
   bypasses the HTTP cache rather than copying stale assets.
-- Desktop catalogue: only verified vision models make a provider eligible;
-  classifiers are rejected; Groq has no vision model.
+- Desktop catalogue: any catalogued vision model makes a provider eligible so
+  paid/untested hosts can be tested; classifiers are rejected; Groq has no vision
+  model on the supplied account.
 
 Browser smoke test (localhost, simulated camera/provider):
 
@@ -314,9 +341,9 @@ import `node:sqlite`, which exists only from Node 22.5. The workflow now uses
 Node 24 and `package.json` declares `>=22.5`. Every push touched by this audit
 deployed successfully.
 
-The service worker cache is `intentlens-pwa-v9`. The version was bumped for each
-shell change during the audit. Two deployment traps were fixed rather than
-documented away:
+The service worker cache is `intentlens-pwa-v10`. The version was bumped for each
+shell change, including the provider-restoration build. Two deployment traps
+were fixed rather than documented away:
 
 1. Install fetches use `cache: 'reload'`. Without it, an unexpired HTTP cache
    could copy the previous `app.js` into a new, versioned cache.
@@ -334,8 +361,8 @@ Post-deploy evidence (2026-11-04):
 | Check | Result |
 |---|---|
 | Pages workflow | **PASS**: deploy job completed for every commit |
-| Served `sw.js` cache name | **PASS**: `intentlens-pwa-v9` after the final deploy |
-| Served `provider.js` | **PASS**: default `nvidia/nemotron-3.5-super-vl:free`; no `nim` or `blockrun` provider key |
+| Served `sw.js` cache name | **PASS** for the audited build: `intentlens-pwa-v9`. Current build: `intentlens-pwa-v10`; re-check after deploy. |
+| Served `provider.js` | **PASS** for the audited build: default `nvidia/nemotron-3.5-super-vl:free`; no NIM/BlockRun provider. Current build: Meta Maverick default with the full provider set — re-verify after deploy. |
 | Served `prompt.js` | **PASS**: embeds the exact `COMPONENT_SCHEMA` |
 | Request log card | **PASS**: present in the deployed `index.html` |
 | Real Pages image send | **PASS**: two requests, both HTTP 200 from `openrouter.ai` |
@@ -418,8 +445,10 @@ No mid-range Android measurements were possible. Code-level observations:
 |---|---|---|---|---|
 | J1 | **High** | Camera-off overlay stayed visible | **Fixed** | Global `[hidden]{display:none!important}`; simulated stream test |
 | J2 | **High** | Key persisted when Remember checked | **Fixed** | Memory-only; legacy slots deleted; storage test |
-| J3 | **High** | BlockRun privacy/vision risk | **Removed** | 402 + no CORS; preset and consent UI removed |
-| J4 | **High** | NIM unusable from a static page | **Removed from phone** | No CORS; kept in desktop server path |
+| J3 | **High** | BlockRun privacy/vision risk | **Restored, blocked** | 402 + no CORS; visible with endpoint and reason, refused before network | 
+| J4 | **High** | NIM unusable from a static page | **Restored, blocked** | No CORS; visible on phone, refused before network; full desktop path |
+| J4b | **High** | Cloudflare workers AI absent from phone | **Restored, blocked** | OPTIONS 405 + no CORS; visible with endpoint |
+| J4c | **High** | Modal paid/untested not represented | **Restored, labelled** | User `*.modal.run` endpoint; paid and NOT TESTED |
 | J5 | **High** | Groq offered as a vision provider | **Fixed** | Groq is text-only; images refused before network |
 | J6 | **Medium** | Model truth relied on public docs | **Fixed** | Live account catalogs and real image tests |
 | J7 | **Medium** | Logs did not name the API/endpoint/model | **Fixed** | Phone request log; desktop success/failure logs |

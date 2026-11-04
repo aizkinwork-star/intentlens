@@ -32,19 +32,21 @@ test('outbound hosts are HTTPS and allowlisted only', () => {
   assert.equal(isAllowedOutboundHost('https://integrate.api.nvidia.com'), true);
   assert.equal(isAllowedOutboundHost('https://api.cloudflare.com/client/v4'), true);
   assert.equal(isAllowedOutboundHost('https://api.groq.com/openai/v1'), true);
+  assert.equal(isAllowedOutboundHost('https://openrouter.ai/api/v1'), true);
+  assert.equal(isAllowedOutboundHost('https://api.blockrun.ai/v1'), true);
+  assert.equal(isAllowedOutboundHost('https://demo--intentlens.modal.run/v1/chat/completions'), true);
   assert.equal(isAllowedOutboundHost('http://integrate.api.nvidia.com'), false);
   assert.equal(isAllowedOutboundHost('https://integrate.api.nvidia.com.evil.example'), false);
+  assert.equal(isAllowedOutboundHost('https://modal.run.evil.example'), false);
   assert.equal(isAllowedOutboundHost('not a url'), false);
 });
 
-test('default provider priority is NVIDIA, Cloudflare, Groq', () => {
-  const saved = config.providerPriority;
-  try {
-    config.providerPriority = ['nvidia-nim', 'cloudflare-workers-ai', 'groq'];
-    assert.deepEqual(config.providerPriority, ['nvidia-nim', 'cloudflare-workers-ai', 'groq']);
-  } finally {
-    config.providerPriority = saved;
-  }
+test('default provider priority is Meta-first OpenRouter, then desktop hosts', () => {
+  assert.deepEqual(
+    (process.env.PROVIDER_PRIORITY || 'openrouter,nvidia-nim,cloudflare-workers-ai,blockrun,modal,groq')
+      .split(',').map((s) => s.trim()).filter(Boolean),
+    ['openrouter', 'nvidia-nim', 'cloudflare-workers-ai', 'blockrun', 'modal', 'groq'],
+  );
 });
 
 test('placeholder keys never make a provider configured', () => {

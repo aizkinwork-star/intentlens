@@ -22,11 +22,15 @@ import {
   SECRET_ENV_KEYS,
 } from '../lib/credentialStore.js';
 import { resetProviderHealth } from '../services/provider.js';
+import { chatCompletionsUrl } from '../services/openaiCompatibleProvider.js';
 
 const PROVIDER_ENV = {
   'nvidia-nim': { key: 'NIM_API_KEY', model: 'NIM_MODEL_ID', extra: ['NIM_BASE_URL', 'NIM_ENABLED'] },
   'cloudflare-workers-ai': { key: 'CLOUDFLARE_API_TOKEN', model: 'CLOUDFLARE_MODEL_ID', extra: ['CLOUDFLARE_ACCOUNT_ID'] },
   'groq': { key: 'GROQ_API_KEY', model: 'GROQ_VISION_MODEL', extra: ['GROQ_TEXT_MODEL'] },
+  openrouter: { key: 'OPENROUTER_API_KEY', model: 'OPENROUTER_MODEL_ID', extra: [] },
+  blockrun: { key: 'BLOCKRUN_API_KEY', model: 'BLOCKRUN_MODEL_ID', extra: [] },
+  modal: { key: 'MODAL_API_KEY', model: 'MODAL_MODEL_ID', extra: ['MODAL_BASE_URL'] },
 };
 
 const PROVIDER_ALIASES = {
@@ -34,6 +38,8 @@ const PROVIDER_ALIASES = {
   nvidia: 'nvidia-nim',
   nim: 'nvidia-nim',
   'cloudflare-workers': 'cloudflare-workers-ai',
+  'open-router': 'openrouter',
+  'block-run': 'blockrun',
 };
 
 function normalizeProvider(id) {
@@ -58,28 +64,39 @@ function selectedModel(providerId) {
   if (providerId === 'nvidia-nim') return config.nimModelId;
   if (providerId === 'cloudflare-workers-ai') return config.cloudflareModelId;
   if (providerId === 'groq') return config.groqVisionModel || null;
+  if (providerId === 'openrouter') return config.openrouterModelId;
+  if (providerId === 'blockrun') return config.blockrunModelId;
+  if (providerId === 'modal') return config.modalModelId;
   return null;
+}
+
+function providerKey(providerId) {
+  if (providerId === 'nvidia-nim') return config.nimApiKey;
+  if (providerId === 'cloudflare-workers-ai') return config.cloudflareApiToken;
+  if (providerId === 'groq') return config.groqApiKey;
+  if (providerId === 'openrouter') return config.openrouterApiKey;
+  if (providerId === 'blockrun') return config.blockrunApiKey;
+  if (providerId === 'modal') return config.modalApiKey;
+  return '';
 }
 
 function providerStatus(providerId) {
   const fromEnv = providerConfigured(providerId);
+  const key = providerKey(providerId);
   return {
     id: providerId,
     label: META_MODEL_CATALOG[providerId]?.label || providerId,
     configured: fromEnv,
-    hasKey: Boolean(
-      providerId === 'nvidia-nim' ? config.nimApiKey
-        : providerId === 'cloudflare-workers-ai' ? config.cloudflareApiToken
-          : config.groqApiKey,
+    hasKey: Boolean(key),
+    placeholderKey: isPlaceholderCredential(key) || (
+      providerId === 'cloudflare-workers-ai' && isPlaceholderCredential(config.cloudflareAccountId)
     ),
-    placeholderKey: providerId === 'nvidia-nim' ? isPlaceholderCredential(config.nimApiKey)
-      : providerId === 'cloudflare-workers-ai' ? (isPlaceholderCredential(config.cloudflareApiToken) || isPlaceholderCredential(config.cloudflareAccountId))
-        : isPlaceholderCredential(config.groqApiKey),
     modelId: selectedModel(providerId),
     modality: selectedModel(providerId) ? modelModality(selectedModel(providerId)) : null,
     modelVerified: Boolean(META_MODEL_CATALOG[providerId]?.models?.[selectedModel(providerId)]?.verified),
     models: publicModelList(providerId),
     eligibleForVision: Boolean(selectedModel(providerId) && modelModality(selectedModel(providerId)) === 'vision'),
+    baseUrl: providerId === 'modal' ? config.modalBaseUrl || null : undefined,
   };
 }
 
@@ -151,7 +168,11 @@ export async function handleSaveCloudProvider(req, res) {
   }
 
   if (baseUrl && !isAllowedOutboundHost(baseUrl)) {
-    json(res, 400, { error: { code: 'BAD_JSON', message: 'baseUrl must be an allowlisted HTTPS inference host.', retryable: false } });
+    json(res, 400, { error: { code: 'BAD_JSON', message: 'baseUrl must be an allowlisted HTTPS inference host (Modal endpoints must be *.modal.run).', retryable: false } });
+    return;
+  }
+  if (provider === 'modal' && !baseUrl && !config.modalBaseUrl) {
+    json(res, 400, { error: { code: 'BAD_JSON', message: 'Modal needs the HTTPS URL of your deployed OpenAI-compatible endpoint (*.modal.run).', retryable: false } });
     return;
   }
 
@@ -183,7 +204,7 @@ export async function handleSaveCloudProvider(req, res) {
     recordServerLog({
       level: 'warn',
       category: 'provider',
-      message: `${provider} model ${resolvedModel} is catalogued but not verified on this account; the provider will not be treated as configured.`,
+      message: `${provider} model ${resolvedModel} is catalogued but not verified on this account yet; Test connection will check it.`,
     });
   }
 
@@ -203,6 +224,16 @@ export async function handleSaveCloudProvider(req, res) {
     next.GROQ_API_KEY = apiKey;
     if (resolvedModel) next.GROQ_VISION_MODEL = resolvedModel;
     if (textModel) next.GROQ_TEXT_MODEL = textModel;
+  } else if (provider === 'openrouter') {
+    next.OPENROUTER_API_KEY = apiKey;
+    next.OPENROUTER_MODEL_ID = resolvedModel || 'meta-llama/llama-4-maverick';
+  } else if (provider === 'blockrun') {
+    next.BLOCKRUN_API_KEY = apiKey;
+    next.BLOCKRUN_MODEL_ID = resolvedModel || 'meta-llama/llama-4-maverick';
+  } else if (provider === 'modal') {
+    next.MODAL_API_KEY = apiKey;
+    next.MODAL_BASE_URL = baseUrl || config.modalBaseUrl;
+    next.MODAL_MODEL_ID = resolvedModel || 'meta-llama/Llama-4-Maverick-17B-128E-Instruct';
   }
 
   try {
@@ -233,6 +264,12 @@ export async function handleDeleteCloudProvider(req, res, providerFromPath = nul
     for (const key of ['CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID', 'CLOUDFLARE_MODEL_ID']) delete stored[key];
   } else if (provider === 'groq') {
     for (const key of ['GROQ_API_KEY', 'GROQ_VISION_MODEL', 'GROQ_TEXT_MODEL']) delete stored[key];
+  } else if (provider === 'openrouter') {
+    for (const key of ['OPENROUTER_API_KEY', 'OPENROUTER_MODEL_ID']) delete stored[key];
+  } else if (provider === 'blockrun') {
+    for (const key of ['BLOCKRUN_API_KEY', 'BLOCKRUN_MODEL_ID']) delete stored[key];
+  } else if (provider === 'modal') {
+    for (const key of ['MODAL_API_KEY', 'MODAL_BASE_URL', 'MODAL_MODEL_ID']) delete stored[key];
   }
 
   try { await saveCredentials(stored); } catch (err) {
@@ -343,18 +380,18 @@ export async function handleTestCloudProvider(req, res) {
     });
     return;
   }
-  if (META_MODEL_CATALOG[provider]?.models?.[effectiveModel]?.verified !== true) {
-    json(res, 200, {
-      ok: false,
-      provider,
-      category: 'model_unverified',
-      modelId: effectiveModel,
-      detail: `${effectiveModel} is catalogued but was not verified with a real image on this account. Choose a verified model.`,
-    });
+
+  const testBaseUrl = String(body.baseUrl || (provider === 'modal' ? config.modalBaseUrl : '') || '').trim();
+  if (testBaseUrl && !isAllowedOutboundHost(testBaseUrl)) {
+    json(res, 200, { ok: false, provider, category: 'bad_request', modelId: effectiveModel, detail: 'baseUrl must be an allowlisted HTTPS inference host (Modal endpoints must be *.modal.run).' });
+    return;
+  }
+  if (provider === 'modal' && !testBaseUrl) {
+    json(res, 200, { ok: false, provider, category: 'not_configured', modelId: effectiveModel, detail: 'Modal needs your deployed OpenAI-compatible endpoint URL (*.modal.run).' });
     return;
   }
 
-  const result = await testProvider({ provider, apiKey, accountId, modelId: effectiveModel, baseUrl: body.baseUrl });
+  const result = await testProvider({ provider, apiKey, accountId, modelId: effectiveModel, baseUrl: testBaseUrl });
   recordServerLog({
     level: result.ok ? 'ok' : 'warn',
     category: 'provider',
@@ -426,6 +463,39 @@ async function testProvider({ provider, apiKey, accountId, modelId, baseUrl }) {
         ...meta, endpoint, host: 'api.groq.com',
       });
     }
+    if (provider === 'openrouter' || provider === 'blockrun' || provider === 'modal') {
+      const endpoint = provider === 'openrouter'
+        ? 'https://openrouter.ai/api/v1/chat/completions'
+        : provider === 'blockrun'
+          ? 'https://api.blockrun.ai/v1/chat/completions'
+          : chatCompletionsUrl(baseUrl);
+      const host = provider === 'openrouter' ? 'openrouter.ai'
+        : provider === 'blockrun' ? 'api.blockrun.ai'
+          : (() => { try { return new URL(endpoint).hostname; } catch { return ''; } })();
+      if (!endpoint) {
+        return { ok: false, category: 'not_configured', modelId, detail: 'The deployment endpoint URL is missing.', ms: Date.now() - started, ...meta, endpoint: '', host: '' };
+      }
+      if (!isAllowedOutboundHost(endpoint)) {
+        return { ok: false, category: 'bad_request', modelId, detail: 'The endpoint host is not allowlisted.', ms: Date.now() - started, ...meta, endpoint: '', host: '' };
+      }
+      const headers = { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' };
+      if (provider === 'openrouter') headers['x-title'] = 'IntentLens';
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          model: modelId,
+          messages: [{ role: 'user', content: 'Reply with OK only.' }],
+          max_tokens: 8,
+          stream: false,
+        }),
+        signal: AbortSignal.timeout(30000),
+      });
+      const text = await res.text().catch(() => '');
+      return summarizeTest(res, text, modelId, started, {
+        ...meta, endpoint, host,
+      });
+    }
     return { ok: false, category: 'not_configured', modelId, detail: 'Unknown provider.', ms: Date.now() - started, ...meta, endpoint: '', host: '' };
   } catch (err) {
     const category = err?.name === 'TimeoutError' || err?.name === 'AbortError' ? 'timeout' : 'network';
@@ -458,6 +528,7 @@ function scrub(text) {
   return String(text || '')
     .replace(/nvapi-[A-Za-z0-9_-]+/g, '[redacted]')
     .replace(/gsk_[A-Za-z0-9_-]+/g, '[redacted]')
+    .replace(/sk-(?:or-v1-)?[A-Za-z0-9_-]{16,}/g, '[redacted]')
     .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, 'Bearer [redacted]')
     .replace(/"(api[_-]?key|token|authorization)"\s*:\s*"[^"]*"/gi, '"$1":"[redacted]"')
     .replace(/\s+/g, ' ')
@@ -467,6 +538,9 @@ function scrub(text) {
 function defaultVisionModel(provider) {
   if (provider === 'nvidia-nim') return 'meta/muse-glimmer-30b';
   if (provider === 'cloudflare-workers-ai') return '@cf/meta/llama-3.2-11b-vision-instruct';
+  if (provider === 'openrouter') return 'meta-llama/llama-4-maverick';
+  if (provider === 'blockrun') return 'meta-llama/llama-4-maverick';
+  if (provider === 'modal') return 'meta-llama/Llama-4-Maverick-17B-128E-Instruct';
   // Groq has no Meta vision model on this account. Never invent one.
   if (provider === 'groq') return null;
   return null;

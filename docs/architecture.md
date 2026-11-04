@@ -1,9 +1,10 @@
 # IntentLens — MVP Architecture & Implementation Specification
 
 > **Historical note:** This is the original MVP build specification, kept for design
-> context. The desktop implementation uses the Meta-only NVIDIA NIM / Cloudflare
-> Workers AI catalog (Groq is skipped because the supplied account has only Prompt
-> Guard classifiers). The phone PWA uses OpenRouter directly. The default grid is
+> context. The desktop implementation uses a Meta-only catalogue across OpenRouter,
+> NVIDIA NIM, Cloudflare Workers AI, BlockRun, Modal and Groq (Groq has no Meta
+> vision model on the supplied account). The phone PWA uses OpenRouter directly and
+> lists the other hosts with explicit CORS reasons. The default grid is
 > 64x64, and a local k-NN classifier runs on the device. See `../README.md` for
 > current behavior, verified providers and limitations.
 

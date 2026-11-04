@@ -61,18 +61,21 @@ Then open `http://localhost:8000`.
 Open the top-left menu and choose **Vision Provider & Model -> Configure provider**.
 The first-run popup opens automatically when no provider is configured.
 
-Supported Meta-only options (verified on 2026-11-04):
+Supported Meta-model options (audit snapshot 2026-11-04):
 
-| Priority | Provider | Verified vision model | Notes |
+| Priority | Provider | Default Meta model | Notes |
 |---|---|---|---|
-| 1 | NVIDIA NIM | `meta/muse-glimmer-30b` | Real image returned valid JSON. 11B returned 404; 90B timed out. |
-| 2 | Cloudflare Workers AI | `@cf/meta/llama-3.2-11b-vision-instruct` | Real image verified after licence acceptance. |
-| 3 | Groq | **none** | Only Prompt Guard 2 22M/86M classifiers are Meta models on this account. Never used for chat or vision. |
+| 1 | OpenRouter | `meta-llama/llama-4-maverick` | Paid Meta vision, verified with a real image. Free non-Meta vision models remain selectable. |
+| 2 | NVIDIA NIM | `meta/muse-glimmer-30b` | Real image returned valid JSON. 11B returned 404; 90B timed out. |
+| 3 | Cloudflare Workers AI | `@cf/meta/llama-3.2-11b-vision-instruct` | Real image verified after licence acceptance. |
+| 4 | BlockRun | `meta-llama/llama-4-maverick` | Paid x402 marketplace. The supplied key returned HTTP 402; restored for retry after credit. |
+| 5 | Modal | `meta-llama/Llama-4-Maverick-17B-128E-Instruct` | Paid and **NOT tested**. Needs your deployed `*.modal.run` URL. |
+| 6 | Groq | **no vision** | Only Prompt Guard 2 classifiers are Meta models on this account. Text chat lists Meta Llama 3.3 70B first. |
 
-Enter the key, select a **verified** vision model, and press **Save & test**. A
-placeholder key is never treated as configured. Non-Meta models are rejected.
-Catalogued-but-unverified models stay visible with their failure note, but they
-do not make a provider eligible.
+Enter the key, select a vision model, and press **Save & test**. A placeholder
+key is never treated as configured. Non-Meta models are rejected. Any catalogued
+vision model makes a provider eligible to be tested; unverified models keep a
+visible warning and are never described as working.
 
 Keys are encrypted at rest with Electron `safeStorage` under Electron, or Windows
 DPAPI for the standalone server. They are never returned to the page and never logged.
@@ -94,11 +97,30 @@ Copy `.env.example` to `.env` and fill in the values for the provider you use. R
 environment variables take precedence over `.env`.
 
 ```text
+OPENROUTER_API_KEY=...
+OPENROUTER_MODEL_ID=meta-llama/llama-4-maverick
+
 NIM_ENABLED=true
 NIM_API_KEY=...
 NIM_BASE_URL=https://integrate.api.nvidia.com
 NIM_MODEL_ID=meta/muse-glimmer-30b
-PROVIDER_PRIORITY=nvidia-nim,cloudflare-workers-ai,groq
+
+CLOUDFLARE_ACCOUNT_ID=...
+CLOUDFLARE_API_TOKEN=...
+CLOUDFLARE_MODEL_ID=@cf/meta/llama-3.2-11b-vision-instruct
+
+BLOCKRUN_API_KEY=...
+BLOCKRUN_MODEL_ID=meta-llama/llama-4-maverick
+
+MODAL_API_KEY=...
+MODAL_BASE_URL=https://your-workspace--your-app.modal.run
+MODAL_MODEL_ID=meta-llama/Llama-4-Maverick-17B-128E-Instruct
+
+GROQ_API_KEY=...
+GROQ_TEXT_MODEL=meta-llama/llama-3.3-70b-versatile
+GROQ_VISION_MODEL=
+
+PROVIDER_PRIORITY=openrouter,nvidia-nim,cloudflare-workers-ai,blockrun,modal,groq
 ALLOW_OUTBOUND_NETWORK=true
 ```
 

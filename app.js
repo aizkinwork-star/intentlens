@@ -205,8 +205,11 @@ const lmOutboundEl = $('lmOutbound');
 const lmStatusEl = $('lmStatus');
 
 const PROVIDER_NAMES = {
+  openrouter: 'OpenRouter',
   'nvidia-nim': 'NVIDIA NIM',
   'cloudflare-workers-ai': 'Cloudflare Workers AI',
+  blockrun: 'BlockRun',
+  modal: 'Modal',
   groq: 'Groq',
 };
 
@@ -296,7 +299,7 @@ function describeTestResult(data) {
 
 if ($('lmTest')) {
   $('lmTest').addEventListener('click', async () => {
-    const provider = activeProvider() || $('setupProv')?.value || 'nvidia-nim';
+    const provider = activeProvider() || $('setupProv')?.value || 'openrouter';
     if (lmStatusEl) lmStatusEl.textContent = `Testing ${providerLabel(provider)}…`;
     try {
       const res = await fetch(`/api/providers/test?provider=${encodeURIComponent(provider)}`, { cache: 'no-store' });
@@ -3806,7 +3809,7 @@ function setSetupMsg(text, tone = '') {
 }
 
 function selectedSetupProvider() {
-  return $('setupProv')?.value || 'nvidia-nim';
+  return $('setupProv')?.value || 'openrouter';
 }
 
 function setupVisionModels(provider) {
@@ -3846,18 +3849,40 @@ function updateSetupForm({ keepModel = false, preferredProvider = null, preferre
 
   const accountRow = $('setupAccountRow');
   const baseUrlRow = $('setupBaseUrlRow');
+  const baseUrlInput = $('setupBaseUrl');
+  const baseUrlLabel = $('setupBaseUrlLabel');
+  const baseUrlHint = $('setupBaseUrlHint');
   const keyLabel = $('setupKeyLabel');
   const keyInput = $('setupKey');
   if (accountRow) accountRow.hidden = provider !== 'cloudflare-workers-ai';
-  if (baseUrlRow) baseUrlRow.hidden = provider !== 'nvidia-nim';
+  if (baseUrlRow) baseUrlRow.hidden = !['nvidia-nim', 'modal'].includes(provider);
+  // Reset the URL only when the provider changes, so editing a Modal endpoint
+  // is not wiped by a model-selection change.
+  if (baseUrlInput && baseUrlInput.dataset.provider !== provider) {
+    baseUrlInput.value = provider === 'nvidia-nim' ? 'https://integrate.api.nvidia.com' : '';
+    baseUrlInput.dataset.provider = provider;
+  }
   if (provider === 'nvidia-nim') {
     if (keyLabel) keyLabel.textContent = 'NVIDIA API key (nvapi-…)';
     if (keyInput) keyInput.placeholder = 'nvapi-...';
-    const base = $('setupBaseUrl');
-    if (base && !base.value) base.value = 'https://integrate.api.nvidia.com';
+    if (baseUrlLabel) baseUrlLabel.textContent = 'Inference base URL (leave unchanged)';
+    if (baseUrlHint) baseUrlHint.textContent = "Pre-filled with NVIDIA's inference host. build.nvidia.com is a dashboard page, not an endpoint.";
+    if (baseUrlInput) baseUrlInput.placeholder = 'https://integrate.api.nvidia.com';
   } else if (provider === 'cloudflare-workers-ai') {
     if (keyLabel) keyLabel.textContent = 'Cloudflare API token';
     if (keyInput) keyInput.placeholder = 'Paste your Workers AI token';
+  } else if (provider === 'openrouter') {
+    if (keyLabel) keyLabel.textContent = 'OpenRouter API key (sk-or-v1-…)';
+    if (keyInput) keyInput.placeholder = 'sk-or-v1-...';
+  } else if (provider === 'blockrun') {
+    if (keyLabel) keyLabel.textContent = 'BlockRun API key (paid marketplace)';
+    if (keyInput) keyInput.placeholder = 'Paste your BlockRun key';
+  } else if (provider === 'modal') {
+    if (keyLabel) keyLabel.textContent = 'Modal API key / token (paid, untested)';
+    if (keyInput) keyInput.placeholder = 'Paste your Modal token';
+    if (baseUrlLabel) baseUrlLabel.textContent = 'Your deployed Modal endpoint URL';
+    if (baseUrlHint) baseUrlHint.textContent = 'Paste the HTTPS URL of your OpenAI-compatible deployment, e.g. https://your-workspace--your-app.modal.run. This path was not tested in the audit; it bills your Modal account.';
+    if (baseUrlInput) baseUrlInput.placeholder = 'https://your-workspace--your-app.modal.run';
   } else {
     if (keyLabel) keyLabel.textContent = 'Groq API key (gsk_…)';
     if (keyInput) keyInput.placeholder = 'gsk_...';
@@ -3894,7 +3919,7 @@ function setupPayload({ includeKey = true } = {}) {
     const accountId = $('setupAccount')?.value?.trim();
     if (accountId) payload.accountId = accountId;
   }
-  if (provider === 'nvidia-nim') {
+  if (provider === 'nvidia-nim' || provider === 'modal') {
     const baseUrl = $('setupBaseUrl')?.value?.trim();
     if (baseUrl) payload.baseUrl = baseUrl;
   }
@@ -4020,7 +4045,7 @@ async function primeSetupForm() {
   const active = activeProvider();
   if (!setupFormInitialized) {
     setupFormInitialized = true;
-    updateSetupForm({ preferredProvider: active || 'nvidia-nim', keepModel: false });
+    updateSetupForm({ preferredProvider: active || 'openrouter', keepModel: false });
   } else {
     updateSetupForm({ keepModel: true });
   }

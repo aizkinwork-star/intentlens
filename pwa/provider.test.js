@@ -28,6 +28,18 @@ test('every PWA provider has a concrete default and no silent substitution', () 
   }
   assert.equal(modelFor('groq', ''), PROVIDERS.groq.defaultModel);
   assert.equal(modelFor('custom', 'custom-model'), 'custom-model');
-  assert.equal(PROVIDERS.nim, undefined);
-  assert.equal(PROVIDERS.blockrun, undefined);
+  // Meta-first defaults: no NVIDIA/GPT-OSS model is the primary choice.
+  assert.equal(PROVIDERS.openrouter.defaultModel, 'meta-llama/llama-4-maverick');
+  assert.equal(PROVIDERS.groq.defaultModel, 'meta-llama/llama-3.3-70b-versatile');
+  // The full provider set is visible, including desktop-only hosts.
+  for (const id of ['openrouter', 'groq', 'nvidia-nim', 'cloudflare-workers-ai', 'blockrun', 'modal', 'custom']) {
+    assert.ok(PROVIDERS[id], id);
+  }
+  for (const id of ['nvidia-nim', 'cloudflare-workers-ai', 'blockrun']) {
+    assert.equal(PROVIDERS[id].unavailableInBrowser, true, id);
+    assert.ok(PROVIDERS[id].endpoint, id);
+    assert.ok(PROVIDERS[id].blockedMessage, id);
+  }
+  assert.equal(PROVIDERS.modal.requiresBaseUrl, true);
+  assert.match(PROVIDERS.modal.label, /untested/i);
 });

@@ -16,8 +16,7 @@ import * as db from './store.js';
 import {
   PROVIDERS,
   PROVIDER_ORDER,
-  OPENROUTER_MODELS,
-  GROQ_TEXT_MODELS,
+  PROVIDER_MODELS,
   callModel,
   callChatModel,
   testProvider,
@@ -360,11 +359,16 @@ function updateCloudUi() {
   const provider = PROVIDERS[state.providerId];
   const model = state.model || provider.defaultModel;
   const images = providerSupportsImages(state.providerId);
+  const blocked = Boolean(provider.unavailableInBrowser);
   if (state.allowCloud) {
-    els.cloudState.textContent = `Cloud is ON · ${provider.label}`;
-    els.cloudDetail.textContent = images
-      ? `${model} · only the still image you capture and this prompt leave the device when you press Send. Project history stays local.`
-      : `${model} · text only. This provider cannot accept images on this account, so use Chat; project history stays local.`;
+    els.cloudState.textContent = blocked
+      ? `Cloud is ON · ${provider.label} (blocked on phone)`
+      : `Cloud is ON · ${provider.label}`;
+    els.cloudDetail.textContent = blocked
+      ? provider.blockedMessage
+      : images
+        ? `${model} · only the still image you capture and this prompt leave the device when you press Send. Project history stays local.`
+        : `${model} · text only. This provider cannot accept images on this account, so use Chat; project history stays local.`;
     els.allowCloudBtn.textContent = 'Cloud is ON for this session';
     els.allowCloudBtn.disabled = true;
     els.cloudCard.classList.add('on');
@@ -626,7 +630,7 @@ async function sendChat(command) {
     renderChatLog();
     els.command.value = '';
 
-    setStatus(`POST ${PROVIDERS[state.providerId].host} for a text-only answer…`, 'busy');
+    setStatus(`POST ${PROVIDERS[state.providerId].host || PROVIDERS[state.providerId].endpoint || 'your endpoint'} for a text-only answer…`, 'busy');
     const { instructions, userText } = buildChatPrompt({
       projectContext: projectContext(),
       history: state.messages.filter((message) => message.mode === 'chat'),
@@ -688,6 +692,10 @@ async function send() {
   if (state.mode === 'chat') {
     if (!requireCloudReady()) return;
     return sendChat(command);
+  }
+  if (PROVIDERS[state.providerId]?.unavailableInBrowser) {
+    setStatus(PROVIDERS[state.providerId].blockedMessage, 'error');
+    return;
   }
   if (!providerSupportsImages(state.providerId)) {
     setStatus(`${PROVIDERS[state.providerId].label} cannot accept images on this account. Switch to OpenRouter, or tap Chat for a text-only question.`, 'error');
@@ -935,14 +943,16 @@ function updateModelNote() {
 function syncProviderDetail(providerId) {
   const provider = PROVIDERS[providerId];
   if (!provider) return;
-  els.providerNote.textContent = `${provider.note} Browser CORS: ${provider.browserCors}. Retention: ${provider.retention}`;
+  const cors = provider.unavailableInBrowser
+    ? `Browser CORS: BLOCKED — ${provider.blockedMessage || 'the host does not allow this origin.'}`
+    : `Browser CORS: ${provider.browserCors}.`;
+  els.providerNote.textContent = `${provider.note} ${cors} Endpoint: ${provider.endpoint || '(paste your endpoint below)'} Retention: ${provider.retention}`;
   els.modelInput.placeholder = provider.defaultModel;
-  els.baseUrlInput.disabled = providerId !== 'custom';
-  const catalogue = providerId === 'openrouter'
-    ? OPENROUTER_MODELS
-    : providerId === 'groq'
-      ? GROQ_TEXT_MODELS
-      : null;
+  els.baseUrlInput.disabled = !provider.requiresBaseUrl;
+  els.baseUrlInput.placeholder = providerId === 'modal'
+    ? 'https://your-workspace--your-app.modal.run'
+    : 'https://your-relay.example.workers.dev';
+  const catalogue = PROVIDER_MODELS[providerId] || null;
   els.modelList.replaceChildren();
   if (catalogue) {
     for (const [id, info] of Object.entries(catalogue)) {

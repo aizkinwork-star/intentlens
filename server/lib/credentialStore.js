@@ -26,6 +26,13 @@ const SECRET_KEYS = [
   'GROQ_API_KEY',
   'GROQ_TEXT_MODEL',
   'GROQ_VISION_MODEL',
+  'OPENROUTER_API_KEY',
+  'OPENROUTER_MODEL_ID',
+  'BLOCKRUN_API_KEY',
+  'BLOCKRUN_MODEL_ID',
+  'MODAL_API_KEY',
+  'MODAL_BASE_URL',
+  'MODAL_MODEL_ID',
   'PROVIDER_PRIORITY',
 ];
 
@@ -247,7 +254,14 @@ export async function applyCredentialsToConfig(config) {
   config.groqApiKey = (env.GROQ_API_KEY || '').trim();
   config.groqTextModel = (env.GROQ_TEXT_MODEL || config.groqTextModel || '').trim();
   config.groqVisionModel = (env.GROQ_VISION_MODEL || '').trim();
-  config.providerPriority = (env.PROVIDER_PRIORITY || config.providerPriority?.join(',') || 'nvidia-nim,cloudflare-workers-ai,groq')
+  config.openrouterApiKey = (env.OPENROUTER_API_KEY || '').trim();
+  config.openrouterModelId = (env.OPENROUTER_MODEL_ID || config.openrouterModelId || 'meta-llama/llama-4-maverick').trim();
+  config.blockrunApiKey = (env.BLOCKRUN_API_KEY || '').trim();
+  config.blockrunModelId = (env.BLOCKRUN_MODEL_ID || config.blockrunModelId || 'meta-llama/llama-4-maverick').trim();
+  config.modalApiKey = (env.MODAL_API_KEY || '').trim();
+  config.modalBaseUrl = (env.MODAL_BASE_URL || config.modalBaseUrl || '').trim();
+  config.modalModelId = (env.MODAL_MODEL_ID || config.modalModelId || 'meta-llama/Llama-4-Maverick-17B-128E-Instruct').trim();
+  config.providerPriority = (env.PROVIDER_PRIORITY || config.providerPriority?.join(',') || 'openrouter,nvidia-nim,cloudflare-workers-ai,blockrun,modal,groq')
     .split(',').map((s) => s.trim()).filter(Boolean);
 }
 

@@ -5,6 +5,10 @@ the local Node server, and it does **not** share data with the desktop app.
 
 Live URL: <https://aizkinwork-star.github.io/intentlens/>
 
+> **Meta AI Developer Hackathon.** This project is an MVP made for the **Meta AI
+> Developer Hackathon, partnered by Cerebral Valley**. Meta-published models are
+> the priority; non-Meta models are explicitly labelled.
+
 ## What works without a server
 
 - Installable PWA (manifest + service worker + PNG icons)
@@ -12,7 +16,7 @@ Live URL: <https://aizkinwork-star.github.io/intentlens/>
 - Still capture using the true video frame size
 - IndexedDB projects, messages, captures and settings
 - Text-only project chat (no image is captured or sent)
-- Real image analysis through OpenRouter's free vision model
+- Real image analysis through OpenRouter (Meta Llama 4 Maverick by default)
 - Voice transcription through the browser speech API, with text fallback
 - Repeat = 0 AI requests; Explain = exactly 1
 - Same coordinate conversion and result validation as the desktop app
@@ -20,25 +24,25 @@ Live URL: <https://aizkinwork-star.github.io/intentlens/>
 - In-memory provider request log showing the exact host, endpoint, model, mode,
   HTTP status, latency and request id for every call
 
-## Providers that actually work in a browser (checked 2026-11-04)
+## Full provider set, including hosts a browser cannot call (checked 2026-11-04)
 
-| Provider | Status in this PWA | Vision | Notes |
-|---|---|---|---|
-| **OpenRouter** | Browser CORS `*`, verified | **Yes** | Default model `nvidia/nemotron-3.5-super-vl:free` was verified from GitHub Pages with a real image. Free alternatives and paid Meta Maverick/Scout are listed with prices. |
-| **Groq** | Browser CORS `*`, verified | **No** | The supplied account lists 11 models. The only Meta entries are Llama Prompt Guard 2 22M/86M, which are classifiers. Text chat uses `openai/gpt-oss-120b` or `qwen/qwen3.8-27b` (not Meta). Image requests are refused before any network call. |
-| **Custom relay** | User-owned HTTPS endpoint | User decides | Use this only if you deploy a relay that forwards to NVIDIA NIM, Cloudflare Workers AI, or another model and returns `Access-Control-Allow-Origin` for this origin. IntentLens does not run a relay for you. |
+Every provider is visible in Settings. Browser-blocked hosts are refused before
+any network request with their exact endpoint and the reason, instead of being
+hidden. Nothing falls back silently.
 
-Removed from the phone layout after live testing:
-
-- **NVIDIA NIM** — no `Access-Control-Allow-Origin`; a static GitHub Pages page
-  cannot read the response. It remains available in the desktop/Electron app,
-  where the local Node server makes the request.
-- **BlockRun** — HTTP 402 `Payment verification failed` with the supplied key
-  and no `Access-Control-Allow-Origin`. Unusable from a browser and unusable
-  even server-side with that key.
+| Provider | Status in this PWA | Default / Meta model | Cost | Notes |
+|---|---|---|---|---|
+| **OpenRouter** | Browser CORS `*`, verified | `meta-llama/llama-4-maverick` (Meta vision) | Paid; price shown | Default and first choice. Maverick verified from GitHub Pages with a real image; Scout and Meta text models are listed. Free NVIDIA/Dots vision models remain selectable. |
+| **Groq** | Browser CORS `*`, text only | `meta-llama/llama-3.3-70b-versatile` (Meta text) | Account limits | Meta text is listed first. The supplied account exposed only Prompt Guard classifiers, so it may return 403/404. GPT-OSS/Qwen are labelled non-Meta fallbacks. No vision model: image requests are refused before any network call. |
+| **NVIDIA NIM** | **Blocked by CORS** | `meta/muse-glimmer-30b` (Meta vision) | NVIDIA account | Endpoint `https://integrate.api.nvidia.com/v1/chat/completions`. Verified with a real image on the desktop path. No `Access-Control-Allow-Origin`, so the phone refuses with `PROVIDER_CORS_BLOCKED`. Use the PC app or a relay. |
+| **Cloudflare Workers AI** | **Blocked by CORS** | `@cf/meta/llama-3.2-11b-vision-instruct` (Meta vision) | Free tier / account | Endpoint template `https://api.cloudflare.com/client/v4/accounts/{account}/ai/run/{model}`. Preflight returns 405 with no CORS. Desktop only. |
+| **BlockRun** | **Blocked by CORS + unpaid** | `meta-llama/llama-4-maverick` (Meta vision) | **Paid x402** | Endpoint `https://api.blockrun.ai/v1/chat/completions`. 115 models listed, but the supplied key returned HTTP 402 `Payment verification failed`; no CORS. Restored and visible, not working with that key. |
+| **Modal** | User-deployed endpoint | `meta-llama/Llama-4-Maverick-17B-128E-Instruct` | **Paid** / untested | Paste your `*.modal.run` OpenAI-compatible URL. **NOT TESTED** in the audit. CORS is whatever your deployment allows. |
+| **Custom relay** | User-owned HTTPS endpoint | Your choice | Your cost | Use only if you deploy a relay that forwards to a blocked host and returns `Access-Control-Allow-Origin` for this origin. IntentLens does not run a relay for you. |
 
 There is no silent fallback. A provider error is shown in the request log; the
-app does not switch hosts or models on its own.
+app does not switch hosts or models on its own. A blocked provider's message
+names the endpoint, the CORS evidence and the desktop/relay alternative.
 
 ### Model selection truth
 
@@ -48,6 +52,8 @@ app does not switch hosts or models on its own.
   it exists. The request log records the exact id sent and the model id returned.
 - Paid OpenRouter Meta models show their per-token price in the model note and
   in the datalist. Nothing is charged unless you explicitly select one.
+- Browser-blocked hosts still record the intended endpoint, model and
+  `PROVIDER_CORS_BLOCKED` code in the request log, with no network call made.
 
 ## Install on a phone (GitHub Pages)
 
@@ -58,7 +64,8 @@ app does not switch hosts or models on its own.
 3. Open the installed icon. Camera permission is requested only after tapping
    **Start camera**.
 4. Tap **Settings**, choose **OpenRouter**, paste your key, and press **Save**.
-   The key is kept in memory for this tab only.
+   The key is kept in memory for this tab only. Meta Llama 4 Maverick is the
+   default; select a free model if you do not want a paid request.
 5. Tap **Allow cloud for this session**.
 6. Frame a board in landscape, tap **Capture**, type a question, then **Send**.
 7. Check the **Provider request log** to see the exact endpoint and model used.
@@ -139,9 +146,9 @@ This is a static site. Any script running on the page, a browser extension, or
 the device owner can read the key while the tab is open. Session-only storage
 reduces persistence; it is not a secret vault. GitHub Pages cannot set response
 headers, so the CSP is delivered by a `<meta>` tag only and `frame-ancestors` is
-not claimed. `connect-src` allows HTTPS origins because the optional custom
-relay can live on any domain you deploy; the fixed providers are still
-OpenRouter and Groq.
+not claimed. `connect-src` allows HTTPS origins because Modal deployments and
+the optional custom relay can live on any domain you deploy; the fixed providers
+are OpenRouter, Groq, NVIDIA NIM, Cloudflare Workers AI and BlockRun.
 
 ## What is intentionally not here
 

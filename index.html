@@ -49,7 +49,7 @@
           <div class="menuHeading" data-section="localmodel">Vision Provider &amp; Model <span class="menuChevron">▼</span></div>
           <div class="menuBody" id="menuBody-localmodel" style="display:block">
             <div class="menuRow note">
-              Cloud AI is optional. Meta Llama Vision models only, hosted by NVIDIA NIM, Cloudflare Workers AI or Groq with your own key. Camera preview, grid, tap-to-track and the k-NN reference index run locally.
+              Cloud AI is optional. Meta Llama models only, hosted by OpenRouter, NVIDIA NIM, Cloudflare Workers AI, BlockRun, Modal or Groq with your own key. Camera preview, grid, tap-to-track and the k-NN reference index run locally.
             </div>
             <div class="menuRow">
               <span class="menuLabel">Runtime</span>
@@ -69,7 +69,7 @@
             </div>
             <div class="menuRow">
               <span class="menuLabel">Failover order</span>
-              <span id="lmPriority" class="menuValue">NVIDIA → Cloudflare → Groq</span>
+              <span id="lmPriority" class="menuValue">OpenRouter → NVIDIA → Cloudflare → BlockRun → Modal → Groq</span>
             </div>
             <div class="menuRow" style="gap:6px; margin-top:8px;">
               <button id="lmTest" type="button" class="small">Test provider</button>
@@ -467,9 +467,12 @@
         <div class="setupRow">
           <label for="setupProv">Provider</label>
           <select id="setupProv">
+            <option value="openrouter">OpenRouter — Meta Llama 4 (Meta first; paid)</option>
             <option value="nvidia-nim">NVIDIA NIM — Meta Muse Glimmer 30B (verified)</option>
             <option value="cloudflare-workers-ai">Cloudflare Workers AI — Meta Llama vision (free tier)</option>
-            <option value="groq">Groq — Meta Llama (vision unverified)</option>
+            <option value="blockrun">BlockRun — Meta models (paid marketplace; HTTP 402 on test key)</option>
+            <option value="modal">Modal — your deployed endpoint (paid; untested)</option>
+            <option value="groq">Groq — Meta Llama text (account dependent)</option>
           </select>
         </div>
         <div class="setupRow" id="setupModelRow">
@@ -482,9 +485,9 @@
           <input id="setupAccount" type="text" autocomplete="off" spellcheck="false" placeholder="32-character account ID">
         </div>
         <div class="setupRow" id="setupBaseUrlRow" hidden>
-          <label for="setupBaseUrl">Inference base URL (leave unchanged)</label>
+          <label for="setupBaseUrl" id="setupBaseUrlLabel">Inference base URL (leave unchanged)</label>
           <input id="setupBaseUrl" type="url" autocomplete="off" spellcheck="false" value="https://integrate.api.nvidia.com" placeholder="https://integrate.api.nvidia.com">
-          <div class="setupHint">Pre-filled with NVIDIA's inference host. build.nvidia.com is a dashboard page, not an endpoint.</div>
+          <div class="setupHint" id="setupBaseUrlHint">Pre-filled with NVIDIA's inference host. build.nvidia.com is a dashboard page, not an endpoint.</div>
         </div>
         <div class="setupRow">
           <label for="setupKey" id="setupKeyLabel">NVIDIA API key (nvapi-…)</label>
@@ -510,12 +513,15 @@
             <span id="helpGuideChevron" style="font-size:.7rem;">▼</span>
           </div>
           <div id="helpGuideContent">
-            <div class="helpGuideStep"><strong>All three providers use one account-wide key.</strong> You do not need a separate key per model. Only Meta vision models are allowed for images; text-only Meta models are never sent an image. Model entries marked <em>verified</em> have answered a real image request on this account; others still need a test.</div>
-            <div class="helpGuideStep"><strong>NVIDIA NIM (first in failover order):</strong> sign in at <a href="https://build.nvidia.com/" target="_blank" rel="noopener" class="menuLink">build.nvidia.com</a>, click <em>Get API Key</em>, and paste the <span class="helpGuideCode">nvapi-...</span> value. The inference base URL is pre-filled (<span class="helpGuideCode">https://integrate.api.nvidia.com</span>) - leave it as-is. <strong>Muse Glimmer 30B is the verified model here</strong>; on the account we tested, Llama 3.2 11B returned 404, Llama 3.2 90B timed out, and Llama 4 Maverick is end-of-life. Muse Glimmer is a reasoning model: a full analysis can take 80-120 seconds.</div>
+            <div class="helpGuideStep"><strong>All six providers use one account-wide key each.</strong> You do not need a separate key per model. Only Meta vision models are allowed for images; text-only Meta models are never sent an image. Model entries marked <em>verified</em> have answered a real image request on this account; others still need a test.</div>
+            <div class="helpGuideStep"><strong>OpenRouter (first in failover order):</strong> create a key at <a href="https://openrouter.ai/keys" target="_blank" rel="noopener" class="menuLink">openrouter.ai/keys</a> (<span class="helpGuideCode">sk-or-v1-...</span>). The default is <strong>Meta Llama 4 Maverick</strong>, a paid vision model; Scout and Meta text models are also listed. Free NVIDIA/Dots vision models remain selectable. CORS from a browser was verified for the phone build.</div>
+            <div class="helpGuideStep"><strong>NVIDIA NIM:</strong> sign in at <a href="https://build.nvidia.com/" target="_blank" rel="noopener" class="menuLink">build.nvidia.com</a>, click <em>Get API Key</em>, and paste the <span class="helpGuideCode">nvapi-...</span> value. The inference base URL is pre-filled (<span class="helpGuideCode">https://integrate.api.nvidia.com</span>) - leave it as-is. <strong>Muse Glimmer 30B is the verified model here</strong>; on the account we tested, Llama 3.2 11B returned 404, Llama 3.2 90B timed out, and Llama 4 Maverick is end-of-life. Muse Glimmer is a reasoning model: a full analysis can take 80-120 seconds.</div>
             <div class="helpGuideStep"><strong>Cloudflare Workers AI:</strong> in <a href="https://dash.cloudflare.com/" target="_blank" rel="noopener" class="menuLink">dash.cloudflare.com</a> copy the 32-character <em>Account ID</em>, then create an API token at <em>My Profile → API Tokens → Create Token</em>. Use <em>Custom token</em>, add the permission <em>Account → Workers AI → Read</em> (or <em>Read all resources</em>), scope it to your account, and paste the token and Account ID above. A token that only has R2/Workers permissions will fail with 401.</div>
-            <div class="helpGuideStep"><strong>Groq:</strong> at <a href="https://console.groq.com/keys" target="_blank" rel="noopener" class="menuLink">console.groq.com/keys</a>, create an account-wide key (<span class="helpGuideCode">gsk_...</span>) and paste it above. On the account we checked, the playground exposed only Meta Prompt Guard models, so Groq vision is <strong>not verified</strong>. Test before relying on it.</div>
+            <div class="helpGuideStep"><strong>BlockRun (paid):</strong> the supplied test key returned HTTP 402 “Payment verification failed” on 2026-11-04, so it needs payment credit before it can answer. It lists Meta models and uses <span class="helpGuideCode">https://api.blockrun.ai</span>. Desktop/server-side only: the host sends no browser CORS header.</div>
+            <div class="helpGuideStep"><strong>Modal (paid, untested):</strong> deploy your own OpenAI-compatible endpoint (usually <span class="helpGuideCode">https://&lt;workspace&gt;--&lt;app&gt;-&lt;function&gt;.modal.run</span>) and paste both the token and that URL. This path was <strong>not tested</strong> in the audit and bills your Modal account. CORS is whatever your deployment allows.</div>
+            <div class="helpGuideStep"><strong>Groq:</strong> at <a href="https://console.groq.com/keys" target="_blank" rel="noopener" class="menuLink">console.groq.com/keys</a>, create an account-wide key (<span class="helpGuideCode">gsk_...</span>) and paste it above. <strong>Meta Llama 3.3 70B Versatile</strong> is listed first because Meta models are the priority. On the account we checked, the playground exposed only Meta Prompt Guard classifiers, so Groq may return 403/404; Test before relying on it. Groq has no vision model here, so images are refused before any network call.</div>
             <div class="helpGuideStep"><strong>Links open in your default browser</strong> (Chrome, Edge, ...). If nothing opens, copy the address manually.</div>
-            <div class="helpGuideStep"><strong>Failover:</strong> NVIDIA is tried first, then Cloudflare, then Groq. Auth, quota, rate-limit and outage errors move to the next configured provider. Existing track IDs, corrections, instructions and TTS are preserved across failover.</div>
+            <div class="helpGuideStep"><strong>Failover:</strong> OpenRouter, NVIDIA, Cloudflare, BlockRun, Modal, then Groq. Auth, quota, rate-limit and outage errors move to the next configured provider. Existing track IDs, corrections, instructions and TTS are preserved across failover.</div>
           </div>
         </div>
       </div>

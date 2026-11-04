@@ -18,23 +18,43 @@ Open the top-left menu -> **Vision Provider & Model** -> **Configure provider**.
 
 Supported providers, in default failover order:
 
-| Priority | Provider | Verified vision model |
+| Priority | Provider | Default Meta model |
 |---|---|---|
-| 1 | NVIDIA NIM | `meta/muse-glimmer-30b` |
-| 2 | Cloudflare Workers AI | `@cf/meta/llama-3.2-11b-vision-instruct` |
-| 3 | Groq | **none** (Prompt Guard classifiers only) |
+| 1 | OpenRouter | `meta-llama/llama-4-maverick` (vision, paid) |
+| 2 | NVIDIA NIM | `meta/muse-glimmer-30b` |
+| 3 | Cloudflare Workers AI | `@cf/meta/llama-3.2-11b-vision-instruct` |
+| 4 | BlockRun | `meta-llama/llama-4-maverick` (paid; HTTP 402 on the test key) |
+| 5 | Modal | `meta-llama/Llama-4-Maverick-17B-128E-Instruct` (paid; NOT tested) |
+| 6 | Groq | **no vision** (Prompt Guard classifiers only; Meta Llama 3.3 text first) |
 
-Only Meta vision models are accepted. Text-only and classifier models are not
-sent images, non-Meta models are rejected, and unverified models do not make a
-provider eligible.
+Only Meta models are accepted. Text-only and classifier models are not sent
+images, non-Meta models are rejected, and unverified models are labelled instead
+of being described as working. Any catalogued vision model can be tested.
 
-### NVIDIA NIM (default)
+### OpenRouter (default)
+
+1. Create a key at https://openrouter.ai/keys.
+2. In IntentLens choose **OpenRouter**.
+3. Keep `meta-llama/llama-4-maverick` or choose a free vision model with the
+   price shown. Maverick is paid per token.
+4. Paste the key and press **Save & test**.
+
+### NVIDIA NIM
 
 1. Create a key at https://build.nvidia.com/.
 2. In IntentLens choose **NVIDIA NIM**.
 3. Keep the base URL `https://integrate.api.nvidia.com`. A dashboard link such as
    `https://build.nvidia.com` is not an inference endpoint.
 4. Paste the key and press **Save & test**.
+5. Muse Glimmer is a reasoning model: a full request can take 80-120 seconds.
+
+### BlockRun and Modal (paid)
+
+- **BlockRun:** `https://api.blockrun.ai`. The supplied key returned HTTP 402
+  `Payment verification failed`; add credit before expecting a reply.
+- **Modal:** deploy your own OpenAI-compatible endpoint, paste its HTTPS
+  `*.modal.run` URL and your token. This path is **NOT tested** in the audit and
+  bills your Modal account.
 
 ### Cloudflare Workers AI (fallback)
 
@@ -43,14 +63,16 @@ provider eligible.
 3. Copy the **Account ID** and **API Token**.
 4. In IntentLens choose **Cloudflare Workers AI**, enter both values, and test.
 
-### Groq (not usable for vision on this account)
+### Groq (text only on this account)
 
 1. Create a key at https://console.groq.com/.
-2. The live account lists only `meta-llama/llama-prompt-guard-2-22m` and
-   `-86m` as Meta models. They are prompt-injection classifiers, not chat or
-   vision models.
-3. IntentLens therefore skips Groq for image analysis. Use NVIDIA NIM,
-   Cloudflare Workers AI, or the phone PWA's OpenRouter path.
+2. **Meta Llama 3.3 70B Versatile** is listed first because Meta models are the
+   priority. The supplied restricted account exposed only
+   `meta-llama/llama-prompt-guard-2-22m` and `-86m` among Meta models, so this
+   model may return 403/404; use **Test connection**.
+3. Prompt Guard entries are classifiers, not chat or vision models.
+4. IntentLens therefore refuses images for Groq. Use OpenRouter, NVIDIA NIM,
+   Cloudflare Workers AI, BlockRun or Modal for image analysis.
 
 ## How credentials are stored
 
@@ -66,11 +88,22 @@ configuration is migrated to the secure store when possible.
 You can configure a headless server with `.env` instead of the UI:
 
 ```text
+OPENROUTER_API_KEY=...
+OPENROUTER_MODEL_ID=meta-llama/llama-4-maverick
+
 NIM_ENABLED=true
 NIM_API_KEY=...
 NIM_BASE_URL=https://integrate.api.nvidia.com
 NIM_MODEL_ID=meta/muse-glimmer-30b
-PROVIDER_PRIORITY=nvidia-nim,cloudflare-workers-ai,groq
+
+BLOCKRUN_API_KEY=...
+MODAL_API_KEY=...
+MODAL_BASE_URL=https://your-workspace--your-app.modal.run
+
+GROQ_API_KEY=...
+GROQ_TEXT_MODEL=meta-llama/llama-3.3-70b-versatile
+
+PROVIDER_PRIORITY=openrouter,nvidia-nim,cloudflare-workers-ai,blockrun,modal,groq
 ALLOW_OUTBOUND_NETWORK=true
 ```
 

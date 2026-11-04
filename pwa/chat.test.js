@@ -103,7 +103,7 @@ test('vision request does include one image_url when an image is passed', async 
   assert.equal(body.model, PROVIDERS.openrouter.defaultModel);
   assert.equal(body.max_tokens, 8192);
   assert.deepEqual(body.response_format, { type: 'json_object' });
-  assert.deepEqual(body.reasoning, { effort: 'low' });
+  assert.equal(body.reasoning, undefined);
   const imageParts = body.messages[0].content.filter((part) => part.type === 'image_url');
   assert.equal(imageParts.length, 1);
   assert.equal(imageParts[0].image_url.url, 'data:image/jpeg;base64,AAAA');
@@ -138,16 +138,17 @@ test('a text-only provider or model refuses an image before any network call', a
   assert.equal(called, 0);
 });
 
-test('provider presets only offer browser-callable, honestly labelled paths', () => {
+test('provider presets expose every host and label the browser-blocked ones', () => {
   assert.equal(PROVIDERS.openrouter.browserCors, 'verified-allowed');
   assert.equal(PROVIDERS.groq.browserCors, 'verified-allowed');
-  assert.equal(PROVIDERS.openrouter.defaultModel, 'nvidia/nemotron-3.5-super-vl:free');
+  assert.equal(PROVIDERS.openrouter.defaultModel, 'meta-llama/llama-4-maverick');
   assert.ok(PROVIDERS.openrouter.defaultModel in OPENROUTER_MODELS);
   assert.equal(OPENROUTER_MODELS[PROVIDERS.openrouter.defaultModel].vision, true);
   assert.equal(OPENROUTER_MODELS[PROVIDERS.openrouter.defaultModel].verified, true);
+  assert.match(OPENROUTER_MODELS[PROVIDERS.openrouter.defaultModel].label, /Meta/i);
 
   assert.equal(PROVIDERS.groq.vision, 'none');
-  assert.equal(PROVIDERS.groq.defaultModel, 'openai/gpt-oss-120b');
+  assert.equal(PROVIDERS.groq.defaultModel, 'meta-llama/llama-3.3-70b-versatile');
   assert.ok(PROVIDERS.groq.defaultModel in GROQ_TEXT_MODELS);
   assert.equal(GROQ_TEXT_MODELS[PROVIDERS.groq.defaultModel].vision, false);
   assert.equal(providerSupportsImages('groq'), false);
@@ -155,12 +156,38 @@ test('provider presets only offer browser-callable, honestly labelled paths', ()
   assert.equal(modelAcceptsImages('openrouter', 'meta-llama/llama-4-maverick'), true);
   assert.equal(modelAcceptsImages('openrouter', 'meta-llama/llama-3.3-70b-instruct'), false);
 
-  // Removed from the phone layout: no browser CORS and/or no usable credit.
-  assert.equal(PROVIDERS.nim, undefined);
-  assert.equal(PROVIDERS.blockrun, undefined);
-  assert.deepEqual(PROVIDER_HOSTS, ['openrouter.ai', 'api.groq.com']);
+  // Restored desktop-capable providers stay visible with their endpoint and reason.
+  assert.equal(PROVIDERS['nvidia-nim'].endpoint, 'https://integrate.api.nvidia.com/v1/chat/completions');
+  assert.equal(PROVIDERS['cloudflare-workers-ai'].unavailableInBrowser, true);
+  assert.equal(PROVIDERS.blockrun.endpoint, 'https://api.blockrun.ai/v1/chat/completions');
+  assert.match(PROVIDERS.blockrun.note, /402/);
+  assert.match(PROVIDERS.modal.note, /NOT tested/i);
+  assert.deepEqual(PROVIDER_HOSTS, [
+    'openrouter.ai',
+    'api.groq.com',
+    'integrate.api.nvidia.com',
+    'api.cloudflare.com',
+    'api.blockrun.ai',
+  ]);
   assert.equal(modelFor('custom', ''), PROVIDERS.custom.defaultModel);
   assert.equal(modelFor('custom', 'my-model'), 'my-model');
+});
+
+test('a browser-blocked provider refuses before any network call and names its endpoint', async () => {
+  let called = 0;
+  const impl = async () => { called += 1; throw new Error('must not be called'); };
+  const result = await callModel({
+    providerId: 'nvidia-nim',
+    apiKey: 'sentinel-key',
+    prompt: 'describe',
+    imageDataUrl: 'data:image/jpeg;base64,AAAA',
+    fetchImpl: impl,
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'PROVIDER_CORS_BLOCKED');
+  assert.match(result.message, /integrate\.api\.nvidia\.com/);
+  assert.match(result.message, /desktop|relay/i);
+  assert.equal(called, 0);
 });
 
 test('a network failure never echoes the sentinel key or the Authorization header', async () => {
@@ -247,12 +274,12 @@ test('every provider call is wired to an in-memory request log', () => {
   assert.match(app, /state\.requestLog = \[\]/);
 });
 
-test('phone CSP permits a user relay but the provider preset list stays fixed', () => {
+test('phone CSP permits user endpoints and the full provider list stays visible', () => {
   const html = readFileSync(join(here, 'index.html'), 'utf8');
   assert.match(html, /connect-src 'self' https:/);
-  assert.doesNotMatch(html, /blockrun/i);
+  assert.match(html, /blockrun/i);
   const sw = readFileSync(join(here, 'sw.js'), 'utf8');
-  assert.match(sw, /intentlens-pwa-v9/);
+  assert.match(sw, /intentlens-pwa-v\d+/);
 });
 
 test('service worker refuses authorization-bearing and cross-origin requests', () => {

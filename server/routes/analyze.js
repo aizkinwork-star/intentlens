@@ -21,6 +21,7 @@ import { isValidPoint, isValidBox, GRID_SIZES, DEFAULT_GRID_SIZE } from '../../g
 import { buildGroundingPrompt, summarizeContext, resolveLimits } from '../services/contextBuilder.js';
 import { ContextBudget } from '../services/contextBudget.js';
 import { buildRouter } from '../services/router.js';
+import { chatCompletionsUrl } from '../services/openaiCompatibleProvider.js';
 import { providerHealthSnapshot } from '../services/provider.js';
 import { buildLocalVaultSearchProvider } from '../services/searchAdapter.js';
 import { toGroundingResult } from '../services/groundingValidator.js';
@@ -55,6 +56,27 @@ function inferenceTarget(providerId, modelId) {
     return {
       endpoint: 'https://api.groq.com/openai/v1/chat/completions',
       host: META_MODEL_CATALOG.groq?.host || 'api.groq.com',
+    };
+  }
+  if (providerId === 'openrouter') {
+    return {
+      endpoint: 'https://openrouter.ai/api/v1/chat/completions',
+      host: META_MODEL_CATALOG.openrouter?.host || 'openrouter.ai',
+    };
+  }
+  if (providerId === 'blockrun') {
+    return {
+      endpoint: 'https://api.blockrun.ai/v1/chat/completions',
+      host: META_MODEL_CATALOG.blockrun?.host || 'api.blockrun.ai',
+    };
+  }
+  if (providerId === 'modal') {
+    const endpoint = chatCompletionsUrl(config.modalBaseUrl);
+    let host = 'modal.run';
+    try { host = new URL(endpoint).hostname; } catch { /* keep fallback */ }
+    return {
+      endpoint: endpoint || '(modal endpoint missing)',
+      host,
     };
   }
   return { endpoint: '', host: '' };
@@ -191,7 +213,7 @@ export async function analyzeHandler(req, res, store) {
     const isLocalAvailable = localModelAvailable();
 
     if (!isLocalAvailable) {
-      throw appError('AI_NOT_CONFIGURED', 'No verified vision model is configured. Connect NVIDIA NIM or Cloudflare Workers AI. Groq has no Meta vision model on this account.');
+      throw appError('AI_NOT_CONFIGURED', 'No vision-capable Meta model is configured. Connect OpenRouter, NVIDIA NIM, Cloudflare Workers AI, BlockRun or Modal. Groq needs a Meta vision model on your account.');
     }
     if (!outboundNetworkAllowed()) {
       throw appError('NETWORK_DISABLED', 'Outbound network is disabled in .env (ALLOW_OUTBOUND_NETWORK=false). Local camera, grid, tracking and k-NN still work.');

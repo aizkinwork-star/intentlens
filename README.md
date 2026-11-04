@@ -14,6 +14,10 @@ There are **two builds**:
 
 Live phone build: <https://aizkinwork-star.github.io/intentlens/>
 
+> **Meta AI Developer Hackathon.** This project is an MVP made for the **Meta AI
+> Developer Hackathon, partnered by Cerebral Valley**. Meta-published models are
+> the priority across every provider; non-Meta models are explicitly labelled.
+
 > **Honest status.** This is a prototype, not a production tool. Local component
 > tracking accuracy is low, physical Android/iOS camera behaviour was not tested,
 > and Meta glasses integration was not built. Details are in
@@ -76,12 +80,15 @@ analytics, no account system, no APK, no Meta glasses integration.
 │    /api/providers credentials (never returned to the page)         │
 │    /api/transcribe local whisper.cpp only (loopback)               │
 │                         │                                          │
-│        ┌────────────────┼─────────────────┐                        │
-│        ▼                ▼                 ▼                        │
-│   NVIDIA NIM     Cloudflare Workers AI   (Groq skipped: no Meta    │
-│   Meta Muse      Meta Llama 3.2 11B       vision on this account)  │
-│        │                │                                          │
-│        └──────── HTTPS ─┴──────────────► provider APIs             │
+│        ┌────────────────┼─────────────────┬────────────────┐        │
+│        ▼                ▼                 ▼                ▼        │
+│   OpenRouter      NVIDIA NIM     Cloudflare Workers AI   BlockRun  │
+│   Meta Llama 4    Meta Muse      Meta Llama 3.2 11B      Meta 4     │
+│        │                │                 │                │        │
+│        └────────────────┴──────── HTTPS ──┴────────────────┘        │
+│                         │                                          │
+│                  Modal (your deployment) + Groq (skipped: no Meta  │
+│                  vision on this account)                           │
 │                                                                    │
 │  Local data: SQLite + images in intentlens-data/ or %APPDATA%      │
 │  Credentials: Electron safeStorage / Windows DPAPI                 │
@@ -90,7 +97,9 @@ analytics, no account system, no APK, no Meta glasses integration.
 
 The desktop renderer never sees provider keys. The server enforces an HTTPS
 host allowlist, a Meta-only model catalogue, a network gate and sequential
-failover with cooldowns.
+failover with cooldowns. Providers with a catalogued vision model are
+configurable even before they are verified, so an untested host can be tested
+without pretending it already works.
 
 ### Phone / GitHub Pages PWA
 
@@ -104,19 +113,27 @@ failover with cooldowns.
 │         ┌───────────────┴────────────────┐                         │
 │         ▼                                ▼                         │
 │   OpenRouter API                   Groq API (text only)            │
-│   free vision / paid Meta          HTTP + CORS verified            │
+│   Meta Llama 4 (default)           HTTP + CORS verified            │
 │         │                                                          │
 │         └──────── HTTPS + CORS ─────────► upstream model           │
+│                                                                    │
+│  Also listed, with endpoint + CORS reason:                         │
+│    NVIDIA NIM · Cloudflare Workers AI · BlockRun                    │
+│    Modal (user endpoint) · Custom relay                             │
+│  Those are refused before the network call on the phone and point   │
+│  to the desktop app or a user relay instead of silently failing.    │
 │                                                                    │
 │  Local data: IndexedDB (projects, messages, images, settings)      │
 │  Key: JavaScript memory only; cleared on reload                    │
 └────────────────────────────────────────────────────────────────────┘
 ```
 
-A static GitHub Pages site has no server to hide a key or proxy a request.
-Only providers that return browser CORS headers are offered. When a provider
-blocks CORS (NVIDIA NIM, Cloudflare Workers AI), the user can deploy their own
-HTTPS relay and select **Custom relay**; IntentLens does not operate that relay.
+A static GitHub Pages site has no server to hide a key or proxy a request. Every
+provider stays visible, including the ones a browser cannot call. A blocked host
+is refused **before** any network request with its exact endpoint and the reason
+(`PROVIDER_CORS_BLOCKED`), plus the desktop/relay alternative. Nothing is hidden
+and nothing is silently swapped. The user can deploy their own HTTPS relay and
+select **Custom relay**; IntentLens does not operate that relay.
 
 ### Shared logic
 
@@ -149,7 +166,8 @@ between desktop and phone so coordinate conversion and validation cannot drift.
 - Windows 10/11
 - Node.js **22.5 or newer** (the test runner uses `node:sqlite`)
 - Chrome or Edge for the browser-UI path
-- Optional: a provider key (NVIDIA NIM or Cloudflare Workers AI)
+- Optional: a provider key (OpenRouter, NVIDIA NIM, Cloudflare Workers AI,
+  BlockRun, Modal or Groq)
 
 ### A. Installer (recommended for normal use)
 
@@ -200,7 +218,7 @@ Output: `electron/release/IntentLens Setup 0.4.0.exe`.
 
 ```cmd
 npm test
-:: 27 source test files, 221 tests, 0 failures at the 2026-11-04 checkpoint
+:: 27 source test files, 223 tests, 0 failures at the 2026-11-04 checkpoint
 ```
 
 `npm test` excludes `node_modules`, `datasets`, `intentlens-data` and build
@@ -216,6 +234,8 @@ and is therefore not the source-of-truth count.
 - A phone with a modern browser (Chrome on Android, Safari on iOS)
 - HTTPS. GitHub Pages provides it; a plain LAN IP does not.
 - An OpenRouter key for image analysis (or a custom relay)
+- NVIDIA NIM, Cloudflare Workers AI and BlockRun are listed on the phone but
+  cannot be called from a browser without CORS; use the PC app or a relay.
 
 ### Steps
 
@@ -277,54 +297,82 @@ Never commit `.env`, `API Keys*.txt`, `credentials.safe` or
 
 ### Provider matrix
 
-| Provider | Desktop | Phone PWA | Vision | Notes |
-|---|---|---|---|---|
-| **NVIDIA NIM** | Yes | **No** | Meta Muse Glimmer 30B verified | No browser CORS; restricted/third-party host. Desktop only. |
-| **Cloudflare Workers AI** | Yes | **No** | Meta Llama 3.2 11B verified | No browser CORS. Desktop only, or a user-owned relay. |
-| **OpenRouter** | Not wired | **Yes** | Free NVIDIA Nemotron 3.5 Super VL verified; paid Meta Maverick verified | CORS `*`. Phone default and paid Meta option. |
-| **Groq** | Skipped | **Yes, text only** | **None** | Account has only Prompt Guard 2 22M/86M classifiers among Meta models. Text chat uses GPT-OSS/Qwen (not Meta). |
-| **BlockRun** | No | **No** | Unusable | HTTP 402 payment failure and no CORS with the supplied key. |
-| **Custom relay** | No | **Yes** | User decides | Your HTTPS relay must allow this Pages origin. |
+Meta-published models are the priority everywhere. A blank cell means the host
+is not offered there. "Desktop only" means the host works through the Electron
+server but cannot be read by a browser because of CORS.
+
+| Provider | Desktop | Phone PWA | Default / Meta model | Cost | Notes |
+|---|---|---|---|---|---|
+| **OpenRouter** | **Yes** | **Yes** | `meta-llama/llama-4-maverick` (Meta vision) | Paid; price shown | CORS `*`. First in failover and phone default. Maverick verified with a real image; Scout and Meta text models also listed. Free NVIDIA/Dots vision models remain selectable. |
+| **NVIDIA NIM** | **Yes** | **Listed, blocked** | `meta/muse-glimmer-30b` (Meta vision) | NVIDIA account | Muse verified with a real image. No `Access-Control-Allow-Origin`; phone shows the endpoint and refuses before network. 11B returned 404; 90B timed out. |
+| **Cloudflare Workers AI** | **Yes** | **Listed, blocked** | `@cf/meta/llama-3.2-11b-vision-instruct` (Meta vision) | Free tier / account | Verified with a real image after licence acceptance. Preflight OPTIONS returns 405 with no CORS. Needs Account ID + token. |
+| **BlockRun** | **Yes** | **Listed, blocked** | `meta-llama/llama-4-maverick` (Meta vision) | **Paid x402** | `https://api.blockrun.ai`. 115 models listed, but the supplied key returned HTTP 402 `Payment verification failed` and the host sends no CORS. Restored, paid, currently unusable with that key. |
+| **Modal** | **Yes** | **Listed, user endpoint** | `meta-llama/Llama-4-Maverick-17B-128E-Instruct` | **Paid** | Paste your deployed `*.modal.run` OpenAI-compatible URL. **NOT tested** in the audit. CORS depends on your deployment. |
+| **Groq** | **Yes, text only** | **Yes, text only** | `meta-llama/llama-3.3-70b-versatile` (Meta text) | Account limits | Meta text is first. The supplied restricted account exposed only Prompt Guard 2 classifiers, so this model may return 403/404; GPT-OSS/Qwen are labelled non-Meta fallbacks. No vision model, so images are refused. |
+| **Custom relay** | Not wired | **Yes** | Your choice | Your cost | Your HTTPS relay must allow this Pages origin. Use it for a blocked host if you do not want the desktop app. |
 
 ### Desktop provider setup
 
 1. Menu → **Vision Provider & Model** → **Configure provider**.
-2. Choose NVIDIA NIM or Cloudflare Workers AI.
-3. Enter the key (and Cloudflare Account ID for Workers AI).
-4. Choose a **verified** vision model:
-   - NIM: `meta/muse-glimmer-30b`
-   - Cloudflare: `@cf/meta/llama-3.2-11b-vision-instruct`
+2. Choose OpenRouter, NVIDIA NIM, Cloudflare Workers AI, BlockRun, Modal or Groq.
+3. Enter the key. Cloudflare also needs the Account ID; Modal also needs the
+   HTTPS URL of your deployed endpoint.
+4. Choose a vision model from that provider's Meta catalogue.
 5. Press **Save & test**.
 
-Only verified vision models make a provider eligible. Catalogued-but-unverified
-models remain visible with their failure note, but they are never selected
-automatically and do not mark the provider as configured.
+A provider with a catalogued **vision** model is eligible even when the model is
+not verified yet, so BlockRun and Modal can be configured and tested instead of
+being hidden. The UI keeps the "not verified yet" warning and the test result
+tells you whether it actually works. Text-only and classifier models are never
+eligible for images. Groq is skipped for vision because the live account has no
+Meta vision model.
 
-Groq is skipped for vision because the live account has no Meta vision model.
-Prompt Guard is a prompt-injection classifier and is never used for chat or
-vision.
+Modal is **paid and was not tested**. BlockRun is **paid** and the supplied key
+returned HTTP 402. Neither is presented as working.
 
 ### Phone provider setup
 
 1. Settings → Provider.
-2. **OpenRouter** is the default. The free default is
-   `nvidia/nemotron-3.5-super-vl:free`.
+2. **OpenRouter is the default** with Meta Llama 4 Maverick
+   (`meta-llama/llama-4-maverick`), a paid Meta vision model whose price is shown.
+   Free NVIDIA/Dots vision models remain selectable.
 3. Paste a key; it stays in memory.
 4. Optional: type any model id. Known text-only models are refused for images;
    unknown ids are sent as typed and the provider decides.
-5. Paid Meta models show their price in the model note/datalist. Select one only
-   if you accept the charge.
+5. NVIDIA NIM, Cloudflare Workers AI and BlockRun are listed with their endpoint
+   and a **blocked** reason. They are refused before any network call on the
+   phone. Use the PC app or your own relay.
+6. Modal and Custom relay accept a user-supplied HTTPS base URL. Modal is paid
+   and untested here; CORS depends on the deployment.
 
 ### Environment variables (headless desktop)
 
-Copy `.env.example` to `.env` and set only the provider you use:
+Copy `.env.example` to `.env` and set only the providers you use:
 
 ```text
+OPENROUTER_API_KEY=...
+OPENROUTER_MODEL_ID=meta-llama/llama-4-maverick
+
 NIM_ENABLED=true
 NIM_API_KEY=...
 NIM_BASE_URL=https://integrate.api.nvidia.com
 NIM_MODEL_ID=meta/muse-glimmer-30b
-PROVIDER_PRIORITY=nvidia-nim,cloudflare-workers-ai,groq
+
+CLOUDFLARE_ACCOUNT_ID=...
+CLOUDFLARE_API_TOKEN=...
+CLOUDFLARE_MODEL_ID=@cf/meta/llama-3.2-11b-vision-instruct
+
+BLOCKRUN_API_KEY=...
+BLOCKRUN_MODEL_ID=meta-llama/llama-4-maverick
+
+MODAL_API_KEY=...
+MODAL_BASE_URL=https://your-workspace--your-app.modal.run
+MODAL_MODEL_ID=meta-llama/Llama-4-Maverick-17B-128E-Instruct
+
+GROQ_API_KEY=...
+GROQ_TEXT_MODEL=meta-llama/llama-3.3-70b-versatile
+
+PROVIDER_PRIORITY=openrouter,nvidia-nim,cloudflare-workers-ai,blockrun,modal,groq
 ALLOW_OUTBOUND_NETWORK=true
 ```
 
@@ -345,13 +393,17 @@ rectangle), never private photos.
 | `api.groq.com` | CORS; model list; text; vision | CORS `*`. 11 models; Meta entries only Prompt Guard 2 22M/86M classifiers; no vision model. GPT-OSS 120B and Qwen 3.8 27B text calls returned 200. |
 | `integrate.api.nvidia.com` | CORS; Muse image | No CORS. `meta/muse-glimmer-30b` returned 200 and correctly named the shapes. 11B returned 404; 90B timed out. |
 | `api.cloudflare.com` | CORS; Workers AI image | No CORS (OPTIONS 405). `@cf/meta/llama-3.2-11b-vision-instruct` returned 200 after licence acceptance and correctly named the shapes. |
-| `api.blockrun.ai` | Text and image | 115 models listed, but both calls returned 402 `Payment verification failed`; no CORS. Unusable. |
+| `api.blockrun.ai` | Text and image | 115 models listed, but both calls returned 402 `Payment verification failed`; no CORS. Paid and currently unusable with the supplied key. |
+| `*.modal.run` | Deployed endpoint | **NOT TESTED.** No Modal deployment URL was available. It is paid; CORS is decided by the deployment. |
 
 Cloud hosts used by the shipped software:
 
-- **Desktop:** NVIDIA NIM (`integrate.api.nvidia.com`) and Cloudflare Workers AI
-  (`api.cloudflare.com`).
-- **Phone:** OpenRouter (`openrouter.ai`) and Groq (`api.groq.com`, text only).
+- **Desktop:** OpenRouter (`openrouter.ai`), NVIDIA NIM (`integrate.api.nvidia.com`),
+  Cloudflare Workers AI (`api.cloudflare.com`), BlockRun (`api.blockrun.ai`),
+  Modal (your `*.modal.run` deployment) and Groq (`api.groq.com`, text only).
+- **Phone:** OpenRouter (`openrouter.ai`) and Groq (`api.groq.com`, text only)
+  can be called directly. NVIDIA NIM, Cloudflare, BlockRun and Modal are listed
+  with their endpoint and reason; they need the desktop app or a user relay.
 - **No IntentLens-owned cloud.** No Supabase, Firebase, Vercel function, AWS
   service or application backend is used.
 
@@ -361,22 +413,23 @@ The development agents that helped build this repository were **not Meta
 models**, because Meta model API access was not available to them. That does not
 describe the shipped inference path:
 
-- Desktop vision calls use **Meta-published models** hosted by NVIDIA NIM or
-  Cloudflare Workers AI.
-- Phone calls use **OpenRouter**. The free default is an NVIDIA model because no
-  free Meta vision route was available; paid Meta Maverick/Scout are explicit
-  options with prices. Groq text chat uses non-Meta models because the account
-  has no Meta chat model, and the UI labels that truthfully.
+- Every capable provider defaults to a **Meta-published model**: OpenRouter and
+  BlockRun to Llama 4 Maverick, NIM to Muse Glimmer 30B, Cloudflare to Llama 3.2
+  11B Vision, Modal to Llama 4 Maverick, Groq to Llama 3.3 70B.
+- Free non-Meta OpenRouter vision models and Groq's GPT-OSS/Qwen text models stay
+  selectable as labelled fallbacks, never as a silent substitution for Meta.
 - Classifiers (Prompt Guard, Llama Guard) are never presented as chat or vision
   models.
 
-### Why NVIDIA NIM was removed from the phone layout
+### Why the blocked providers stay visible on the phone
 
-NIM is a restricted, third-party host that does not return
-`Access-Control-Allow-Origin`. A static GitHub Pages page cannot read its
-responses, and NIM is not free. Muse was reachable server-side in the audit but
-is not usable from the phone build. The desktop app keeps NIM because its local
-Node server makes the request. A user-owned relay is the only phone workaround.
+NVIDIA NIM, Cloudflare Workers AI and BlockRun do not return usable CORS headers
+for a GitHub Pages origin. Hiding them made the phone look like it supported
+fewer hosts than the PC and gave no explanation. They are now listed with their
+exact endpoint, CORS evidence, price and the `PROVIDER_CORS_BLOCKED` reason, and
+are refused before any network call. The desktop app can call all of them because
+its local Node server makes the request. Modal and Custom relay take a user-owned
+URL; their CORS policy is the deployment's responsibility.
 
 ---
 
@@ -431,16 +484,18 @@ logged.
   [Key preservation](#key-preservation).
 - **Desktop key is encrypted at rest.** It is never returned to the page and
   never written to logs.
-- **Provider policy applies.** OpenRouter, Groq, NVIDIA and Cloudflare receive
-  what you send. Free does not automatically mean private or no-training. Check
-  the selected model page before sending sensitive images.
+- **Provider policy applies.** OpenRouter, Groq, NVIDIA, Cloudflare, BlockRun and
+  your Modal deployment receive what you send. Free does not automatically mean
+  private or no-training. Check the selected model page before sending sensitive
+  images.
 - **No application backend.** IntentLens cannot see or retain your requests; the
   provider can. A user-owned relay is controlled by you, not by IntentLens.
 - **Synthetic test images only.** The live audit used a generated shape image,
   never personal or private photos.
 - **CSP caveat.** GitHub Pages cannot set response headers, so the PWA CSP is a
-  `<meta>` tag only. `connect-src` allows HTTPS because the optional custom relay
-  can live on any domain; the fixed providers are OpenRouter and Groq.
+  `<meta>` tag only. `connect-src` allows HTTPS because Modal deployments and
+  the optional custom relay can live on any domain; the fixed providers are
+  OpenRouter, Groq, NVIDIA NIM, Cloudflare Workers AI and BlockRun.
 
 ---
 
@@ -480,8 +535,12 @@ logged.
 - **Provider availability changes.** Model catalogues, free quotas, CORS and
   prices can change without notice. The audit is a 2026-11-04 snapshot.
 - **Groq has no vision model on this account.** Prompt Guard is a classifier and
-  is never used for Q&A or images.
-- **BlockRun is unusable with the supplied key.** HTTP 402 and no CORS.
+  is never used for Q&A or images. Meta Llama 3.3 70B is listed first but may not
+  be enabled on a restricted account.
+- **BlockRun is unusable with the supplied key.** HTTP 402 and no CORS. It remains
+  visible and configurable so credit can be added and retried.
+- **Modal is paid and untested.** No deployment URL was available in the audit.
+  CORS and model availability depend on your deployment.
 - **Phone keys are not preserved.** This is intentional. Use the desktop app if
   you need encrypted key persistence.
 - **Packaged desktop limitations.** The installer and window were previously
@@ -498,10 +557,11 @@ logged.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `AI_NOT_CONFIGURED` | No verified desktop vision provider | Configure NIM Muse or Cloudflare 11B. Groq cannot do vision on this account. |
+| `AI_NOT_CONFIGURED` | No desktop vision provider | Configure OpenRouter, NIM Muse, Cloudflare 11B, BlockRun or Modal. Groq cannot do vision on this account. |
 | `NETWORK_DISABLED` | `ALLOW_OUTBOUND_NETWORK=false` | Set it to `true` and restart, or start with `start.cmd --online`. |
 | `MODEL_AUTH_FAILED` | Bad/revoked key | Replace the key. |
 | `MODEL_QUOTA_EXHAUSTED` | No credit | Add credit or change provider. |
+| Phone `PROVIDER_CORS_BLOCKED` | NVIDIA NIM / Cloudflare / BlockRun has no browser CORS | Use the PC app or a user-owned relay; the message names the endpoint. |
 | Phone “Network/CORS failure” | Custom relay missing CORS | Return `Access-Control-Allow-Origin` for the Pages origin; use HTTPS. |
 | Phone key disappears after reload | By design | Re-enter it; use desktop for key preservation. |
 | Camera permission denied | HTTP origin or browser setting | Use HTTPS (Pages) or localhost; check site permissions. |
@@ -520,6 +580,7 @@ server/                            local Node backend
   routes/analyze.js                validation, context, provider orchestration
   routes/providers.js              save/test/status without key disclosure
   services/*Provider.js            NIM, Cloudflare, Groq adapters
+  services/openaiCompatibleProvider.js  OpenRouter, BlockRun, Modal adapter
   services/provider.js             failover, cooldowns, error classification
 electron/                          Electron shell + safeStorage bridge
 pwa/                               static phone PWA (GitHub Pages)
