@@ -946,8 +946,14 @@ function syncProviderDetail(providerId) {
   const cors = provider.unavailableInBrowser
     ? `Browser CORS: BLOCKED — ${provider.blockedMessage || 'the host does not allow this origin.'}`
     : `Browser CORS: ${provider.browserCors}.`;
-  els.providerNote.textContent = `${provider.note} ${cors} Endpoint: ${provider.endpoint || '(paste your endpoint below)'} Retention: ${provider.retention}`;
+  // The provider note already names the endpoint for some hosts; do not repeat it.
+  const endpointBit = provider.endpoint && !provider.note.includes(provider.endpoint)
+    ? ` Endpoint: ${provider.endpoint}`
+    : '';
+  els.providerNote.textContent = `${provider.note} ${cors}${endpointBit} Retention: ${provider.retention}`;
   els.modelInput.placeholder = provider.defaultModel;
+  const baseUrlRow = $('baseUrlRow');
+  if (baseUrlRow) baseUrlRow.hidden = !provider.requiresBaseUrl;
   els.baseUrlInput.disabled = !provider.requiresBaseUrl;
   els.baseUrlInput.placeholder = providerId === 'modal'
     ? 'https://your-workspace--your-app.modal.run'
@@ -986,11 +992,14 @@ function openSettings() {
 }
 
 function readSettingsForm() {
+  const providerId = els.providerSelect.value;
   return {
-    providerId: els.providerSelect.value,
+    providerId,
     model: els.modelInput.value.trim(),
     apiKey: els.keyInput.value.trim(),
-    baseUrl: els.baseUrlInput.value.trim(),
+    // Only keep a base URL for providers that actually use one, so a stale
+    // relay/deployment URL is never carried into a fixed-host request.
+    baseUrl: PROVIDERS[providerId]?.requiresBaseUrl ? els.baseUrlInput.value.trim() : '',
     gridSize: Number(els.gridSelect.value) || DEFAULT_GRID_SIZE,
     tts: els.ttsToggle.checked,
   };
