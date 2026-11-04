@@ -24,10 +24,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # node:sqlite (used by the desktop store tests) exists only from
+      # Node 22.5+, so 20 fails the gate before deployment can start.
       - name: Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
       - name: Run source tests
         run: node scripts/run-source-tests.mjs

@@ -6,7 +6,7 @@
   "main": "electron/main.js",
   "description": "Task-aware visual grounding prototype: phone camera + command + Meta Model API + 64x64 overlay grid",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.5"
   },
   "scripts": {
     "start": "node server/index.js",
