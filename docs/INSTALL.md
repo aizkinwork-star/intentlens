@@ -6,37 +6,51 @@ Cloud image analysis is optional and uses Meta-published vision models only.
 
 ## What you need
 
-- **Node.js 22.5+** from https://nodejs.org/ (the test runner uses `node:sqlite`)
-- A browser such as Chrome or Edge
-- Optional: a Meta vision provider key
-  - NVIDIA NIM (default): https://build.nvidia.com/
+- **Windows 10/11** and **Node.js 22.5+** from https://nodejs.org/
+- Internet on the first run (Electron is installed once)
+- A provider key for cloud AI (Meta models only):
+  - OpenRouter (recommended, paid per token): https://openrouter.ai/keys
   - Cloudflare Workers AI: https://dash.cloudflare.com/
-  - Groq: not usable for vision on the supplied account. It exposes only
-    Prompt Guard 2 classifiers among Meta models; the desktop app skips it.
-- For the phone build, see [../pwa/README.md](../pwa/README.md). It uses
-  OpenRouter directly and does not need this server.
+  - NVIDIA NIM (hosts Meta models): https://build.nvidia.com/
+  - Groq: text and voice only. It never receives images.
+- **Phone:** no download. Open https://aizkinwork-star.github.io/intentlens/ ,
+  served straight from this repository. See [../pwa/README.md](../pwa/README.md).
 
 ## Start
 
-### Desktop app (recommended)
+### Desktop app: download, extract, run (recommended)
+
+1. On https://github.com/aizkinwork-star/intentlens click **Code -> Download ZIP**
+   (direct link: https://github.com/aizkinwork-star/intentlens/archive/refs/heads/main.zip).
+2. Right-click the ZIP -> **Extract All...** to a folder such as `C:\IntentLens`.
+   Do not run it from inside the ZIP.
+3. Open the extracted `intentlens-main` folder and double-click **`start.cmd`**.
+   The first run installs Electron once, then the app opens.
 
 ```text
-start.cmd            # launches the Electron desktop app
+start.cmd            # desktop app, run from this folder's source
 start.cmd --online   # same, with allowlisted provider hosts enabled
 ```
 
-`start.cmd` runs the desktop app from this folder's source, so it always matches the code you cloned. The first run installs Electron once. Close any installed `IntentLens.exe` first: it is an older frozen build and holds the single-instance lock. Use `start.cmd --packaged` only if you want an installed or built exe.
+`start.cmd` always runs the code in the folder it sits in, so it is the version you
+downloaded. To update, download the ZIP again into a new folder (or `git pull` if
+you used `git clone`). Close any installed `IntentLens.exe` first: it is an older
+frozen build and holds the single-instance lock. `start.cmd --packaged` launches an
+installed or built exe instead.
 
 The desktop app keeps cloud access **off by default** (`ALLOW_OUTBOUND_NETWORK=false`).
-Pass `--online` when you want to use NVIDIA, Cloudflare or Groq in that session.
+Pass `--online` when you want to use a cloud provider in that session.
 
-### Installer
+### Optional: build an installer
 
 ```text
-electron\release\IntentLens Setup 0.4.0.exe   # Electron desktop installer
-setup.bat                                    # legacy browser-server installer
-setup.ps1                                    # legacy PowerShell installer
+cd electron
+npm install
+npm run build        # -> electron\release\IntentLens Setup 0.4.0.exe
 ```
+
+The installer is a frozen snapshot; rebuild it after every update. `setup.bat` and
+`setup.ps1` are legacy installers that copy the folder elsewhere; prefer `start.cmd`.
 
 ### Manual
 
@@ -55,12 +69,12 @@ Supported Meta-model options (audit snapshot 2026-11-04):
 
 | Priority | Provider | Default Meta model | Notes |
 |---|---|---|---|
-| 1 | OpenRouter | `meta-llama/llama-4-maverick` | Paid Meta vision, verified with a real image. Free non-Meta vision models remain selectable. |
-| 2 | NVIDIA NIM | `meta/muse-glimmer-30b` | Real image returned valid JSON. 11B returned 404; 90B timed out. |
-| 3 | Cloudflare Workers AI | `@cf/meta/llama-3.2-11b-vision-instruct` | Real image verified after licence acceptance. |
+| 1 | OpenRouter | `meta-llama/llama-4-maverick` | Paid Meta vision, verified with a real image. |
+| 2 | Cloudflare Workers AI | `@cf/meta/llama-3.2-11b-vision-instruct` | Real image verified after licence acceptance. |
+| 3 | NVIDIA NIM | `meta/muse-glimmer-30b` | Real image returned valid JSON. 11B returned 404; 90B timed out. |
 | 4 | BlockRun | `meta-llama/llama-4-maverick` | Paid x402 marketplace. The supplied key returned HTTP 402; restored for retry after credit. |
 | 5 | Modal | `meta-llama/Llama-4-Maverick-17B-128E-Instruct` | Paid and **NOT tested**. Needs your deployed `*.modal.run` URL. |
-| 6 | Groq | **no vision** | Only Prompt Guard 2 classifiers are Meta models on this account. Text chat lists Meta Llama 3.3 70B first. |
+| 6 | Groq | **text/voice only** | Never receives images. Meta Llama 3.3 70B Versatile is Enterprise-only on Groq. |
 
 Enter the key, select a vision model, and press **Save & test**. A placeholder
 key is never treated as configured. Non-Meta models are rejected. Any catalogued
@@ -106,13 +120,12 @@ MODAL_API_KEY=...
 MODAL_BASE_URL=https://your-workspace--your-app.modal.run
 MODAL_MODEL_ID=meta-llama/Llama-4-Maverick-17B-128E-Instruct
 
-# Free only by default. Set to preview or paid only if you have that access.
-MODEL_ACCESS_TIER=free
+# Paid by default (Meta vision models are paid or account-gated).
+MODEL_ACCESS_TIER=paid
 
 GROQ_API_KEY=...
-GROQ_VISION_MODEL=
 
-PROVIDER_PRIORITY=nvidia-nim,cloudflare-workers-ai,groq,openrouter,blockrun,modal
+PROVIDER_PRIORITY=openrouter,cloudflare-workers-ai,nvidia-nim,blockrun,modal,groq
 ALLOW_OUTBOUND_NETWORK=true
 ```
 
