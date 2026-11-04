@@ -933,7 +933,23 @@ function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
   const secure = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
   if (!secure) return;
-  navigator.serviceWorker.register('./sw.js').catch(() => {
+
+  // A returning client may still be running the previous cached shell. When a
+  // newly deployed worker takes control, reload once so the camera overlay and
+  // chat fixes are actually applied. Guarded by hadController so the very
+  // first install (which also fires controllerchange via clients.claim) does
+  // not reload a freshly opened tab.
+  const hadController = Boolean(navigator.serviceWorker.controller);
+  let reloading = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || reloading) return;
+    reloading = true;
+    window.location.reload();
+  });
+
+  navigator.serviceWorker.register('./sw.js').then((registration) => {
+    if (hadController) registration.update().catch(() => {});
+  }).catch(() => {
     /* offline cache is optional; camera and model calls still work */
   });
 }

@@ -159,3 +159,10 @@ test('service worker refuses authorization-bearing and cross-origin requests', (
   assert.match(sw, /request\.method !== 'GET'/);
   assert.doesNotMatch(sw, /api\.groq\.com|openrouter\.ai|blockrun\.ai/);
 });
+
+test('a deployed worker change reloads the old shell exactly once', () => {
+  const app = readFileSync(join(here, 'app.js'), 'utf8');
+  assert.match(app, /addEventListener\(['"]controllerchange['"]/);
+  assert.match(app, /registration\.update\(\)/);
+  assert.match(app, /hadController/);
+});
