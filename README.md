@@ -80,12 +80,12 @@ analytics, no account system, no APK, no Meta glasses integration.
 │    /api/providers credentials (never returned to the page)         │
 │    /api/transcribe local whisper.cpp only (loopback)               │
 │                         │                                          │
-│        ┌────────────────┼─────────────────┬────────────────┐        │
-│        ▼                ▼                 ▼                ▼        │
+│        ┌────────────────┼─────────────────┬────────────────┐       │
+│        ▼                ▼                 ▼                ▼       │
 │   OpenRouter      NVIDIA NIM     Cloudflare Workers AI   BlockRun  │
-│   Meta Llama 4    Meta Muse      Meta Llama 3.2 11B      Meta 4     │
-│        │                │                 │                │        │
-│        └────────────────┴──────── HTTPS ──┴────────────────┘        │
+│   Meta Llama 4    Meta Muse      Meta Llama 3.2 11B      Meta 4    │
+│        │                │                 │                │       │
+│        └────────────────┴──────── HTTPS ──┴────────────────┘       │
 │                         │                                          │
 │                  Modal (your deployment) + Groq (skipped: no Meta  │
 │                  vision on this account)                           │
@@ -112,16 +112,16 @@ without pretending it already works.
 │                         │                                          │
 │         ┌───────────────┴────────────────┐                         │
 │         ▼                                ▼                         │
-│   OpenRouter API                   Groq API (account-dependent)       │
-│   free vision (default)            no default; preview vision only    │
+│   OpenRouter API                   Groq API (account-dependent)    │
+│   free vision (default)            no default; preview vision only │
 │         │                                                          │
 │         └──────── HTTPS + CORS ─────────► upstream model           │
 │                                                                    │
 │  Also listed, with endpoint + CORS reason:                         │
-│    NVIDIA NIM · Cloudflare Workers AI · BlockRun                    │
-│    Modal (user endpoint) · Custom relay                             │
-│  Those are refused before the network call on the phone and point   │
-│  to the desktop app or a user relay instead of silently failing.    │
+│    NVIDIA NIM · Cloudflare Workers AI · BlockRun                   │
+│    Modal (user endpoint) · Custom relay                            │
+│  Those are refused before the network call on the phone and point  │
+│  to the desktop app or a user relay instead of silently failing.   │
 │                                                                    │
 │  Local data: IndexedDB (projects, messages, images, settings)      │
 │  Key: JavaScript memory only; cleared on reload                    │
