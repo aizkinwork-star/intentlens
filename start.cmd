@@ -12,7 +12,7 @@ setlocal EnableDelayedExpansion
 ::   start.cmd --online     enables allowlisted provider hosts for this run
 ::   start.cmd --packaged   use an installed/built IntentLens.exe instead
 ::
-:: The browser development UI is start-browser.cmd.
+:: For a browser dev UI, run: node server/index.js
 :: ============================================
 cd /d "%~dp0"
 
@@ -61,7 +61,7 @@ if not errorlevel 1 (
 netstat -ano | findstr /R /C:":8000 .*LISTENING" >nul
 if not errorlevel 1 (
     echo ERROR: port 8000 is already in use.
-    echo Probably an old "start-browser.cmd" or "node server/index.js" window.
+    echo Probably an old "node server/index.js" window.
     echo Close it, then run start.cmd again.
     echo.
     pause

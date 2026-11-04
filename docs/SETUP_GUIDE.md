@@ -8,8 +8,7 @@ sent only to the Meta-published vision provider you configure.
 
 1. Double-click `start.cmd` to open the Electron desktop app.
    Use `start.cmd --online` if you want cloud providers enabled for that session.
-2. For the browser UI instead: install Node.js 22.5+, run `start-browser.cmd`
-   (or `node server/index.js`), then open Chrome or Edge at `http://localhost:8000`.
+2. For the browser UI instead: install Node.js 22.5+, run `node server/index.js`, then open Chrome or Edge at `http://localhost:8000`.
 3. If no provider is configured, the first-run popup opens automatically.
 
 ## Connect a provider

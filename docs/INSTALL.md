@@ -183,7 +183,6 @@ button shows the configuration hint and typing still works.
 | File | Purpose |
 |---|---|
 | `start.cmd` | Launches the Electron desktop app |
-| `start-browser.cmd` | Browser development launcher (port 8000) |
 | `electron\release\IntentLens Setup 0.4.0.exe` | Desktop installer |
 | `setup.bat` / `setup.ps1` | Legacy browser-server installers |
 | `server/index.js` | Local HTTP backend and route dispatch |

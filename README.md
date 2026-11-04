@@ -197,8 +197,6 @@ start.cmd --online        :: desktop app with cloud providers enabled
 Browser UI instead of Electron:
 
 ```cmd
-start-browser.cmd
-:: or
 node server/index.js
 ```
 
