@@ -43,7 +43,7 @@ What prevents a plain **READY**:
 | Settings (provider/model/grid/TTS/base URL) | IndexedDB / `settings` | `setSetting`, `allSettings` |
 | API key | JavaScript memory only | `state.apiKey` in `pwa/app.js` |
 | Camera stream | RAM; tracks stopped on stop/hide/pagehide | `startCamera`, `stopCamera` |
-| Service worker shell | Cache Storage `intentlens-pwa-v3` | `pwa/sw.js` |
+| Service worker shell | Cache Storage `intentlens-pwa-v6` | `pwa/sw.js` |
 
 ### B2. Data flow
 
@@ -172,7 +172,7 @@ node scripts\prepare-pwa.mjs
 node --check pwa\app.js
 ```
 
-Final result: **215 tests, 215 passed, 0 failed, 0 skipped, 0 cancelled** (201 existing + 14 PWA tests). New PWA tests cover:
+Final result: **217 tests, 217 passed, 0 failed, 0 skipped, 0 cancelled** (201 existing + 16 PWA tests). New PWA tests cover:
 
 - Text chat prompt has no image markers.
 - Chat request body has only a `text` part; no `image_url`.
@@ -184,6 +184,7 @@ Final result: **215 tests, 215 passed, 0 failed, 0 skipped, 0 cancelled** (201 e
 - HTML escaping and `javascript:`/`data:` rejection.
 - Static scans: no `setSetting('apiKey')`; legacy key/remember slots deleted.
 - Service worker rejects non-GET, cross-origin, and Authorization-bearing requests.
+- A deployed worker change triggers one controlled reload, and a new shell cache bypasses the HTTP cache rather than copying stale assets.
 
 Browser smoke test (localhost, simulated camera/provider):
 
@@ -195,7 +196,30 @@ Browser smoke test (localhost, simulated camera/provider):
 - BlockRun consent unchecked → save blocked; checked → save allowed.
 - IndexedDB settings: no `apiKey`, no `rememberKey`.
 
-> These are simulated browser tests. They do not prove a physical phone camera or a real provider vision response.
+### G1. CI and live deployment verification
+
+The first Pages run after these changes (`41778799620`) failed before deploy because the workflow used Node 20 and the desktop store tests import `node:sqlite`, which exists only from Node 22.5. The gate now uses Node 24 and `package.json`/lock declare `>=22.5`. Subsequent runs completed successfully and deployed `pwa/`.
+
+Live origin `https://aizkinwork-star.github.io/intentlens/` was checked after the final deploy (`b69df5b`):
+
+| Check | Result |
+|---|---|
+| Pages workflow conclusion | **PASS** (deploy job completed) |
+| `manifest.webmanifest` | **PASS**: `orientation: "any"` |
+| Service worker | **PASS**: `intentlens-pwa-v6`, 16 shell entries including `app.js`, `index.html`, `sw.js` |
+| Current `app.js` served | **PASS**: chat code and worker-update handler present |
+| Camera-off overlay after mocked stream start | **PASS (simulated)**: `hidden: true`, computed `display: none` |
+| Chat request | **PASS (simulated)**: one request to `openrouter.ai`, content types `['text']`, no `image_url` |
+| Chat default model | **PASS**: `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`; no silent switch |
+| Key handling | **PASS**: key only in `Authorization`; absent from URL/localStorage/sessionStorage/IndexedDB |
+| Reload | **PASS**: key field empty, chat history kept, cloud off |
+| BlockRun consent gate | **PASS**: save blocked until the checkbox is ticked; warning visible |
+| Browser console | **PASS**: no warnings or errors |
+| Physical Android camera / real vision | **NOT TESTED — DEVICE/KEY REQUIRED** |
+
+GitHub Pages serves static files with `Cache-Control: max-age=600`. A returning client can therefore run the previous cached shell once after a deploy; the new worker now reloads the page once when it takes control, and install fetches with `cache: 'reload'` so a new versioned cache cannot be poisoned by an unexpired HTTP cache. This behavior was verified in the live browser after clearing the old worker and cache.
+
+> These are simulated browser tests on the live origin. They do not prove a physical phone camera or a real provider vision response.
 
 ---
 
@@ -285,6 +309,10 @@ node --check pwa\app.js
 ```
 
 - Current base commit before this work: `c7c0554`.
+- Feature commit: `a34aeac`.
+- CI fix (Node 24 / `node:sqlite`): `d81dac8`.
+- Worker auto-update: `bea7e07`.
+- Shell cache v6 / HTTP-cache bypass: `b69df5b` (last live-verified code commit).
 - Live URL: `https://aizkinwork-star.github.io/intentlens/`.
 - No `.env`, secret, ZIP, or build output is tracked by the repository.
 - No real API key was used in any test. All keys in tests are synthetic sentinels.
