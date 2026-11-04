@@ -946,11 +946,12 @@ function syncProviderDetail(providerId) {
   const cors = provider.unavailableInBrowser
     ? `Browser CORS: BLOCKED — ${provider.blockedMessage || 'the host does not allow this origin.'}`
     : `Browser CORS: ${provider.browserCors}.`;
-  // The provider note already names the endpoint for some hosts; do not repeat it.
-  const endpointBit = provider.endpoint && !provider.note.includes(provider.endpoint)
+  // A blocked-host message may already name its endpoint; do not repeat it.
+  const base = `${provider.note} ${cors}`;
+  const endpointBit = provider.endpoint && !base.includes(provider.endpoint)
     ? ` Endpoint: ${provider.endpoint}`
     : '';
-  els.providerNote.textContent = `${provider.note} ${cors}${endpointBit} Retention: ${provider.retention}`;
+  els.providerNote.textContent = `${base}${endpointBit} Retention: ${provider.retention}`;
   els.modelInput.placeholder = provider.defaultModel;
   const baseUrlRow = $('baseUrlRow');
   if (baseUrlRow) baseUrlRow.hidden = !provider.requiresBaseUrl;
