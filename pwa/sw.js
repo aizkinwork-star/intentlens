@@ -3,7 +3,7 @@
 // Never caches model requests, images or Authorization-bearing responses.
 // Only same-origin GET assets are handled.
 
-const CACHE = 'intentlens-pwa-v5';
+const CACHE = 'intentlens-pwa-v6';
 const SHELL = [
   './',
   './index.html',
@@ -26,7 +26,17 @@ const SHELL = [
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE)
-      .then((cache) => Promise.all(SHELL.map((url) => cache.add(url).catch(() => null))))
+      // cache: 'reload' bypasses an unexpired HTTP cache. Without it a new
+      // versioned worker can copy the previous app.js into the new cache and
+      // keep serving the old UI even though sw.js changed.
+      .then((cache) => Promise.all(SHELL.map(async (url) => {
+        try {
+          const response = await fetch(url, { cache: 'reload' });
+          if (response.ok) await cache.put(url, response);
+        } catch {
+          /* an optional asset may be missing; the shell still installs */
+        }
+      })))
       .then(() => self.skipWaiting()),
   );
 });

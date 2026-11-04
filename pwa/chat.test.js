@@ -166,3 +166,9 @@ test('a deployed worker change reloads the old shell exactly once', () => {
   assert.match(app, /registration\.update\(\)/);
   assert.match(app, /hadController/);
 });
+
+test('a new shell cache bypasses the HTTP cache instead of copying stale assets', () => {
+  const sw = readFileSync(join(here, 'sw.js'), 'utf8');
+  assert.match(sw, /cache:\s*['"]reload['"]/);
+  assert.match(sw, /cache\.put\(url, response\)/);
+});
