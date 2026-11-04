@@ -118,6 +118,40 @@ export function buildComponentPrompt({
   return { instructions: COMPONENT_INSTRUCTIONS, userText };
 }
 
+export const CHAT_INSTRUCTIONS = `You are IntentLens, a careful electronics mentor for a beginner.
+This is a text-only chat inside one project. No photo is attached to this message.
+- Answer from the project context and the user's question only.
+- Never invent a component identity, pinout, polarity, voltage or rating that is not supported by the context.
+- If the answer depends on looking at the board, say so and ask the user to capture a photo.
+- Keep safety limits and mark uncertainty plainly.
+- Use short paragraphs or numbered steps. Return plain text, not JSON, not HTML.
+- Never ask for API keys, passwords or personal information.`;
+
+export function buildChatPrompt({
+  projectContext = null,
+  history = [],
+  question = '',
+} = {}) {
+  const context = {
+    project: projectContext,
+    chatHistory: (Array.isArray(history) ? history : [])
+      .slice(-12)
+      .map((message) => ({
+        role: message.role === 'assistant' ? 'assistant' : 'user',
+        text: String(message.text || '').slice(0, 1200),
+      })),
+  };
+  const userText = [
+    'Project and recent chat context (JSON):',
+    JSON.stringify(context, null, 2),
+    '',
+    `The user asks: ${String(question || '').slice(0, 1200)}`,
+    '',
+    'Answer as plain text. Do not claim to see an image; none was sent with this message.',
+  ].join('\n');
+  return { instructions: CHAT_INSTRUCTIONS, userText };
+}
+
 export function buildExplainPrompt({ projectContext = null, previousAnswer = '', question = '' } = {}) {
   const context = {
     project: projectContext,

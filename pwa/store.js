@@ -130,6 +130,8 @@ export async function addMessage(message) {
     text: String(message.text || '').slice(0, 4000),
     result: message.result || null,
     imageId: message.imageId || null,
+    mode: message.mode === 'chat' ? 'chat' : 'vision',
+    model: message.model || null,
     createdAt: message.createdAt || now(),
   };
   const tx = db.transaction('messages', 'readwrite');

@@ -14,6 +14,11 @@
 
 * { box-sizing: border-box; }
 
+/* The camera-off overlay previously stayed visible because .stageEmpty's
+   display:grid beat the user-agent [hidden] rule. This is the single source
+   of truth for every hidden element in the app. */
+[hidden] { display: none !important; }
+
 html, body {
   margin: 0;
   padding: 0;
@@ -30,7 +35,6 @@ body {
 
 button, input, select { font: inherit; color: inherit; }
 button { cursor: pointer; }
-.hidden { display: none !important; }
 
 .top {
   position: sticky;
@@ -105,6 +109,21 @@ main { padding: 12px; display: grid; gap: 10px; max-width: 760px; margin: 0 auto
 }
 .stageEmpty strong { color: var(--text); }
 
+.rotateHint {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  z-index: 2;
+  text-align: center;
+  font-size: 12px;
+  color: var(--warn);
+  background: rgba(11, 17, 24, 0.82);
+  border: 1px solid rgba(255, 200, 87, 0.35);
+  border-radius: 9px;
+  padding: 6px 8px;
+}
+
 .statusRow {
   display: flex;
   justify-content: space-between;
@@ -119,7 +138,7 @@ main { padding: 12px; display: grid; gap: 10px; max-width: 760px; margin: 0 auto
 .status.busy { color: var(--warn); }
 .gridLabel { font-variant-numeric: tabular-nums; }
 
-.controls { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 8px; }
+.controls { display: grid; grid-template-columns: 1.4fr 1fr 1fr auto; gap: 8px; }
 .commandRow { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
 
 button {
@@ -132,6 +151,11 @@ button {
 }
 button:active { transform: scale(0.985); }
 button:disabled { opacity: 0.5; cursor: not-allowed; }
+button[aria-pressed="true"] {
+  border-color: var(--cyan);
+  background: rgba(110, 220, 255, 0.12);
+  color: var(--cyan);
+}
 
 button.primary {
   background: linear-gradient(180deg, #ff5d6d, #e63d4e);
@@ -169,13 +193,36 @@ input:focus, select:focus { outline: 1px solid var(--cyan); border-color: var(--
   color: var(--muted);
   white-space: nowrap;
 }
-.instruction { margin: 8px 0; font-size: 16px; }
+.instruction { margin: 8px 0; font-size: 16px; white-space: pre-wrap; }
 .meta { margin: 4px 0; color: var(--muted); font-size: 13px; }
 .evidence { margin: 8px 0; padding-left: 18px; color: var(--muted); font-size: 13px; }
 .evidence:empty { display: none; }
 
 .answerActions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-top: 8px; }
 .answerActions button { font-size: 12px; padding: 8px; min-height: 38px; }
+
+.chatCard { display: grid; gap: 8px; }
+.chatTop { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.chatLog {
+  display: grid;
+  gap: 8px;
+  max-height: 42vh;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.chatMsg {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+.chatMsg.user { background: rgba(110, 220, 255, 0.07); border-color: rgba(110, 220, 255, 0.28); }
+.chatMsg.assistant { background: var(--panel2); }
+.chatMsg.system { color: var(--muted); font-size: 13px; }
+.chatMsg .who { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin-bottom: 3px; }
+.chatHint { margin: 0; }
 
 .cloudCard { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .cloudCard p { margin: 2px 0 0; }
@@ -189,8 +236,10 @@ dialog {
   border-radius: 16px;
   background: var(--panel);
   color: var(--text);
-  width: min(94vw, 520px);
+  width: min(94vw, 540px);
   padding: 0;
+  max-height: 92dvh;
+  overflow: auto;
 }
 dialog::backdrop { background: rgba(0, 0, 0, 0.6); }
 .dialogBody { padding: 16px; display: grid; gap: 10px; }
@@ -209,6 +258,13 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.6); }
   color: var(--warn);
   font-size: 12px;
 }
+.warn p { margin: 4px 0; }
+.warn.danger {
+  border-color: rgba(255, 77, 94, 0.5);
+  background: rgba(255, 77, 94, 0.08);
+  color: #ffb3ba;
+}
+.warn.danger strong { color: var(--accent); }
 .dialogActions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; margin-top: 4px; }
 .dialogActions button { min-height: 40px; padding: 8px 12px; }
 
@@ -217,12 +273,49 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.6); }
 .projectItem button { min-height: 34px; padding: 4px 9px; font-size: 12px; }
 .newProjectRow { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
 
-.footNote code { color: var(--cyan); }
-
-@media (max-width: 420px) {
-  .controls { grid-template-columns: 1fr 1fr 1fr; }
+@media (max-width: 460px) {
+  .controls { grid-template-columns: 1fr 1fr; }
   .controls button { font-size: 13px; padding: 10px 6px; }
   .answerActions { grid-template-columns: 1fr; }
   .cloudCard { flex-direction: column; align-items: stretch; }
   .cloudCard button { max-width: none; }
+}
+
+/* Landscape phone: wide preview on the left, controls always visible on the
+   right. The stage keeps its own aspect-ratio from the real video frame, so
+   the SVG overlay (0..1000 viewBox, preserveAspectRatio=none) maps 1:1. */
+@media (orientation: landscape) and (max-height: 620px) {
+  .top { position: static; padding: 6px 10px; }
+  .brand { font-size: 14px; }
+  main {
+    max-width: none;
+    padding: 8px;
+    gap: 8px;
+    grid-template-columns: minmax(0, 1.5fr) minmax(260px, 1fr);
+    grid-template-areas:
+      "stage status"
+      "stage controls"
+      "stage command"
+      "stage chat"
+      "stage answer"
+      "stage cloud"
+      "stage note";
+    align-content: start;
+  }
+  .stage { grid-area: stage; align-self: start; }
+  .statusRow { grid-area: status; }
+  .controls { grid-area: controls; grid-template-columns: 1fr 1fr; }
+  .commandRow { grid-area: command; }
+  .chatCard { grid-area: chat; }
+  .chatLog { max-height: 22vh; }
+  #answer { grid-area: answer; }
+  .cloudCard { grid-area: cloud; flex-direction: column; align-items: stretch; }
+  .cloudCard button { max-width: none; }
+  .footNote { grid-area: note; padding-bottom: 4px; }
+  .answerActions { grid-template-columns: 1fr 1fr 1fr; }
+  dialog { max-height: 96dvh; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
 }

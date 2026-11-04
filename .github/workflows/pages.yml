@@ -29,6 +29,9 @@ jobs:
         with:
           node-version: 20
 
+      - name: Run source tests
+        run: node scripts/run-source-tests.mjs
+
       - name: Prepare shared modules
         run: node scripts/prepare-pwa.mjs
 

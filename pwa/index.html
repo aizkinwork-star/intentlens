@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0b1118">
   <meta name="description" content="IntentLens — point your phone, ask what a part is, get a grounded next step.">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self' https://api.groq.com https://openrouter.ai https://blockrun.ai https://integrate.api.nvidia.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'">
   <title>IntentLens</title>
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" href="./icons/icon-192.png" sizes="192x192">
@@ -34,6 +36,7 @@
         <strong>Camera is off</strong>
         <span>Tap “Start camera”. Permission is asked only then.</span>
       </div>
+      <div id="rotateHint" class="rotateHint hidden" role="status">Rotate the phone to landscape for a wider board view.</div>
     </section>
 
     <div class="statusRow">
@@ -45,12 +48,22 @@
       <button id="cameraBtn" class="primary" type="button">Start camera</button>
       <button id="captureBtn" type="button" disabled>Capture</button>
       <button id="micBtn" type="button" disabled>Mic</button>
+      <button id="chatBtn" class="ghost" type="button" aria-pressed="false">Chat</button>
     </section>
 
     <section class="commandRow">
       <input id="command" type="text" inputmode="text" autocomplete="off"
              placeholder="Ask: what is this part?">
       <button id="sendBtn" class="primary" type="button">Send</button>
+    </section>
+
+    <section id="chatCard" class="card chatCard hidden" aria-live="polite">
+      <div class="chatTop">
+        <strong>Project chat</strong>
+        <span id="chatModeTag" class="tag">text only · no image</span>
+      </div>
+      <div id="chatLog" class="chatLog"></div>
+      <p class="meta chatHint">Chat never captures or sends a photo. Captures and messages stay in this project on this device.</p>
     </section>
 
     <section id="answer" class="card hidden" aria-live="polite">
@@ -71,7 +84,7 @@
     <section class="card cloudCard">
       <div>
         <strong id="cloudState">Cloud is off</strong>
-        <p class="meta">No image leaves this phone until you allow it for this session.</p>
+        <p id="cloudDetail" class="meta">No image leaves this phone until you allow it for this session.</p>
       </div>
       <button id="allowCloudBtn" class="ghost" type="button">Allow cloud for this session</button>
     </section>
@@ -92,17 +105,30 @@
       <p id="providerNote" class="meta"></p>
 
       <label>Model id
-        <input id="modelInput" type="text" autocomplete="off" spellcheck="false">
+        <input id="modelInput" type="text" autocomplete="off" spellcheck="false" list="modelList">
       </label>
+      <datalist id="modelList"></datalist>
+      <p id="modelNote" class="meta"></p>
 
-      <label>API key
-        <input id="keyInput" type="password" autocomplete="off" spellcheck="false" placeholder="Stored on this device only if you tick the box">
+      <label>API key (kept in memory for this tab only)
+        <input id="keyInput" type="password" autocomplete="off" spellcheck="false"
+               placeholder="Never saved; cleared when this tab closes or reloads">
       </label>
+      <p class="warn">
+        The key is used directly from this browser in the Authorization header. It is not
+        written to localStorage, sessionStorage or IndexedDB. Anyone with access to this
+        unlocked device or a script running on this page can read it while the tab is open.
+      </p>
 
-      <label class="checkRow">
-        <input id="rememberKey" type="checkbox">
-        <span>Remember the key on this device (IndexedDB, not encrypted)</span>
-      </label>
+      <div id="blockrunWarning" class="warn danger" hidden>
+        <strong>BlockRun consent — read before using</strong>
+        <p id="blockrunPolicy"></p>
+        <p>Its own SDK README reports HTTP 200 with incorrect answers on real image probes, so vision is <strong>unverified</strong>. Do not send private documents, personal data or sensitive project history.</p>
+        <label class="checkRow">
+          <input id="blockrunConsent" type="checkbox">
+          <span>I understand the retention and unverified-vision risks and still choose BlockRun for this session.</span>
+        </label>
+      </div>
 
       <label>Custom base URL (only for “Custom relay”)
         <input id="baseUrlInput" type="url" placeholder="https://your-relay.example.workers.dev" autocomplete="off" spellcheck="false">
@@ -119,18 +145,14 @@
           </select>
         </label>
         <label class="checkRow inline">
-          <input id="ttsToggle" type="checkbox" checked>
+          <input id="ttsToggle" type="checkbox">
           <span>Speak answers</span>
         </label>
       </div>
 
-      <p class="warn">
-        This key is used directly from the browser. It is visible to anyone with access to this
-        phone or this browser profile. For a shared device, leave “Remember” off.
-      </p>
-
       <div class="dialogActions">
-        <button id="testProviderBtn" class="ghost" type="button">Test key · 1 request</button>
+        <button id="testProviderBtn" class="ghost" type="button">Test key · 1 text request</button>
+        <button id="clearKeyBtn" class="ghost" type="button">Clear key</button>
         <button id="saveSettingsBtn" class="primary" type="button">Save</button>
         <button id="closeSettingsBtn" class="ghost" type="button">Close</button>
       </div>

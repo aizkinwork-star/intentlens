@@ -11,9 +11,20 @@
 import { DEFAULT_GRID_SIZE } from './lib/grid.js';
 import { toComponentResult } from './lib/componentResult.js';
 import { IntentLensTTS } from './lib/intentlens_tts.js';
-import { buildComponentPrompt, buildExplainPrompt } from './prompt.js';
+import { buildComponentPrompt, buildChatPrompt, buildExplainPrompt } from './prompt.js';
 import * as db from './store.js';
-import { PROVIDERS, PROVIDER_ORDER, callModel, testProvider, modelFor } from './provider.js';
+import {
+  PROVIDERS,
+  PROVIDER_ORDER,
+  OPENROUTER_MODELS,
+  callModel,
+  callChatModel,
+  testProvider,
+  modelFor,
+} from './provider.js';
+import { cameraErrorMessage, computeCaptureSize, tryLockLandscape, unlockOrientation } from './camera.js';
+import { escapeHtml } from './safe.js';
+import { polygonPointsAttribute, edgeMidpoints } from './geometry.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -29,11 +40,16 @@ const els = {
   still: $('still'),
   overlay: $('overlay'),
   stageEmpty: $('stageEmpty'),
+  rotateHint: $('rotateHint'),
   status: $('status'),
   gridLabel: $('gridLabel'),
   cameraBtn: $('cameraBtn'),
   captureBtn: $('captureBtn'),
   micBtn: $('micBtn'),
+  chatBtn: $('chatBtn'),
+  chatCard: $('chatCard'),
+  chatLog: $('chatLog'),
+  chatModeTag: $('chatModeTag'),
   command: $('command'),
   sendBtn: $('sendBtn'),
   answer: $('answer'),
@@ -46,18 +62,24 @@ const els = {
   explainBtn: $('explainBtn'),
   speakBtn: $('speakBtn'),
   cloudState: $('cloudState'),
+  cloudDetail: $('cloudDetail'),
   allowCloudBtn: $('allowCloudBtn'),
   cloudCard: document.querySelector('.cloudCard'),
   settingsDialog: $('settingsDialog'),
   providerSelect: $('providerSelect'),
   providerNote: $('providerNote'),
   modelInput: $('modelInput'),
+  modelList: $('modelList'),
+  modelNote: $('modelNote'),
   keyInput: $('keyInput'),
-  rememberKey: $('rememberKey'),
+  blockrunWarning: $('blockrunWarning'),
+  blockrunPolicy: $('blockrunPolicy'),
+  blockrunConsent: $('blockrunConsent'),
   baseUrlInput: $('baseUrlInput'),
   gridSelect: $('gridSelect'),
   ttsToggle: $('ttsToggle'),
   testProviderBtn: $('testProviderBtn'),
+  clearKeyBtn: $('clearKeyBtn'),
   saveSettingsBtn: $('saveSettingsBtn'),
   closeSettingsBtn: $('closeSettingsBtn'),
   projectDialog: $('projectDialog'),
@@ -80,13 +102,15 @@ const state = {
   model: '',
   baseUrl: '',
   apiKey: '',
-  rememberKey: false,
+  blockrunConsent: false,
   tts: true,
   allowCloud: false,
+  mode: 'vision',       // 'vision' sends one still; 'chat' sends text only
   busy: false,
   listening: false,
   recognition: null,
   installPrompt: null,
+  lastModel: null,
 };
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -138,23 +162,31 @@ function drawGrid() {
 
 function drawResult(result) {
   if (!result?.location) return;
-  const { corners, center } = result.location;
+  const { corners } = result.location;
+  const points = polygonPointsAttribute(corners);
+  if (!points) return;
+
   const polygon = document.createElementNS(SVG_NS, 'polygon');
-  polygon.setAttribute('points', corners.map((p) => `${p.x * 1000},${p.y * 1000}`).join(' '));
-  polygon.setAttribute('fill', 'rgba(255, 77, 94, 0.16)');
+  polygon.setAttribute('points', points);
+  polygon.setAttribute('fill', 'none');
   polygon.setAttribute('stroke', '#ff4d5e');
-  polygon.setAttribute('stroke-width', '3');
+  polygon.setAttribute('stroke-width', '2');
+  polygon.setAttribute('stroke-dasharray', '6 5');
   polygon.setAttribute('vector-effect', 'non-scaling-stroke');
   els.overlay.appendChild(polygon);
 
-  const dot = document.createElementNS(SVG_NS, 'circle');
-  dot.setAttribute('cx', String(center.x * 1000));
-  dot.setAttribute('cy', String(center.y * 1000));
-  dot.setAttribute('r', '9');
-  dot.setAttribute('fill', '#ff4d5e');
-  dot.setAttribute('stroke', '#0b1118');
-  dot.setAttribute('stroke-width', '3');
-  els.overlay.appendChild(dot);
+  // Four edge-midpoint targets: model-estimated location, never a local detector.
+  for (const point of edgeMidpoints(corners)) {
+    const marker = document.createElementNS(SVG_NS, 'circle');
+    marker.setAttribute('cx', String(point.x * 1000));
+    marker.setAttribute('cy', String(point.y * 1000));
+    marker.setAttribute('r', '9');
+    marker.setAttribute('fill', '#ff4d5e');
+    marker.setAttribute('stroke', '#0b1118');
+    marker.setAttribute('stroke-width', '3');
+    marker.setAttribute('vector-effect', 'non-scaling-stroke');
+    els.overlay.appendChild(marker);
+  }
 }
 
 function showStill(dataUrl, width, height) {
@@ -163,6 +195,7 @@ function showStill(dataUrl, width, height) {
   els.video.hidden = true;
   els.stageEmpty.hidden = true;
   if (width && height) els.stage.style.aspectRatio = `${width} / ${height}`;
+  updateRotateHint();
   drawGrid();
 }
 
@@ -171,7 +204,12 @@ function showLive() {
   els.still.removeAttribute('src');
   els.video.hidden = false;
   els.stageEmpty.hidden = Boolean(state.stream);
-  els.stage.style.aspectRatio = '4 / 3';
+  if (els.video.videoWidth && els.video.videoHeight) {
+    els.stage.style.aspectRatio = `${els.video.videoWidth} / ${els.video.videoHeight}`;
+  } else {
+    els.stage.style.aspectRatio = '4 / 3';
+  }
+  updateRotateHint();
   drawGrid();
 }
 
@@ -180,19 +218,29 @@ function showEmpty() {
   els.still.removeAttribute('src');
   els.video.hidden = true;
   els.stageEmpty.hidden = false;
+  updateRotateHint();
   clearOverlay();
+}
+
+function updateRotateHint() {
+  const portrait = window.matchMedia?.('(orientation: portrait)')?.matches ?? true;
+  const show = Boolean(state.stream) && portrait;
+  els.rotateHint.hidden = !show;
+  document.body.classList.toggle('cameraOn', Boolean(state.stream));
 }
 
 function updateCloudUi() {
   const provider = PROVIDERS[state.providerId];
   const model = state.model || provider.defaultModel;
   if (state.allowCloud) {
-    els.cloudState.textContent = `Cloud is ON · ${provider.label} · ${model}`;
+    els.cloudState.textContent = `Cloud is ON · ${provider.label}`;
+    els.cloudDetail.textContent = `${model} · only the still image you capture and this prompt leave the device when you press Send. Project history stays local.`;
     els.allowCloudBtn.textContent = 'Cloud is ON for this session';
     els.allowCloudBtn.disabled = true;
     els.cloudCard.classList.add('on');
   } else {
     els.cloudState.textContent = 'Cloud is off';
+    els.cloudDetail.textContent = 'No image leaves this phone until you allow it for this session.';
     els.allowCloudBtn.textContent = 'Allow cloud for this session';
     els.allowCloudBtn.disabled = false;
     els.cloudCard.classList.remove('on');
@@ -204,14 +252,6 @@ function renderProjectSelect() {
     .map((p) => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`)
     .join('');
   if (state.project) els.projectSelect.value = state.project.id;
-}
-
-function escapeHtml(value) {
-  return String(value)
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;');
 }
 
 async function refreshProjects() {
@@ -259,7 +299,50 @@ async function loadProject(projectId) {
     els.answer.classList.add('hidden');
     drawGrid();
   }
+  renderChatLog();
   updateCloudUi();
+}
+
+function renderChatLog() {
+  const chatMessages = state.messages.filter((message) => message.mode === 'chat');
+  els.chatLog.replaceChildren();
+  if (!chatMessages.length) {
+    const empty = document.createElement('p');
+    empty.className = 'meta';
+    empty.textContent = 'No text-only chat yet. Tap Chat, type a question and Send. No photo is attached.';
+    els.chatLog.appendChild(empty);
+  }
+  for (const message of chatMessages) {
+    const row = document.createElement('div');
+    row.className = `chatMsg ${message.role === 'assistant' ? 'assistant' : 'user'}`;
+    const who = document.createElement('span');
+    who.className = 'who';
+    who.textContent = message.role === 'assistant' ? 'IntentLens' : 'You';
+    const body = document.createElement('span');
+    body.textContent = String(message.text || '');
+    row.append(who, body);
+    els.chatLog.appendChild(row);
+  }
+  if (state.mode === 'chat' || chatMessages.length) els.chatCard.classList.remove('hidden');
+  else if (state.mode !== 'chat') els.chatCard.classList.add('hidden');
+  updateChatModeUi();
+}
+
+function updateChatModeUi() {
+  const chat = state.mode === 'chat';
+  els.chatBtn.setAttribute('aria-pressed', chat ? 'true' : 'false');
+  els.chatBtn.textContent = chat ? 'Chat on' : 'Chat';
+  els.captureBtn.disabled = state.busy || !state.stream;
+  els.command.placeholder = chat
+    ? 'Ask a text question (no image is sent)'
+    : 'Ask: what is this part?';
+  els.chatModeTag.textContent = chat ? 'text only · no image' : 'text only · no image';
+  if (chat) els.chatCard.classList.remove('hidden');
+}
+
+function redrawOverlay() {
+  drawGrid();
+  if (state.result) drawResult(state.result);
 }
 
 function renderResult(result, latencyMs) {
@@ -297,17 +380,30 @@ async function startCamera() {
     throw new Error('Camera needs HTTPS (GitHub Pages is fine) and a browser with getUserMedia.');
   }
   stopCamera();
-  const stream = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: { ideal: 'environment' } },
-    audio: false,
-  });
-  state.stream = stream;
-  els.video.srcObject = stream;
-  await els.video.play();
-  showLive();
-  els.cameraBtn.textContent = 'Stop camera';
-  els.captureBtn.disabled = false;
-  setStatus('Camera live. Frame a part, then Capture.', 'ok');
+  setStatus('Requesting camera permission…', 'busy');
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: { ideal: 'environment' },
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+      },
+      audio: false,
+    });
+    state.stream = stream;
+    els.video.srcObject = stream;
+    await els.video.play();
+    showLive();
+    els.cameraBtn.textContent = 'Stop camera';
+    els.captureBtn.disabled = false;
+    updateRotateHint();
+    setStatus('Camera live. Frame a part, then Capture.', 'ok');
+    const lock = await tryLockLandscape();
+    if (lock.locked) setStatus('Camera live in landscape. Frame a part, then Capture.', 'ok');
+  } catch (error) {
+    stopCamera();
+    throw new Error(cameraErrorMessage(error));
+  }
 }
 
 function stopCamera() {
@@ -318,18 +414,19 @@ function stopCamera() {
   els.video.srcObject = null;
   els.cameraBtn.textContent = 'Start camera';
   els.captureBtn.disabled = true;
+  unlockOrientation();
   if (state.captured) showStill(state.captured.dataUrl, state.captured.width, state.captured.height);
   else showEmpty();
+  updateChatModeUi();
 }
 
 async function captureFrame() {
   if (!state.stream || !els.video.videoWidth) {
     throw new Error('Start the camera first, then capture.');
   }
-  const maxSide = 1600;
-  const scale = Math.min(1, maxSide / Math.max(els.video.videoWidth, els.video.videoHeight));
-  const width = Math.round(els.video.videoWidth * scale);
-  const height = Math.round(els.video.videoHeight * scale);
+  const size = computeCaptureSize(els.video.videoWidth, els.video.videoHeight, 1600);
+  if (!size) throw new Error('The camera frame has no usable dimensions yet.');
+  const { width, height } = size;
 
   const canvas = document.createElement('canvas');
   canvas.width = width;
@@ -353,7 +450,7 @@ async function captureFrame() {
   state.captured = { id: row.id, dataUrl, blob, width, height };
   showStill(dataUrl, width, height);
   await db.touchProject(state.project.id);
-  setStatus('Frame captured. Ask a question, then Send.', 'ok');
+  setStatus(`Frame captured (${width}×${height}). Ask a question, then Send.`, 'ok');
 }
 
 function projectContext() {
@@ -374,14 +471,83 @@ function requireCloudReady() {
   }
   if (!state.apiKey) {
     openSettings();
-    setStatus('Add a provider key in Settings.', 'error');
+    setStatus('Add a provider key in Settings. It is kept in memory only.', 'error');
+    return false;
+  }
+  if (PROVIDERS[state.providerId]?.consent && !state.blockrunConsent) {
+    openSettings();
+    setStatus('BlockRun needs explicit consent. Read the warning and tick the consent box in Settings.', 'error');
     return false;
   }
   if (navigator.onLine === false) {
-    setStatus('Offline. The frame is saved, but cloud analysis needs a connection.', 'error');
+    setStatus('Offline. Local history is available, but cloud analysis needs a connection.', 'error');
     return false;
   }
   return true;
+}
+
+async function sendChat(command) {
+  setBusy(true);
+  try {
+    await db.addMessage({
+      projectId: state.project.id,
+      role: 'user',
+      text: command,
+      mode: 'chat',
+    });
+    state.messages = await db.listMessages(state.project.id);
+    renderChatLog();
+    els.command.value = '';
+
+    setStatus(`Asking ${PROVIDERS[state.providerId].label} for a text-only answer…`, 'busy');
+    const { instructions, userText } = buildChatPrompt({
+      projectContext: projectContext(),
+      history: state.messages.filter((message) => message.mode === 'chat'),
+      question: command,
+    });
+    const response = await callChatModel({
+      providerId: state.providerId,
+      apiKey: state.apiKey,
+      model: modelFor(state.providerId, state.model),
+      baseUrl: state.baseUrl,
+      prompt: `${instructions}\n\n${userText}`,
+    });
+
+    if (!response.ok) {
+      setStatus(response.message, 'error');
+      await db.addMessage({
+        projectId: state.project.id,
+        role: 'assistant',
+        text: `Chat failed: ${response.message}`,
+        mode: 'chat',
+      });
+      state.messages = await db.listMessages(state.project.id);
+      renderChatLog();
+      return;
+    }
+
+    const answer = String(response.text || '').trim().slice(0, 8000);
+    state.lastModel = response.returnedModel || null;
+    await db.addMessage({
+      projectId: state.project.id,
+      role: 'assistant',
+      text: answer,
+      mode: 'chat',
+      model: response.returnedModel || null,
+    });
+    await db.touchProject(state.project.id);
+    state.messages = await db.listMessages(state.project.id);
+    renderChatLog();
+    els.chatLog.scrollTop = els.chatLog.scrollHeight;
+    setStatus(
+      `Text answer received in ${(response.latencyMs / 1000).toFixed(1)} s · no image was sent.`,
+      'ok',
+    );
+  } catch (error) {
+    setStatus(String(error?.message || error), 'error');
+  } finally {
+    setBusy(false);
+  }
 }
 
 async function send() {
@@ -390,6 +556,10 @@ async function send() {
   if (!command) {
     setStatus('Type or say what you want to know first.', 'error');
     return;
+  }
+  if (state.mode === 'chat') {
+    if (!requireCloudReady()) return;
+    return sendChat(command);
   }
   if (!state.captured) {
     try {
@@ -420,6 +590,7 @@ async function send() {
       role: 'user',
       text: command,
       imageId: state.captured.id,
+      mode: 'vision',
     });
 
     const provider = PROVIDERS[state.providerId];
@@ -441,6 +612,7 @@ async function send() {
         role: 'assistant',
         text: `Analysis failed: ${response.message}`,
         imageId: state.captured.id,
+        mode: 'vision',
       });
       state.messages = await db.listMessages(state.project.id);
       return;
@@ -454,12 +626,14 @@ async function send() {
         role: 'assistant',
         text: `Result rejected: ${normalized.errors.join(' ')}`,
         imageId: state.captured.id,
+        mode: 'vision',
       });
       state.messages = await db.listMessages(state.project.id);
       return;
     }
 
     state.lastLatency = response.latencyMs;
+    state.lastModel = response.returnedModel || null;
     state.result = normalized.result;
     await db.addMessage({
       projectId: state.project.id,
@@ -467,6 +641,8 @@ async function send() {
       text: normalized.result.instruction,
       result: normalized.result,
       imageId: state.captured.id,
+      mode: 'vision',
+      model: response.returnedModel || null,
     });
     await db.touchProject(state.project.id);
     state.messages = await db.listMessages(state.project.id);
@@ -516,6 +692,8 @@ async function explain() {
       text: answer,
       result: state.result,
       imageId: state.captured?.id || null,
+      mode: 'vision',
+      model: response.returnedModel || null,
     });
     state.messages = await db.listMessages(state.project.id);
     renderResult(state.result, response.latencyMs);
@@ -598,21 +776,47 @@ function toggleMic() {
   }
 }
 
+function syncProviderDetail(providerId) {
+  const provider = PROVIDERS[providerId];
+  if (!provider) return;
+  els.providerNote.textContent = `${provider.note} Browser CORS: ${provider.browserCors}. Retention: ${provider.retention}`;
+  els.modelInput.placeholder = provider.defaultModel;
+  els.baseUrlInput.disabled = providerId !== 'custom';
+  els.blockrunWarning.hidden = providerId !== 'blockrun';
+  if (providerId === 'blockrun') {
+    els.blockrunPolicy.textContent = provider.retention;
+  }
+  const models = providerId === 'openrouter'
+    ? Object.entries(OPENROUTER_MODELS).map(([id, info]) => ({ id, ...info }))
+    : [{ id: provider.defaultModel, label: `${provider.label} default`, pricing: '', modalities: [] }];
+  els.modelList.replaceChildren();
+  for (const model of models) {
+    const option = document.createElement('option');
+    option.value = model.id;
+    option.label = `${model.label}${model.pricing ? ` — ${model.pricing}` : ''}`;
+    els.modelList.appendChild(option);
+  }
+  els.modelNote.textContent = providerId === 'openrouter'
+    ? 'Free vision candidate: nvidia/nemotron-3-nano-omni-30b-a3b-reasoning (checked live 2026-11-04). Meta Maverick/Scout are paid per token. No model is switched silently.'
+    : providerId === 'groq'
+      ? 'Default changed to Meta Llama 4 Maverick because Scout was reported unavailable. Verify your account has access before the demo.'
+      : '';
+}
+
 function updateProviderUi() {
   els.providerSelect.innerHTML = PROVIDER_ORDER
     .map((id) => `<option value="${id}">${escapeHtml(PROVIDERS[id].label)}</option>`)
     .join('');
   els.providerSelect.value = state.providerId;
-  els.providerNote.textContent = `${PROVIDERS[state.providerId].note} Browser CORS: ${PROVIDERS[state.providerId].browserCors}.`;
-  els.modelInput.placeholder = PROVIDERS[state.providerId].defaultModel;
-  els.baseUrlInput.disabled = state.providerId !== 'custom';
+  els.modelInput.value = state.model;
+  els.blockrunConsent.checked = state.blockrunConsent;
+  syncProviderDetail(state.providerId);
 }
 
 function openSettings() {
   els.providerSelect.value = state.providerId;
   els.modelInput.value = state.model;
   els.keyInput.value = state.apiKey;
-  els.rememberKey.checked = state.rememberKey;
   els.baseUrlInput.value = state.baseUrl;
   els.gridSelect.value = String(state.gridSize);
   els.ttsToggle.checked = state.tts;
@@ -625,7 +829,7 @@ function readSettingsForm() {
     providerId: els.providerSelect.value,
     model: els.modelInput.value.trim(),
     apiKey: els.keyInput.value.trim(),
-    rememberKey: els.rememberKey.checked,
+    blockrunConsent: els.blockrunConsent.checked,
     baseUrl: els.baseUrlInput.value.trim(),
     gridSize: Number(els.gridSelect.value) || DEFAULT_GRID_SIZE,
     tts: els.ttsToggle.checked,
@@ -634,28 +838,39 @@ function readSettingsForm() {
 
 async function saveSettings() {
   const values = readSettingsForm();
+  if (PROVIDERS[values.providerId]?.consent && !values.blockrunConsent) {
+    setStatus('BlockRun requires the consent checkbox before it can be saved.', 'error');
+    return;
+  }
   state.providerId = values.providerId;
   state.model = values.model;
-  state.apiKey = values.apiKey;
-  state.rememberKey = values.rememberKey;
+  state.apiKey = values.apiKey;          // memory only, never persisted
+  state.blockrunConsent = values.blockrunConsent;
   state.baseUrl = values.baseUrl;
   state.gridSize = values.gridSize;
   state.tts = values.tts;
 
+  // Settings are not sensitive, so they may persist. The key never is.
   await db.setSetting('providerId', state.providerId);
   await db.setSetting('model', state.model);
-  await db.setSetting('rememberKey', state.rememberKey);
   await db.setSetting('baseUrl', state.baseUrl);
   await db.setSetting('gridSize', state.gridSize);
   await db.setSetting('tts', state.tts);
-  if (state.rememberKey && state.apiKey) await db.setSetting('apiKey', state.apiKey);
-  else await db.deleteSetting('apiKey');
+  await db.deleteSetting('rememberKey');
+  await db.deleteSetting('apiKey');
 
   els.gridLabel.textContent = `Grid ${state.gridSize}×${state.gridSize}`;
   updateCloudUi();
   drawGrid();
   els.settingsDialog.close();
-  setStatus('Settings saved.', 'ok');
+  setStatus('Settings saved. The key stays in memory for this tab only.', 'ok');
+}
+
+function clearKey() {
+  state.apiKey = '';
+  els.keyInput.value = '';
+  db.deleteSetting('apiKey').catch(() => {});
+  setStatus('Key cleared from memory and any legacy saved slot.', 'ok');
 }
 
 async function runProviderTest() {
@@ -727,7 +942,8 @@ function wireEvents() {
   els.video.addEventListener('loadedmetadata', () => {
     if (els.video.videoWidth && els.video.videoHeight) {
       els.stage.style.aspectRatio = `${els.video.videoWidth} / ${els.video.videoHeight}`;
-      drawGrid();
+      updateRotateHint();
+      redrawOverlay();
     }
   });
 
@@ -768,6 +984,7 @@ function wireEvents() {
   els.saveSettingsBtn.addEventListener('click', saveSettings);
   els.closeSettingsBtn.addEventListener('click', () => els.settingsDialog.close());
   els.testProviderBtn.addEventListener('click', runProviderTest);
+  els.clearKeyBtn.addEventListener('click', clearKey);
 
   els.providerSelect.addEventListener('change', () => {
     const next = els.providerSelect.value;
@@ -775,8 +992,19 @@ function wireEvents() {
     if (!els.modelInput.value || els.modelInput.value === previousDefault) {
       els.modelInput.value = PROVIDERS[next]?.defaultModel || '';
     }
-    els.providerNote.textContent = `${PROVIDERS[next].note} Browser CORS: ${PROVIDERS[next].browserCors}.`;
-    els.baseUrlInput.disabled = next !== 'custom';
+    syncProviderDetail(next);
+  });
+
+  els.chatBtn.addEventListener('click', () => {
+    state.mode = state.mode === 'chat' ? 'vision' : 'chat';
+    if (state.mode === 'chat') els.chatCard.classList.remove('hidden');
+    updateChatModeUi();
+    setStatus(
+      state.mode === 'chat'
+        ? 'Text-only chat is on. Send will not capture or attach an image.'
+        : 'Image mode is on. Capture a still, then Send.',
+      'ok',
+    );
   });
 
   els.newProjectBtn.addEventListener('click', openProjectDialog);
@@ -790,6 +1018,29 @@ function wireEvents() {
   window.addEventListener('online', updateNetDot);
   window.addEventListener('offline', updateNetDot);
   window.addEventListener('pagehide', stopCamera);
+
+  let relayoutFrame = 0;
+  const relayout = () => {
+    if (relayoutFrame) cancelAnimationFrame(relayoutFrame);
+    relayoutFrame = requestAnimationFrame(() => {
+      relayoutFrame = 0;
+      if (state.stream && els.video.videoWidth && els.video.videoHeight) {
+        els.stage.style.aspectRatio = `${els.video.videoWidth} / ${els.video.videoHeight}`;
+      }
+      updateRotateHint();
+      redrawOverlay();
+    });
+  };
+  window.addEventListener('resize', relayout);
+  window.addEventListener('orientationchange', relayout);
+  screen.orientation?.addEventListener?.('change', relayout);
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && state.stream) {
+      stopCamera();
+      setStatus('Camera stopped when the app went to the background. Tap Start camera to resume.', '');
+    }
+  });
 
   window.addEventListener('beforeinstallprompt', (event) => {
     event.preventDefault();
@@ -824,14 +1075,19 @@ async function boot() {
   state.providerId = PROVIDERS[settings.providerId] ? settings.providerId : 'groq';
   state.model = settings.model || '';
   state.baseUrl = settings.baseUrl || '';
-  state.rememberKey = Boolean(settings.rememberKey);
-  state.tts = settings.tts !== false;
-  if (state.rememberKey && settings.apiKey) state.apiKey = settings.apiKey;
+  state.tts = settings.tts === true;
+  // Legacy plaintext keys from older builds are deleted, not migrated.
+  await db.deleteSetting('apiKey');
+  await db.deleteSetting('rememberKey');
+  state.apiKey = '';
+  state.blockrunConsent = false;
 
   els.gridSelect.value = String(state.gridSize);
   els.gridLabel.textContent = `Grid ${state.gridSize}×${state.gridSize}`;
+  els.ttsToggle.checked = state.tts;
   updateProviderUi();
   updateCloudUi();
+  updateChatModeUi();
 
   try {
     await IntentLensTTS.init({ onStatus: () => {} });

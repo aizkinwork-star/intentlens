@@ -1,9 +1,9 @@
 // pwa/sw.js — offline shell only.
 //
-// Never caches model requests or images. API calls are cross-origin (Groq) or
-// must never be replayed, so only same-origin GET assets are handled.
+// Never caches model requests, images or Authorization-bearing responses.
+// Only same-origin GET assets are handled.
 
-const CACHE = 'intentlens-pwa-v1';
+const CACHE = 'intentlens-pwa-v3';
 const SHELL = [
   './',
   './index.html',
@@ -12,6 +12,9 @@ const SHELL = [
   './store.js',
   './provider.js',
   './prompt.js',
+  './safe.js',
+  './camera.js',
+  './geometry.js',
   './manifest.webmanifest',
   './lib/grid.js',
   './lib/componentResult.js',
@@ -42,6 +45,7 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
+  if (request.headers.has('authorization')) return;
 
   if (request.mode === 'navigate') {
     event.respondWith(
