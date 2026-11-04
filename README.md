@@ -164,46 +164,50 @@ between desktop and phone so coordinate conversion and validation cannot drift.
 ### Requirements
 
 - Windows 10/11
-- Node.js **22.5 or newer** (the test runner uses `node:sqlite`)
-- Chrome or Edge for the browser-UI path
-- Optional: a provider key (OpenRouter, NVIDIA NIM, Cloudflare Workers AI,
-  BlockRun, Modal or Groq)
+- Node.js **22.5 or newer** from <https://nodejs.org/>
+- Internet on the first run (Electron is installed once)
+- A provider key for cloud AI (OpenRouter recommended; Cloudflare Workers AI,
+  NVIDIA NIM, BlockRun or Modal also work on the PC; Groq is text/voice only)
 
-### A. Installer (recommended for normal use)
+### A. Download the ZIP and run it (recommended)
 
-1. Build or obtain `electron/release/IntentLens Setup 0.4.0.exe`.
-2. Run the installer. It creates Start Menu and desktop shortcuts.
-3. Launch **IntentLens**.
-4. Open the top-left menu → **Vision Provider & Model** → **Configure provider**.
-5. Enter a provider key and press **Save & test**.
-6. Cloud access is off by default. Start with `start.cmd --online` to allow
-   provider hosts for that session, or use the in-app network gate.
+1. Open <https://github.com/aizkinwork-star/intentlens> and click
+   **Code → Download ZIP**, or use the direct link:
+   <https://github.com/aizkinwork-star/intentlens/archive/refs/heads/main.zip>
+2. Right-click the ZIP → **Extract All…** and pick a folder, for example
+   `C:\IntentLens`. Do not run it from inside the ZIP.
+3. Open the extracted `intentlens-main` folder and double-click **`start.cmd`**.
+   The first run installs Electron (one time, a few minutes), then the app opens.
+4. In the app, open the top-left menu → **Vision Provider & Model** →
+   **Configure provider**, enter a provider key and press **Save & test**.
+5. Cloud access is off by default. Start with **`start.cmd --online`** (run it
+   from a Command Prompt in that folder) to allow provider hosts for that session.
+
+`start.cmd` always runs the code in the folder it sits in, so it is the version
+you downloaded. To update, download the ZIP again and extract it to a new folder.
+Close any older installed `IntentLens.exe` first; it would block the new window.
 
 Data lives in `%APPDATA%\IntentLens\`. The encrypted credential file is
 `%APPDATA%\IntentLens\credentials.safe`. Do not delete it unless you intend to
 re-enter every key.
 
-### B. Run from source
+### B. Clone with git (easier updates)
 
 ```cmd
 git clone https://github.com/aizkinwork-star/intentlens.git
 cd intentlens
-npm install
-start.cmd                 :: desktop app, run from THIS folder's source (always current)
-start.cmd --packaged      :: use an installed/built IntentLens.exe (frozen snapshot)
-start.cmd --online        :: desktop app with cloud providers enabled
+start.cmd                 :: desktop app, run from this folder's source
+start.cmd --online        :: same, with cloud providers enabled
+start.cmd --packaged      :: use an installed/built IntentLens.exe (old snapshot)
 ```
 
-Browser UI instead of Electron:
+Update later with `git pull`. Do not run another server on port 8000 at the same
+time as the app.
 
-```cmd
-node server/index.js
-```
+### C. Build the installer (optional)
 
-Then open <http://localhost:8000>. Do not run the browser server and Electron app
-at the same time: both use port 8000.
-
-### C. Build the installer
+Only needed if you want a standalone `.exe` installer to hand to someone. It is
+a frozen snapshot, so rebuild it after every update.
 
 ```cmd
 cd electron
@@ -227,6 +231,10 @@ and is therefore not the source-of-truth count.
 ---
 
 ## Install on a phone (GitHub Pages PWA)
+
+**No download needed.** The phone app is served straight from this repository by
+GitHub Pages: just open <https://aizkinwork-star.github.io/intentlens/> on the
+phone. It updates itself whenever the repository's `main` branch changes.
 
 ### Requirements
 
