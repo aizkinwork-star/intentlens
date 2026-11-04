@@ -252,7 +252,7 @@ test('phone CSP permits a user relay but the provider preset list stays fixed', 
   assert.match(html, /connect-src 'self' https:/);
   assert.doesNotMatch(html, /blockrun/i);
   const sw = readFileSync(join(here, 'sw.js'), 'utf8');
-  assert.match(sw, /intentlens-pwa-v8/);
+  assert.match(sw, /intentlens-pwa-v9/);
 });
 
 test('service worker refuses authorization-bearing and cross-origin requests', () => {
@@ -268,6 +268,7 @@ test('a deployed worker change reloads the old shell exactly once', () => {
   assert.match(app, /addEventListener\(['"]controllerchange['"]/);
   assert.match(app, /registration\.update\(\)/);
   assert.match(app, /hadController/);
+  assert.match(app, /register\(['"]\.\/sw\.js['"],\s*\{\s*updateViaCache:\s*['"]none['"]\s*\}\)/);
 });
 
 test('a new shell cache bypasses the HTTP cache instead of copying stale assets', () => {

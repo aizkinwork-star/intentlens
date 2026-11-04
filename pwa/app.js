@@ -1093,7 +1093,10 @@ function registerServiceWorker() {
     window.location.reload();
   });
 
-  navigator.serviceWorker.register('./sw.js').then((registration) => {
+  // updateViaCache: 'none' stops GitHub Pages' 10-minute HTTP cache from
+  // serving the previous sw.js during an update check. Without it a client can
+  // keep running old shell modules for up to max-age after a deploy.
+  navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then((registration) => {
     if (hadController) registration.update().catch(() => {});
   }).catch(() => {
     /* offline cache is optional; camera and model calls still work */
