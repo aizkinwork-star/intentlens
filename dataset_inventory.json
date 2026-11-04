@@ -1,0 +1,567 @@
+{
+  "dataset": "ElectroCom61",
+  "version": "5 (Roboflow universe, CC BY 4.0)",
+  "source": "https://universe.roboflow.com/datasetsynthesis/electrocom-60/dataset/5",
+  "doi": "10.17632/6scy6h8sjz.2",
+  "license": "CC BY 4.0",
+  "importDate": "2026-10-31T07:05:03.512Z",
+  "totalImages": 2071,
+  "totalAnnotations": 12667,
+  "classCount": 61,
+  "splits": {
+    "train": {
+      "images": 1454,
+      "labels": 1454,
+      "annotations": 8877,
+      "missingPairs": 0,
+      "invalidBoxes": 0,
+      "corrupted": 0,
+      "duplicateSizeGroups": 22,
+      "classCounts": {
+        "Film-Capacitor": 127,
+        "Gas-Sensor": 151,
+        "Motor-Driver": 130,
+        "MLC-Capacitor": 217,
+        "LDR-Sensor": 114,
+        "Sonar-Sensor": 162,
+        "RFID-Scanner": 105,
+        "Bluetooth-Module": 174,
+        "High-Voltage-Ceramic-Capacitor": 179,
+        "Fuse-Base": 127,
+        "Heat-Sink": 123,
+        "Diode": 162,
+        "Fuse": 122,
+        "9-Volt-Battery": 107,
+        "LCD-Display": 122,
+        "Push-Switch": 189,
+        "Inductor": 193,
+        "Buzzer": 185,
+        "IC-Chip": 221,
+        "Servo-Motor": 129,
+        "Keypad": 131,
+        "Soil-Moisture-Sensor": 127,
+        "IR-Sensor": 146,
+        "Zener-Diode": 144,
+        "NTC-Thermistor": 148,
+        "Capacitor-470mf": 138,
+        "Capacitor-10mf": 127,
+        "IGBT": 146,
+        "MOSFET": 138,
+        "BJT-Transistor": 153,
+        "Low-Voltage-Ceramic-Capacitor": 152,
+        "Rocker-Switch": 127,
+        "Pin-Header": 117,
+        "Arduino-Nano": 133,
+        "1-5-Volt-Battery": 142,
+        "Tact-Switch": 136,
+        "Raindrops-Module": 134,
+        "Taper-Potentiometer": 123,
+        "FT-232-USB-Serial-Module": 123,
+        "ESP32-CAM": 137,
+        "DC-Motor": 124,
+        "3-3-Volt-Battery": 148,
+        "ESP32": 135,
+        "Buck-Converter": 115,
+        "TCRT5000": 115,
+        "7-Segment-Display": 118,
+        "Breadboard": 119,
+        "Arduino-Mega": 122,
+        "GSM-Module": 164,
+        "Relay-Module": 158,
+        "Humidity-Sensor": 167,
+        "Trimmer-Potentiometer": 160,
+        "Motion-Sensor": 161,
+        "IC-Base-14-Pin": 167,
+        "IC-Base-28-Pin": 165,
+        "Water-Sensor": 165,
+        "Bridge-Rectifier": 162,
+        "Resistor": 118,
+        "LED-Light": 203,
+        "OLED-Display": 196,
+        "Arduino-Uno": 134
+      }
+    },
+    "valid": {
+      "images": 412,
+      "labels": 412,
+      "annotations": 2507,
+      "missingPairs": 0,
+      "invalidBoxes": 0,
+      "corrupted": 0,
+      "duplicateSizeGroups": 1,
+      "classCounts": {
+        "Sonar-Sensor": 46,
+        "MLC-Capacitor": 43,
+        "Motor-Driver": 28,
+        "Film-Capacitor": 34,
+        "Gas-Sensor": 47,
+        "LDR-Sensor": 30,
+        "RFID-Scanner": 32,
+        "Heat-Sink": 36,
+        "Bluetooth-Module": 50,
+        "High-Voltage-Ceramic-Capacitor": 49,
+        "Diode": 45,
+        "Fuse-Base": 39,
+        "Fuse": 33,
+        "LCD-Display": 39,
+        "9-Volt-Battery": 36,
+        "Servo-Motor": 28,
+        "Inductor": 71,
+        "Buzzer": 61,
+        "Push-Switch": 55,
+        "IC-Chip": 64,
+        "Soil-Moisture-Sensor": 39,
+        "1-5-Volt-Battery": 52,
+        "Arduino-Nano": 45,
+        "Keypad": 43,
+        "IR-Sensor": 42,
+        "Zener-Diode": 44,
+        "MOSFET": 49,
+        "IGBT": 48,
+        "Rocker-Switch": 37,
+        "Capacitor-470mf": 47,
+        "BJT-Transistor": 38,
+        "Low-Voltage-Ceramic-Capacitor": 43,
+        "NTC-Thermistor": 38,
+        "Capacitor-10mf": 35,
+        "Pin-Header": 29,
+        "Tact-Switch": 37,
+        "ESP32-CAM": 37,
+        "3-3-Volt-Battery": 38,
+        "DC-Motor": 31,
+        "Raindrops-Module": 35,
+        "Taper-Potentiometer": 34,
+        "FT-232-USB-Serial-Module": 31,
+        "7-Segment-Display": 31,
+        "TCRT5000": 32,
+        "Buck-Converter": 32,
+        "Breadboard": 26,
+        "Arduino-Mega": 29,
+        "Motion-Sensor": 48,
+        "Bridge-Rectifier": 45,
+        "Water-Sensor": 44,
+        "GSM-Module": 48,
+        "Relay-Module": 45,
+        "Humidity-Sensor": 45,
+        "Trimmer-Potentiometer": 47,
+        "IC-Base-28-Pin": 44,
+        "IC-Base-14-Pin": 50,
+        "Resistor": 33,
+        "LED-Light": 52,
+        "OLED-Display": 51,
+        "ESP32": 36,
+        "Arduino-Uno": 31
+      }
+    },
+    "test": {
+      "images": 205,
+      "labels": 205,
+      "annotations": 1283,
+      "missingPairs": 0,
+      "invalidBoxes": 0,
+      "corrupted": 0,
+      "duplicateSizeGroups": 0,
+      "classCounts": {
+        "Sonar-Sensor": 27,
+        "MLC-Capacitor": 32,
+        "Motor-Driver": 19,
+        "Film-Capacitor": 17,
+        "Gas-Sensor": 23,
+        "LDR-Sensor": 17,
+        "Bluetooth-Module": 25,
+        "Diode": 25,
+        "RFID-Scanner": 16,
+        "High-Voltage-Ceramic-Capacitor": 29,
+        "Heat-Sink": 16,
+        "Fuse": 21,
+        "Fuse-Base": 9,
+        "9-Volt-Battery": 17,
+        "Inductor": 29,
+        "IC-Chip": 27,
+        "Push-Switch": 33,
+        "Buzzer": 26,
+        "LCD-Display": 16,
+        "Servo-Motor": 17,
+        "NTC-Thermistor": 20,
+        "Pin-Header": 25,
+        "Arduino-Nano": 16,
+        "Tact-Switch": 22,
+        "IGBT": 22,
+        "1-5-Volt-Battery": 17,
+        "Rocker-Switch": 17,
+        "Keypad": 17,
+        "IR-Sensor": 18,
+        "Capacitor-470mf": 18,
+        "Soil-Moisture-Sensor": 18,
+        "MOSFET": 20,
+        "Zener-Diode": 25,
+        "Capacitor-10mf": 19,
+        "BJT-Transistor": 19,
+        "Low-Voltage-Ceramic-Capacitor": 22,
+        "DC-Motor": 16,
+        "FT-232-USB-Serial-Module": 19,
+        "Raindrops-Module": 18,
+        "ESP32-CAM": 18,
+        "3-3-Volt-Battery": 19,
+        "Taper-Potentiometer": 15,
+        "ESP32": 21,
+        "Buck-Converter": 16,
+        "7-Segment-Display": 16,
+        "TCRT5000": 18,
+        "Breadboard": 18,
+        "Arduino-Mega": 17,
+        "Bridge-Rectifier": 23,
+        "IC-Base-28-Pin": 22,
+        "IC-Base-14-Pin": 22,
+        "Motion-Sensor": 20,
+        "Trimmer-Potentiometer": 21,
+        "Humidity-Sensor": 22,
+        "Relay-Module": 25,
+        "GSM-Module": 24,
+        "Water-Sensor": 21,
+        "Resistor": 18,
+        "LED-Light": 38,
+        "OLED-Display": 32,
+        "Arduino-Uno": 28
+      }
+    }
+  },
+  "classDistribution": {
+    "Film-Capacitor": 178,
+    "Gas-Sensor": 221,
+    "Motor-Driver": 177,
+    "MLC-Capacitor": 292,
+    "LDR-Sensor": 161,
+    "Sonar-Sensor": 235,
+    "RFID-Scanner": 153,
+    "Bluetooth-Module": 249,
+    "High-Voltage-Ceramic-Capacitor": 257,
+    "Fuse-Base": 175,
+    "Heat-Sink": 175,
+    "Diode": 232,
+    "Fuse": 176,
+    "9-Volt-Battery": 160,
+    "LCD-Display": 177,
+    "Push-Switch": 277,
+    "Inductor": 293,
+    "Buzzer": 272,
+    "IC-Chip": 312,
+    "Servo-Motor": 174,
+    "Keypad": 191,
+    "Soil-Moisture-Sensor": 184,
+    "IR-Sensor": 206,
+    "Zener-Diode": 213,
+    "NTC-Thermistor": 206,
+    "Capacitor-470mf": 203,
+    "Capacitor-10mf": 181,
+    "IGBT": 216,
+    "MOSFET": 207,
+    "BJT-Transistor": 210,
+    "Low-Voltage-Ceramic-Capacitor": 217,
+    "Rocker-Switch": 181,
+    "Pin-Header": 171,
+    "Arduino-Nano": 194,
+    "1-5-Volt-Battery": 211,
+    "Tact-Switch": 195,
+    "Raindrops-Module": 187,
+    "Taper-Potentiometer": 172,
+    "FT-232-USB-Serial-Module": 173,
+    "ESP32-CAM": 192,
+    "DC-Motor": 171,
+    "3-3-Volt-Battery": 205,
+    "ESP32": 192,
+    "Buck-Converter": 163,
+    "TCRT5000": 165,
+    "7-Segment-Display": 165,
+    "Breadboard": 163,
+    "Arduino-Mega": 168,
+    "GSM-Module": 236,
+    "Relay-Module": 228,
+    "Humidity-Sensor": 234,
+    "Trimmer-Potentiometer": 228,
+    "Motion-Sensor": 229,
+    "IC-Base-14-Pin": 239,
+    "IC-Base-28-Pin": 231,
+    "Water-Sensor": 230,
+    "Bridge-Rectifier": 230,
+    "Resistor": 169,
+    "LED-Light": 293,
+    "OLED-Display": 279,
+    "Arduino-Uno": 193
+  },
+  "missingPairs": [],
+  "invalidBoxes": [],
+  "corruptedImages": [],
+  "duplicateImages": [
+    {
+      "split": "train",
+      "size": "42861",
+      "count": 2,
+      "files": [
+        "IMG20240219114248_jpg.rf.e7f03c82af8c4dd892daff9a5d936a0c.jpg",
+        "IMG_20240228_133600_jpg.rf.2ddbc4dbf859b627314992009a79221c.jpg"
+      ]
+    },
+    {
+      "split": "train",
+      "size": "33505",
+      "count": 2,
+      "files": [
+        "IMG20240220115900_jpg.rf.0a29d9e63bca855b7c50830eb9bee86d.jpg",
+        "IMG20240309115210_jpg.rf.7263ab285d8eeff24ba0e086b5d08b95.jpg"
+      ]
+    },
+    {
+      "split": "train",
+      "size": "60552",
+      "count": 2,
+      "files": [
+        "IMG20240220121138_jpg.rf.130a220b078c64e353bde1c5e5a5a0a8.jpg",
+        "IMG_20240228_141501_jpg.rf.1d2ed4eb4a21ad9de136f46a04056931.jpg"
+      ]
+    },
+    {
+      "split": "train",
+      "size": "62773",
+      "count": 2,
+      "files": [
+        "IMG20240220121605_jpg.rf.f7dbbf9574488ca55bd70701cbc18dc8.jpg",
+        "IMG_20240220_115123_jpg.rf.fb1013a07923d05aae40504f39f7c6bc.jpg"
+      ]
+    },
+    {
+      "split": "train",
+      "size": "50643",
+      "count": 2,
+      "files": [
+        "IMG20240228132319_jpg.rf.6331b5edfe0e0b70f60ebb35ab64d77f.jpg",
+        "IMG_20240309_113512_jpg.rf.93dcc1192a26822ce5ce533eb99fea29.jpg"
+      ]
+    },
+    {
+      "split": "train",
+      "size": "43441",
+      "count": 2,
+      "files": [
+        "IMG20240228133759_jpg.rf.3da09e435ecbe0dd26ff886520a223e6.jpg",
+        "IMG_20240303_110341_jpg.rf.fff03f73d0cf9ccb6406d880fac4d04b.jpg"
+      ]
+    },
+    {
+      "split": "train",
+      "size": "37096",
+      "count": 2,
+      "files": [
+        "IMG20240228135201_jpg.rf.4dd2052d0d1133218c3d629f1d74cf09.jpg",
+        "IMG_20240228_131005_jpg.rf.4093420b67676f0e0ab056866084ac92.jpg"
+      ]
+    },
+    {
+      "split": "train",
+      "size": "45765",
+      "count": 2,
+      "files": [
+        "IMG20240303111738_jpg.rf.09cd18692c1e51e239f6d8d9f2ceeec1.jpg",
+        "IMG_20240303_105829_jpg.rf.b4cbb579fbe5c8614653dfeb8c7fdd68.jpg"
+      ]
+    },
+    {
+      "split": "train",
+      "size": "50617",
+      "count": 2,
+      "files": [
+        "IMG20240306120018_jpg.rf.d925947f1533752cd5d2aeb81830c1a8.jpg",
+        "IMG_20240309_113600_jpg.rf.4137d34ee8cc0aee3fce90c096064dba.jpg"
+      ]
+    },
+    {
+      "split": "train",
+      "size": "51162",
+      "count": 2,
+      "files": [
+        "IMG20240306143832_jpg.rf.5dfbfc9b520a2cc3f10c2dde97d1433b.jpg",
+        "IMG_20240309_114200_jpg.rf.61ccdf87377e98435a260a4868123bdd.jpg"
+      ]
+    },
+    {
+      "split": "train",
+      "size": "44417",
+      "count": 2,
+      "files": [
+        "IMG20240309114647_jpg.rf.6c4031c69ed8e4b4b3728c76c9235c3c.jpg",
+        "IMG_20240228_123822_jpg.rf.be5d96ba00bd8b8bcd3bbe0c396d7f07.jpg"
+      ]
+    },
+    {
+      "split": "train",
+      "size": "55897",
+      "count": 2,
+      "files": [
+        "IMG20240309115615_jpg.rf.18f21f4dd0f7fa6dc78fce549d65fdc2.jpg",
+        "IMG_20240306_120326_jpg.rf.5e7945eefa9b829965398c8bac987c53.jpg"
+      ]
+    },
+    {
+      "split": "train",
+      "size": "53052",
+      "count": 2,
+      "files": [
+        "IMG_20240219_113631_jpg.rf.c5ba9f6dfd90b2571407aa3e4edbf483.jpg",
+        "IMG_20240306_120005_jpg.rf.46d1b21aa666e6e1fd5cf7017c9a0003.jpg"
+      ]
+    },
+    {
+      "split": "train",
+      "size": "62099",
+      "count": 2,
+      "files": [
+        "IMG_20240219_113719_jpg.rf.29e98e591de13b2e5a4a655c1bcca23c.jpg",
+        "IMG_20240220_114746_jpg.rf.c032dfb52d8028d64d4dc72a4d276433.jpg"
+      ]
+    },
+    {
+      "split": "train",
+      "size": "33876",
+      "count": 2,
+      "files": [
+        "IMG_20240220_120515_jpg.rf.b720be6e608f2ed50e32f9534047007f.jpg",
+        "IMG_20240306_120310_jpg.rf.a10da21503f112f7b1fc79ff3595a207.jpg"
+      ]
+    },
+    {
+      "split": "train",
+      "size": "48780",
+      "count": 2,
+      "files": [
+        "IMG_20240220_121346_jpg.rf.f905696e5946a23d3abfe2ac7667eb19.jpg",
+        "IMG_20240228_130042_jpg.rf.925dc1b49def395942d610189bb0cad8.jpg"
+      ]
+    },
+    {
+      "split": "train",
+      "size": "41193",
+      "count": 2,
+      "files": [
+        "IMG_20240228_123232_jpg.rf.2b15415d837ad8759050c5f6efe9c9fe.jpg",
+        "IMG_5305_JPG.rf.b52f068650937c4fe3afc3c2b8b1365f.jpg"
+      ]
+    },
+    {
+      "split": "train",
+      "size": "32735",
+      "count": 2,
+      "files": [
+        "IMG_20240228_124134_jpg.rf.2fff5a543dc496de142c3b18ed25977b.jpg",
+        "IMG_20240228_135641_jpg.rf.f0ac28ba5e398e977e4564c5aa2c3c6c.jpg"
+      ]
+    },
+    {
+      "split": "train",
+      "size": "41807",
+      "count": 2,
+      "files": [
+        "IMG_20240228_125619_jpg.rf.314d010d455215258ee2a1d09341a339.jpg",
+        "IMG_20240303_110327_jpg.rf.70718e9bb0f30248b50f22b0aff532ac.jpg"
+      ]
+    },
+    {
+      "split": "train",
+      "size": "51918",
+      "count": 2,
+      "files": [
+        "IMG_20240228_125848_jpg.rf.d20a33eb48d6b2aa844e93e2e619bf44.jpg",
+        "IMG_20240228_140544_jpg.rf.a91da2a0d12837a52827a90d7a86cb79.jpg"
+      ]
+    },
+    {
+      "split": "train",
+      "size": "48276",
+      "count": 2,
+      "files": [
+        "IMG_20240228_133557_jpg.rf.8f00526919eed30ef79244f1b81486be.jpg",
+        "IMG_20240309_113523_jpg.rf.6f57768be55c638b533af230dc08cb35.jpg"
+      ]
+    },
+    {
+      "split": "train",
+      "size": "43698",
+      "count": 2,
+      "files": [
+        "IMG_20240306_120440_jpg.rf.783a9be5990f90ea14a93a836faadb54.jpg",
+        "IMG_20240309_114751_jpg.rf.35f0af0a85ab4f563d429b3fecf21e5f.jpg"
+      ]
+    },
+    {
+      "split": "valid",
+      "size": "36002",
+      "count": 2,
+      "files": [
+        "IMG_20240220_134801_jpg.rf.a4ca38981a085b58fcafb3fa0d9cb355.jpg",
+        "IMG_20240228_135634_jpg.rf.92d4387fd68a4209e361939201221d31.jpg"
+      ]
+    }
+  ],
+  "classIds": {
+    "0": "1-5-Volt-Battery",
+    "1": "3-3-Volt-Battery",
+    "2": "7-Segment-Display",
+    "3": "9-Volt-Battery",
+    "4": "Arduino-Mega",
+    "5": "Arduino-Nano",
+    "6": "Arduino-Uno",
+    "7": "BJT-Transistor",
+    "8": "Bluetooth-Module",
+    "9": "Breadboard",
+    "10": "Bridge-Rectifier",
+    "11": "Buck-Converter",
+    "12": "Buzzer",
+    "13": "Capacitor-10mf",
+    "14": "Capacitor-470mf",
+    "15": "DC-Motor",
+    "16": "Diode",
+    "17": "ESP32",
+    "18": "ESP32-CAM",
+    "19": "FT-232-USB-Serial-Module",
+    "20": "Film-Capacitor",
+    "21": "Fuse",
+    "22": "Fuse-Base",
+    "23": "GSM-Module",
+    "24": "Gas-Sensor",
+    "25": "Heat-Sink",
+    "26": "High-Voltage-Ceramic-Capacitor",
+    "27": "Humidity-Sensor",
+    "28": "IC-Base-14-Pin",
+    "29": "IC-Base-28-Pin",
+    "30": "IC-Chip",
+    "31": "IGBT",
+    "32": "IR-Sensor",
+    "33": "Inductor",
+    "34": "Keypad",
+    "35": "LCD-Display",
+    "36": "LDR-Sensor",
+    "37": "LED-Light",
+    "38": "Low-Voltage-Ceramic-Capacitor",
+    "39": "MLC-Capacitor",
+    "40": "MOSFET",
+    "41": "Motion-Sensor",
+    "42": "Motor-Driver",
+    "43": "NTC-Thermistor",
+    "44": "OLED-Display",
+    "45": "Pin-Header",
+    "46": "Push-Switch",
+    "47": "RFID-Scanner",
+    "48": "Raindrops-Module",
+    "49": "Relay-Module",
+    "50": "Resistor",
+    "51": "Rocker-Switch",
+    "52": "Servo-Motor",
+    "53": "Soil-Moisture-Sensor",
+    "54": "Sonar-Sensor",
+    "55": "TCRT5000",
+    "56": "Tact-Switch",
+    "57": "Taper-Potentiometer",
+    "58": "Trimmer-Potentiometer",
+    "59": "Water-Sensor",
+    "60": "Zener-Diode"
+  }
+}

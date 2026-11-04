@@ -1,0 +1,20 @@
+{
+  "name": "intentlens",
+  "version": "0.4.0",
+  "private": true,
+  "type": "module",
+  "main": "electron/main.js",
+  "description": "Task-aware visual grounding prototype: phone camera + command + Meta Model API + 64x64 overlay grid",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "test": "node scripts/run-source-tests.mjs",
+    "test:source": "node scripts/run-source-tests.mjs",
+    "test:all": "node --test",
+    "pwa:prepare": "node scripts/prepare-pwa.mjs",
+    "pwa:serve": "node scripts/serve-pwa.mjs"
+  }
+}

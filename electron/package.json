@@ -1,0 +1,111 @@
+{
+  "name": "intentlens-electron",
+  "version": "0.4.0",
+  "description": "IntentLens — Local Visual Assistant (Electron)",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "build": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^45.2.1",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "com.intentlens.app",
+    "productName": "IntentLens",
+    "copyright": "Copyright © 2026 IntentLens",
+    "directories": {
+      "app": "..",
+      "buildResources": "assets",
+      "output": "release"
+    },
+    "files": [
+      "**/*",
+      "!node_modules/**",
+      "!electron/node_modules/**",
+      "!electron/release/**",
+      "!release/**",
+      "!intentlens-data/**",
+      "!datasets/**",
+      "!scripts/**",
+      "!.env",
+      "!.env.*",
+      "!**/*.test.js",
+      "!knn_reference_db_compact.json",
+      "!*.rar",
+      "!*.zip",
+      "!*.7z",
+      "!opencv_test.html"
+    ],
+    "extraResources": [
+      {
+        "from": "../",
+        "to": ".",
+        "filter": [
+          "app.js",
+          "grid.js",
+          "schema.js",
+          "phoneBoard.js",
+          "tracker.js",
+          "cameraAdapter.js",
+          "componentDetector.js",
+          "handTracker.js",
+          "intentlens_tts.js",
+          "looseObjectTracker.js",
+          "observationContext.js",
+          "opencv.js",
+          "opencvLoader.js",
+          "pcbContextBuilder.js",
+          "crossModeTransfer.js",
+          "class_map.json",
+          "knn_reference_db_compact.bin",
+          "knn_reference_db_compact.meta.json",
+          "componentResult.js",
+          "projectPlanner.js",
+          "captureOverlay.js",
+          "evidencePanel.js",
+          "assistantActions.js",
+          "localReferenceLookup.js",
+          "mobileSupport.js",
+          "datasets/processed/feature_scaler.json",
+          "style.css",
+          "index.html",
+          "manifest.json",
+          "sw.js",
+          "platform/**/*",
+          "perception/**/*",
+          "spatial/**/*",
+          "server/**/*",
+          "public/**/*"
+        ]
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "build/icon.icns"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  },
+  "allowScripts": {
+    "electron@28.3.3": true,
+    "electron-winstaller@5.4.0": true
+  },
+  "dependencies": {
+    "nsis": "^0.0.0"
+  }
+}

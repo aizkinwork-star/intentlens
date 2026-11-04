@@ -1,0 +1,588 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#0b1118">
+  <title>IntentLens</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="manifest" href="manifest.json">
+</head>
+<body>
+  <div class="wrap">
+    <main class="view" id="view">
+      <canvas id="frame" width="1280" height="720" aria-label="Camera view"></canvas>
+      <svg id="overlay" viewBox="0 0 1280 720" aria-hidden="true"></svg>
+      <video id="video" playsinline muted hidden></video>
+
+      <!-- top-left: hamburger menu, status + controls -->
+      <div class="toolbar">
+        <button id="menu" type="button" class="menuBtn" title="Menu">☰</button>
+        <button id="projectBtn" type="button" class="small projectBtn" title="Project workspace">Project</button>
+        <span id="status" class="status" data-tone="ready">Ready</span>
+        <span id="mode" class="mode" data-mode="unknown" title="Where answers come from">checking backend…</span>
+        <button id="mic" type="button">Start listening</button>
+        <label class="micAuto" title="Start the microphone automatically when IntentLens opens">
+          <input type="checkbox" id="micAuto" checked> Mic on start
+        </label>
+        <button id="cam" type="button">Start camera</button>
+        <button id="live" type="button" disabled>Live view</button>
+        <button id="upload" type="button">Upload photo</button>
+        <button id="clear" type="button" class="ghost">Clear session</button>
+        <input id="file" type="file" accept="image/*" hidden>
+      </div>
+
+      <!-- hamburger menu panel (architecture §6.2) — serial accordion, big details at top -->
+      <div id="menuBackdrop" class="menuBackdrop" hidden></div>
+      <div id="menuPanel" class="menuPanel" hidden aria-label="Menu">
+        <div class="menuHeader">
+          <span class="menuTitle">Settings &amp; Diagnostics</span>
+          <button id="menuClose" type="button" class="menuClose" title="Close menu (Esc)">✕</button>
+        </div>
+
+        <div class="menuGroupTitle">AI &amp; Perception</div>
+
+        <!-- Vision provider and model -->
+        <div class="menuSection">
+          <div class="menuHeading" data-section="localmodel">Vision Provider &amp; Model <span class="menuChevron">▼</span></div>
+          <div class="menuBody" id="menuBody-localmodel" style="display:block">
+            <div class="menuRow note">
+              Cloud AI is optional. Meta Llama Vision models only, hosted by NVIDIA NIM, Cloudflare Workers AI or Groq with your own key. Camera preview, grid, tap-to-track and the k-NN reference index run locally.
+            </div>
+            <div class="menuRow">
+              <span class="menuLabel">Runtime</span>
+              <span id="lmRuntime" class="menuValue">—</span>
+            </div>
+            <div class="menuRow">
+              <span class="menuLabel">Active provider</span>
+              <span id="lmProvider" class="menuValue">—</span>
+            </div>
+            <div class="menuRow">
+              <span class="menuLabel">Model ID</span>
+              <span id="lmModelId" class="menuValue">—</span>
+            </div>
+            <div class="menuRow">
+              <span class="menuLabel">Is Meta model</span>
+              <span id="lmIsMeta" class="menuValue">—</span>
+            </div>
+            <div class="menuRow">
+              <span class="menuLabel">Failover order</span>
+              <span id="lmPriority" class="menuValue">NVIDIA → Cloudflare → Groq</span>
+            </div>
+            <div class="menuRow" style="gap:6px; margin-top:8px;">
+              <button id="lmTest" type="button" class="small">Test provider</button>
+              <button id="openSetupBtn" type="button" class="small">Configure provider</button>
+            </div>
+            <div id="lmStatus" class="menuValue" style="font-size:.72rem; margin-top:4px;"></div>
+            <div class="menuRow note">
+              <span class="menuLabel">Outbound network</span>
+              <span id="lmOutbound" class="menuValue">allowlisted inference hosts only</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Perception profile -->
+        <div class="menuSection">
+          <div class="menuHeading" data-section="profile">Perception Profile <span class="menuChevron">▼</span></div>
+          <div class="menuBody" id="menuBody-profile">
+            <div class="menuRow">
+              <select id="profileSelect" style="flex:1;padding:4px;">
+                <option value="performance">Performance</option>
+                <option value="balanced" selected>Balanced</option>
+                <option value="accuracy">Accuracy</option>
+              </select>
+            </div>
+            <div class="menuRow">
+              <label style="display:flex;align-items:center;gap:6px;font-size:.72rem;">
+                <input type="checkbox" id="diagOverlayToggle"> Show diagnostics overlay
+              </label>
+            </div>
+            <div id="diagOverlay" style="font-size:.68rem;color:var(--muted);margin-top:4px;"></div>
+          </div>
+        </div>
+
+        <!-- k-NN training data -->
+        <div class="menuSection">
+          <div class="menuHeading" data-section="training">k-NN Training <span class="menuChevron">▼</span></div>
+          <div class="menuBody" id="menuBody-training">
+            <div class="menuRow">
+              <input id="trainLabel" type="text" placeholder="Label (e.g. resistor)" style="flex:1;padding:4px;">
+              <button id="trainCapture" type="button" class="small">Capture example</button>
+            </div>
+            <div class="menuRow">
+              <span id="trainCount" class="menuValue">0 examples</span>
+              <button id="trainClear" type="button" class="small ghost">Clear my examples</button>
+            </div>
+            <div id="trainStatus" class="menuValue" style="font-size:.72rem;margin-top:4px;">Select a region, type a label, capture. Labels are k-NN candidates, not verified facts.</div>
+          </div>
+        </div>
+
+        <!-- PCB registration -->
+        <div class="menuSection">
+          <div class="menuHeading" data-section="pcb">PCB Registration <span class="menuChevron">▼</span></div>
+          <div class="menuBody" id="menuBody-pcb">
+            <div class="menuRow">
+              <button id="pcbCaptureRef" type="button" class="small">Capture reference frame</button>
+              <button id="pcbAddComp" type="button" class="small">Add component</button>
+            </div>
+            <div class="menuRow">
+              <button id="pcbSaveBoard" type="button" class="small">Save board</button>
+              <button id="pcbLoadBoard" type="button" class="small">Load board</button>
+            </div>
+            <div id="pcbStatus" class="menuValue" style="font-size:.72rem;margin-top:4px;">No board registered.</div>
+            <div id="pcbCompList" class="menuList" style="max-height:160px;overflow:auto;"></div>
+          </div>
+        </div>
+
+        <div class="menuGroupTitle">Tracking &amp; Grid</div>
+
+        <!-- Tracking -->
+        <div class="menuSection">
+          <div class="menuHeading" data-section="tracking">Tracking <span class="menuChevron">▼</span></div>
+          <div class="menuBody" id="menuBody-tracking">
+            <div class="menuRow">
+              <span class="menuLabel">Active target</span>
+              <span id="menuTarget" class="menuValue">—</span>
+            </div>
+            <div class="menuRow">
+              <span class="menuLabel">State</span>
+              <span id="menuTrackState" class="menuValue">inactive</span>
+            </div>
+            <div class="menuRow">
+              <button id="trackPause" type="button" class="small">Pause</button>
+              <button id="trackReacquire" type="button" class="small">Reacquire</button>
+              <button id="trackReset" type="button" class="small ghost">Reset target</button>
+            </div>
+            <div class="menuRow note">
+              Tap or drag on the live view to start local tracking. No provider or internet connection is required for this.
+            </div>
+            <div class="menuRow">
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.72rem;color:var(--text);">
+                <input type="checkbox" id="handOutlineToggle">
+                <span style="color:#00ff88;">🖐️ Hand outline tracking</span>
+              </label>
+            </div>
+            <div class="menuRow">
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.72rem;color:var(--text);">
+                <input type="checkbox" id="adminSilhouetteToggle">
+                <span style="color:#e056fd;">👤 Admin / Operator silhouette</span>
+              </label>
+            </div>
+            <div class="menuRow">
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.72rem;color:var(--text);">
+                <input type="checkbox" id="chipOutlineToggle">
+                <span style="color:#00e5ff;">Chip &amp; component outlines</span>
+              </label>
+            </div>
+            <div class="menuRow">
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.72rem;color:var(--text);">
+                <input type="checkbox" id="looseModeToggle">
+                <span style="color:#ff9f43;">Loose object tracking mode (local)</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Grid -->
+        <div class="menuSection">
+          <div class="menuHeading" data-section="grid">Grid <span class="menuChevron">▼</span></div>
+          <div class="menuBody" id="menuBody-grid">
+            <div class="menuRow">
+              <span class="menuLabel">Grid lines</span>
+              <button id="gridToggle" type="button">on</button>
+            </div>
+            <div class="menuRow gridSizes">
+              <span class="menuLabel">Resolution</span>
+              <button class="gridSize" data-size="16" type="button">16×16</button>
+              <button class="gridSize" data-size="24" type="button">24×24</button>
+              <button class="gridSize" data-size="32" type="button">32×32</button>
+              <button class="gridSize active" data-size="64" type="button">64×64</button>
+              <button class="gridSize" data-size="128" type="button">128×128</button>
+            </div>
+            <div class="menuRow note">64×64 is the default. Grid size changes the cell address only; stored coordinates stay normalized.</div>
+          </div>
+        </div>
+
+        <!-- Identity transfer -->
+        <div class="menuSection">
+          <div class="menuHeading" data-section="transfer">Identity Transfer <span class="menuChevron">▼</span></div>
+          <div class="menuBody" id="menuBody-transfer">
+            <div class="menuRow">
+              <button id="transferScan" type="button" class="small">Scan for matches</button>
+            </div>
+            <div id="transferCandidates" class="menuList" style="max-height:200px;overflow:auto;"></div>
+            <div id="transferStatus" class="menuValue" style="font-size:.72rem;margin-top:4px;">No scan yet.</div>
+          </div>
+        </div>
+
+        <div class="menuGroupTitle">Memory &amp; Session</div>
+
+        <!-- Context window -->
+        <div class="menuSection">
+          <div class="menuHeading" data-section="context">Context window <span class="menuChevron">▼</span></div>
+          <div class="menuBody" id="menuBody-context">
+            <div class="menuRow">
+              <span class="menuLabel">Estimated tokens</span>
+              <span id="ctxTokens" class="menuValue">—</span>
+            </div>
+            <div class="menuRow">
+              <span class="menuLabel">Usage</span>
+              <span id="ctxUsage" class="menuValue">—</span>
+            </div>
+            <div class="menuRow">
+              <span class="menuLabel">Compression</span>
+              <span id="ctxCompression" class="menuValue">none</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Remembered objects -->
+        <div class="menuSection">
+          <div class="menuHeading" data-section="objects">Remembered objects <span class="menuChevron">▼</span></div>
+          <div class="menuBody" id="menuBody-objects">
+            <div id="menuObjects" class="menuList"></div>
+          </div>
+        </div>
+
+        <!-- Q&A -->
+        <div class="menuSection">
+          <div class="menuHeading" data-section="qa">Questions &amp; answers <span class="menuChevron">▼</span></div>
+          <div class="menuBody" id="menuBody-qa">
+            <div id="menuQA" class="menuList"></div>
+          </div>
+        </div>
+
+        <!-- Session -->
+        <div class="menuSection">
+          <div class="menuHeading" data-section="session">Session <span class="menuChevron">▼</span></div>
+          <div class="menuBody" id="menuBody-session">
+            <div class="menuRow">
+              <button id="endSession" type="button">End session</button>
+            </div>
+            <div class="menuRow">
+              <button id="deleteProject" type="button" class="ghost danger">Delete project data</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="menuGroupTitle">Diagnostics &amp; Data</div>
+
+        <!-- Logs -->
+        <div class="menuSection">
+          <div class="menuHeading" data-section="logs">Logs <span class="menuChevron">▼</span></div>
+          <div class="menuBody" id="menuBody-logs">
+            <div class="menuRow">
+              <button id="logsOpen" type="button">Show logs</button>
+              <span id="logCount" class="menuValue">0</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Privacy & data -->
+        <div class="menuSection">
+          <div class="menuHeading" data-section="privacy">Privacy &amp; Data <span class="menuChevron">▼</span></div>
+          <div class="menuBody" id="menuBody-privacy">
+            <div class="menuRow note">
+              IntentLens is local-first, not fully offline. Camera preview, grid, tap-to-track and the k-NN reference index run on this device. Analyze sends only the captured frame, your command and relevant task/object context to the Meta model host you selected.
+            </div>
+            <div class="menuRow note">
+              Requests use your own provider credential and are subject to that provider's policies, quotas and billing. No continuous live video is streamed. There is no local LLM; speech recognition and TTS may use device/platform services.
+            </div>
+            <div class="menuRow note">
+              You can remove credentials, clear logs and delete local project data here. Cloudflare states stateless Workers AI requests have zero data retention after processing (subject to exceptions); other providers have their own terms.
+            </div>
+            <div class="menuRow">
+              <button id="clearLogs" type="button" class="ghost">Clear server logs</button>
+              <button id="deleteProjectPrivacy" type="button" class="ghost danger">Delete project data</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Report -->
+        <div class="menuSection">
+          <div class="menuHeading" data-section="report">Report an issue <span class="menuChevron">▼</span></div>
+          <div class="menuBody" id="menuBody-report">
+            <div class="menuRow note">
+              Prepares a mail with scrubbed diagnostics only — no keys, no images.
+            </div>
+            <div class="menuRow">
+              <a id="reportMail" class="menuLink" href="">Report by email</a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- logs popup -->
+      <div id="logsBackdrop" class="logsBackdrop" hidden></div>
+      <div id="logsPopup" class="logsPopup" hidden aria-label="System Diagnostics & Logs">
+        <div class="logsHead">
+          <div class="logsTitleWrap">
+            <span class="logsTitle">Diagnostics &amp; System Logs</span>
+            <span id="logCountBadge" class="logCountBadge">0 events</span>
+          </div>
+          <button id="logsClose" type="button" class="logsClose" title="Close">✕</button>
+        </div>
+        <div class="logsToolbar">
+          <div class="logsFilterTabs">
+            <button class="logsTab active" data-filter="all">All</button>
+            <button class="logsTab" data-filter="error">Errors</button>
+            <button class="logsTab" data-filter="api">API / Model</button>
+            <button class="logsTab" data-filter="tracking">Tracking / Vision</button>
+            <button class="logsTab" data-filter="server">Server</button>
+          </div>
+          <div class="logsActions">
+            <button id="logsRefresh" type="button" class="small">Refresh</button>
+            <button id="logsCopy" type="button" class="small">Copy Logs</button>
+            <button id="logsClear" type="button" class="small ghost">Clear</button>
+          </div>
+        </div>
+        <div id="logsList" class="logsList"></div>
+        <div class="logsNote">Real-time telemetry of client code execution, camera/tracking state machine, network queries, and upstream API responses. No private image payloads or secret keys are ever logged.</div>
+      </div>
+
+      <!-- top-right: animated audiobar-style pipeline, current step shown below -->
+      <div class="hud">
+        <div class="pipeline" id="pipeline">
+          <div class="pipe-bar" data-key="recording"><span class="pipe-fill"></span></div>
+          <div class="pipe-bar" data-key="transcribing"><span class="pipe-fill"></span></div>
+          <div class="pipe-bar" data-key="contextualizing"><span class="pipe-fill"></span></div>
+          <div class="pipe-bar" data-key="api"><span class="pipe-fill"></span></div>
+          <div class="pipe-bar" data-key="searching"><span class="pipe-fill"></span></div>
+          <div class="pipe-bar" data-key="localising"><span class="pipe-fill"></span></div>
+        </div>
+        <div class="pipe-status" id="pipeStatus">Idle</div>
+        <div id="snapBox" class="snapbox" hidden>
+          <canvas id="snap" width="1280" height="720"></canvas>
+          <svg id="snapOverlay" viewBox="0 0 1280 720" aria-hidden="true"></svg>
+          <span class="snaplabel">Analysed frame · tap to enlarge</span>
+          <div class="snapinfo" id="snapInfo"></div>
+        </div>
+      </div>
+
+      <!-- beginner project workspace: goal, current step, safety, capture controls -->
+      <div id="workspace" class="assistantCard workspace" hidden aria-label="Project workspace">
+        <div class="cardHead">
+          <span class="cardTitle" id="wsTitle">Project</span>
+          <button id="wsEdit" type="button" class="tinyBtn">Change</button>
+        </div>
+        <div id="wsGoal" class="cardGoal"></div>
+        <div class="wsStepLabel">Current step</div>
+        <div id="wsStep" class="wsStep"></div>
+        <div id="wsParts" class="wsParts"></div>
+        <div id="wsSafety" class="wsSafety"></div>
+        <div class="wsProgress"><span id="wsBar" class="wsBar"></span></div>
+        <div class="wsActions">
+          <button id="wsAlign" type="button" class="small">I'm aligned</button>
+          <button id="wsCapture" type="button" class="small" disabled>Capture component</button>
+        </div>
+        <div class="wsActions">
+          <button id="wsNext" type="button" class="small ghost">Next step</button>
+          <button id="wsRepeat" type="button" class="small ghost">Repeat</button>
+          <button id="wsExplain" type="button" class="small ghost">Explain</button>
+          <button id="wsStop" type="button" class="small ghost">Stop voice</button>
+        </div>
+        <div id="wsStatus" class="wsStatus" role="status">Create a project to begin.</div>
+      </div>
+
+      <!-- right-side image evidence panel, beneath the status bars -->
+      <div id="evidencePanel" class="assistantCard evidenceCard" hidden aria-label="Image evidence">
+        <div class="cardHead">
+          <span class="cardTitle" id="evTitle">No capture yet</span>
+          <button id="evExpand" type="button" class="tinyBtn" disabled>Expand</button>
+        </div>
+        <div id="evStatus" class="evStatus">Capture a component to see image evidence.</div>
+        <div id="evThumbWrap" class="evThumbWrap">
+          <img id="evOriginal" class="evImg" alt="Captured still" hidden>
+          <img id="evOverlay" class="evImg evOverlay" alt="" hidden>
+          <svg id="evCorners" class="evCorners" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true"></svg>
+          <div id="evEmpty" class="evEmpty">No capture yet.<br>Align the board, then press Capture component.</div>
+        </div>
+        <div id="evMeta" class="evMeta"></div>
+        <div class="evActions">
+          <button id="evConfirm" type="button" class="small" disabled>Confirm</button>
+          <button id="evCorrect" type="button" class="small" disabled>Correct name</button>
+          <button id="evRetake" type="button" class="small ghost" disabled>Retake</button>
+          <button id="evRepeat" type="button" class="small ghost" disabled>Repeat</button>
+          <button id="evExplain" type="button" class="small ghost" disabled>Explain</button>
+        </div>
+        <div id="evCorrectRow" class="evCorrectRow" hidden>
+          <input id="evNameInput" type="text" maxlength="80" placeholder="Correct component name" autocomplete="off">
+          <button id="evNameSave" type="button" class="small">Save</button>
+        </div>
+        <div id="evInstruction" class="evInstruction"></div>
+        <div id="evCandidates" class="evCandidates"></div>
+      </div>
+
+      <!-- bottom: transcript, written answer, evidence, command -->
+      <div class="bar">
+        <div id="transcript" class="transcript" hidden></div>
+        <div id="answer" class="answer" aria-live="polite">Start the camera (or upload a photo), then type or say a command and press Find it. Tap the picture to pick a cell.</div>
+        <div id="instructionSteps" class="steps" hidden></div>
+        <div id="ttsStatus" class="tts-status" hidden>Voice: idle</div>
+        <div id="meta" class="meta" hidden></div>
+        <div id="sources" class="sources" hidden></div>
+        <div class="row">
+          <input id="command" type="text" placeholder="Where is the battery connector?" autocomplete="off" enterkeyhint="send">
+          <button id="submit" type="button">Find it</button>
+          <button id="cancel" type="button" class="ghost" hidden>Cancel</button>
+        </div>
+        <div class="row tts-controls" style="margin-top:6px; gap:6px; font-size:.7rem;">
+          <button id="ttsSpeak" type="button" class="small">Speak instruction</button>
+          <button id="ttsTest" type="button" class="small ghost">Test voice</button>
+          <button id="ttsStop" type="button" class="small ghost">Stop</button>
+          <span id="ttsVoice" class="menuValue">—</span>
+        </div>
+      </div>
+
+      <div class="rotate">Rotate your phone to landscape.</div>
+    </main>
+  </div>
+  <!-- Service worker for PWA/offline shell -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js').catch(() => {});
+    }
+  </script>
+  <script type="module" src="app.js"></script>
+
+  <!-- First-run provider setup popup (shown when no provider key is configured) -->
+  <div id="setupBackdrop" class="menuBackdrop" hidden></div>
+  <div id="setupPopup" class="setupPopup" hidden aria-label="Connect a vision provider">
+    <div class="setupHeader">
+      <div>
+        <h2>Connect Vision AI Provider</h2>
+        <span class="setupSub">Meta models only · your key stays on this PC</span>
+      </div>
+      <button id="setupClose" type="button" class="setupClose" title="Close (Esc)">✕</button>
+    </div>
+    <div class="setupContent">
+      <div class="setupHead">
+        <p>
+          Camera preview, grid, tap-to-track and the k-NN reference index run locally. Cloud AI is optional and sends a captured frame only when you press <strong>Find it</strong>. There is no local Llama model on this machine.
+        </p>
+      </div>
+      <div class="setupBody">
+        <div class="setupRow">
+          <label for="setupProv">Provider</label>
+          <select id="setupProv">
+            <option value="nvidia-nim">NVIDIA NIM — Meta Muse Glimmer 30B (verified)</option>
+            <option value="cloudflare-workers-ai">Cloudflare Workers AI — Meta Llama vision (free tier)</option>
+            <option value="groq">Groq — Meta Llama (vision unverified)</option>
+          </select>
+        </div>
+        <div class="setupRow" id="setupModelRow">
+          <label for="setupModel">Meta vision model</label>
+          <select id="setupModel"></select>
+          <div id="setupModelNote" class="setupHint"></div>
+        </div>
+        <div class="setupRow" id="setupAccountRow" hidden>
+          <label for="setupAccount" id="setupAccountLabel">Cloudflare Account ID</label>
+          <input id="setupAccount" type="text" autocomplete="off" spellcheck="false" placeholder="32-character account ID">
+        </div>
+        <div class="setupRow" id="setupBaseUrlRow" hidden>
+          <label for="setupBaseUrl">Inference base URL (leave unchanged)</label>
+          <input id="setupBaseUrl" type="url" autocomplete="off" spellcheck="false" value="https://integrate.api.nvidia.com" placeholder="https://integrate.api.nvidia.com">
+          <div class="setupHint">Pre-filled with NVIDIA's inference host. build.nvidia.com is a dashboard page, not an endpoint.</div>
+        </div>
+        <div class="setupRow">
+          <label for="setupKey" id="setupKeyLabel">NVIDIA API key (nvapi-…)</label>
+          <input id="setupKey" type="password" autocomplete="off" spellcheck="false" placeholder="Paste your API key or token here">
+          <div class="setupHint">Stored encrypted with Electron safeStorage or Windows DPAPI. Never returned to this page or written to logs.</div>
+        </div>
+        <div class="setupRow" id="setupNetworkRow" hidden>
+          <div class="setupHint" style="color:var(--warn);">
+            Cloud requests are disabled for this install (ALLOW_OUTBOUND_NETWORK=false). Camera, grid and local k-NN still work. You can allow cloud requests for this session only, or set ALLOW_OUTBOUND_NETWORK=true and restart.
+          </div>
+          <button id="setupAllowOutbound" type="button" class="small">Allow cloud requests for this session</button>
+        </div>
+        <div class="setupActions">
+          <button id="setupSave" type="button">Save &amp; test</button>
+          <button id="setupTest" type="button" class="ghost">Test connection</button>
+          <button id="setupRemove" type="button" class="ghost danger">Remove saved key</button>
+        </div>
+        <div id="setupMsg" class="setupMsg" role="status"></div>
+
+        <div class="helpGuideBlock">
+          <div class="helpGuideTitle" id="helpGuideToggle">
+            <span>📖 Where to get a key</span>
+            <span id="helpGuideChevron" style="font-size:.7rem;">▼</span>
+          </div>
+          <div id="helpGuideContent">
+            <div class="helpGuideStep"><strong>All three providers use one account-wide key.</strong> You do not need a separate key per model. Only Meta vision models are allowed for images; text-only Meta models are never sent an image. Model entries marked <em>verified</em> have answered a real image request on this account; others still need a test.</div>
+            <div class="helpGuideStep"><strong>NVIDIA NIM (first in failover order):</strong> sign in at <a href="https://build.nvidia.com/" target="_blank" rel="noopener" class="menuLink">build.nvidia.com</a>, click <em>Get API Key</em>, and paste the <span class="helpGuideCode">nvapi-...</span> value. The inference base URL is pre-filled (<span class="helpGuideCode">https://integrate.api.nvidia.com</span>) - leave it as-is. <strong>Muse Glimmer 30B is the verified model here</strong>; on the account we tested, Llama 3.2 11B returned 404, Llama 3.2 90B timed out, and Llama 4 Maverick is end-of-life. Muse Glimmer is a reasoning model: a full analysis can take 80-120 seconds.</div>
+            <div class="helpGuideStep"><strong>Cloudflare Workers AI:</strong> in <a href="https://dash.cloudflare.com/" target="_blank" rel="noopener" class="menuLink">dash.cloudflare.com</a> copy the 32-character <em>Account ID</em>, then create an API token at <em>My Profile → API Tokens → Create Token</em>. Use <em>Custom token</em>, add the permission <em>Account → Workers AI → Read</em> (or <em>Read all resources</em>), scope it to your account, and paste the token and Account ID above. A token that only has R2/Workers permissions will fail with 401.</div>
+            <div class="helpGuideStep"><strong>Groq:</strong> at <a href="https://console.groq.com/keys" target="_blank" rel="noopener" class="menuLink">console.groq.com/keys</a>, create an account-wide key (<span class="helpGuideCode">gsk_...</span>) and paste it above. On the account we checked, the playground exposed only Meta Prompt Guard models, so Groq vision is <strong>not verified</strong>. Test before relying on it.</div>
+            <div class="helpGuideStep"><strong>Links open in your default browser</strong> (Chrome, Edge, ...). If nothing opens, copy the address manually.</div>
+            <div class="helpGuideStep"><strong>Failover:</strong> NVIDIA is tried first, then Cloudflare, then Groq. Auth, quota, rate-limit and outage errors move to the next configured provider. Existing track IDs, corrections, instructions and TTS are preserved across failover.</div>
+          </div>
+        </div>
+      </div>
+      <div class="setupFoot">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.74rem;color:var(--muted);">
+          <input type="checkbox" id="setupDontAsk"> Don't show this on startup
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <!-- PWA install prompt -->
+  <div id="installBackdrop" class="menuBackdrop" hidden></div>
+  <div id="installPopup" class="setupPopup" hidden aria-label="Install IntentLens app">
+    <div class="setupHeader">
+      <h2>Install IntentLens</h2>
+      <button id="installClose" type="button" class="setupClose" title="Close (Esc)">✕</button>
+    </div>
+    <div class="setupContent">
+      <div class="setupHead">
+        <p>
+          Install IntentLens as a desktop app so it can access your camera directly and work offline.
+        </p>
+      </div>
+    </div>
+    <div class="setupBody">
+      <div class="setupRow" style="gap:10px;">
+        <button id="installApp" type="button">Install app</button>
+        <button id="installSkip" type="button" class="ghost">Skip</button>
+      </div>
+      <div id="setupMsg2" style="margin-top:8px;font-size:.7rem;color:var(--warn);"></div>
+    </div>
+  </div>
+
+  <!-- Beginner project setup popup -->
+  <div id="projectBackdrop" class="menuBackdrop" hidden></div>
+  <div id="projectPopup" class="setupPopup projectPopup" hidden aria-label="Create a beginner project">
+    <div class="setupHeader">
+      <div>
+        <h2>Your beginner project</h2>
+        <span class="setupSub">Describe what you want to build, in your own words</span>
+      </div>
+      <button id="projectClose" type="button" class="setupClose" title="Close">✕</button>
+    </div>
+    <div class="setupContent">
+      <div class="setupHead">
+        <p>
+          IntentLens will keep a project goal, an ordered plan and a current step. It will not invent a
+          bill of materials: parts you mention are checked against parts you say you actually have.
+        </p>
+      </div>
+      <div class="setupBody">
+        <div class="setupRow">
+          <label for="projectIntent">What do you want to build?</label>
+          <textarea id="projectIntent" rows="3" maxlength="1200" placeholder="e.g. I want to build a blinking LED with an Arduino Uno. I have the Arduino, a breadboard, two LEDs and resistors."></textarea>
+        </div>
+        <div class="setupActions">
+          <button id="projectCreate" type="button">Create project</button>
+          <button id="projectResume" type="button" class="ghost">Resume last project</button>
+          <button id="projectProvider" type="button" class="ghost">AI provider</button>
+        </div>
+        <div id="projectMsg" class="setupMsg" role="status"></div>
+        <div class="projectRecentLabel">Recent projects</div>
+        <div id="projectRecent" class="menuList"></div>
+        <div id="mobileStatus" class="setupHint"></div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

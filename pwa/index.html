@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b1118">
+  <meta name="description" content="IntentLens — point your phone, ask what a part is, get a grounded next step.">
+  <title>IntentLens</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./icons/icon-192.png" sizes="192x192">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brandRow">
+      <span class="brand">IntentLens</span>
+      <span id="netDot" class="netDot" title="Online"></span>
+      <span id="installBtnWrap" hidden><button id="installBtn" class="ghost smallBtn" type="button">Install</button></span>
+    </div>
+    <div class="topActions">
+      <select id="projectSelect" aria-label="Project"></select>
+      <button id="newProjectBtn" class="ghost iconBtn" type="button" title="New project">+</button>
+      <button id="settingsBtn" class="ghost iconBtn" type="button" title="Settings">⚙</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="stage" id="stage">
+      <video id="video" playsinline muted autoplay></video>
+      <img id="still" alt="Captured frame" hidden>
+      <svg id="overlay" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true"></svg>
+      <div id="stageEmpty" class="stageEmpty">
+        <strong>Camera is off</strong>
+        <span>Tap “Start camera”. Permission is asked only then.</span>
+      </div>
+    </section>
+
+    <div class="statusRow">
+      <span id="status" class="status">Ready</span>
+      <span id="gridLabel" class="gridLabel">Grid 64×64</span>
+    </div>
+
+    <section class="controls">
+      <button id="cameraBtn" class="primary" type="button">Start camera</button>
+      <button id="captureBtn" type="button" disabled>Capture</button>
+      <button id="micBtn" type="button" disabled>Mic</button>
+    </section>
+
+    <section class="commandRow">
+      <input id="command" type="text" inputmode="text" autocomplete="off"
+             placeholder="Ask: what is this part?">
+      <button id="sendBtn" class="primary" type="button">Send</button>
+    </section>
+
+    <section id="answer" class="card hidden" aria-live="polite">
+      <div class="answerTop">
+        <strong id="compName">—</strong>
+        <span id="cellTag" class="tag"></span>
+      </div>
+      <p id="instruction" class="instruction"></p>
+      <p id="meta" class="meta"></p>
+      <ul id="evidence" class="evidence"></ul>
+      <div class="answerActions">
+        <button id="repeatBtn" class="ghost" type="button">Repeat · 0 requests</button>
+        <button id="explainBtn" class="ghost" type="button">Explain · 1 request</button>
+        <button id="speakBtn" class="ghost" type="button">Speak</button>
+      </div>
+    </section>
+
+    <section class="card cloudCard">
+      <div>
+        <strong id="cloudState">Cloud is off</strong>
+        <p class="meta">No image leaves this phone until you allow it for this session.</p>
+      </div>
+      <button id="allowCloudBtn" class="ghost" type="button">Allow cloud for this session</button>
+    </section>
+
+    <p class="footNote">
+      Coordinates are model proposals, not measurements. The app refuses to draw a box
+      the model cannot honestly locate. Camera frames and the provider key stay on this device.
+    </p>
+  </main>
+
+  <dialog id="settingsDialog">
+    <form method="dialog" class="dialogBody">
+      <h2>Settings</h2>
+
+      <label>Provider
+        <select id="providerSelect"></select>
+      </label>
+      <p id="providerNote" class="meta"></p>
+
+      <label>Model id
+        <input id="modelInput" type="text" autocomplete="off" spellcheck="false">
+      </label>
+
+      <label>API key
+        <input id="keyInput" type="password" autocomplete="off" spellcheck="false" placeholder="Stored on this device only if you tick the box">
+      </label>
+
+      <label class="checkRow">
+        <input id="rememberKey" type="checkbox">
+        <span>Remember the key on this device (IndexedDB, not encrypted)</span>
+      </label>
+
+      <label>Custom base URL (only for “Custom relay”)
+        <input id="baseUrlInput" type="url" placeholder="https://your-relay.example.workers.dev" autocomplete="off" spellcheck="false">
+      </label>
+
+      <div class="twoCol">
+        <label>Grid
+          <select id="gridSelect">
+            <option value="16">16×16</option>
+            <option value="32">32×32</option>
+            <option value="64" selected>64×64</option>
+            <option value="96">96×96</option>
+            <option value="128">128×128</option>
+          </select>
+        </label>
+        <label class="checkRow inline">
+          <input id="ttsToggle" type="checkbox" checked>
+          <span>Speak answers</span>
+        </label>
+      </div>
+
+      <p class="warn">
+        This key is used directly from the browser. It is visible to anyone with access to this
+        phone or this browser profile. For a shared device, leave “Remember” off.
+      </p>
+
+      <div class="dialogActions">
+        <button id="testProviderBtn" class="ghost" type="button">Test key · 1 request</button>
+        <button id="saveSettingsBtn" class="primary" type="button">Save</button>
+        <button id="closeSettingsBtn" class="ghost" type="button">Close</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="projectDialog">
+    <div class="dialogBody">
+      <h2>Projects</h2>
+      <div id="projectList" class="projectList"></div>
+      <div class="newProjectRow">
+        <input id="newProjectName" type="text" placeholder="New project name" autocomplete="off">
+        <button id="createProjectBtn" class="primary" type="button">Create</button>
+      </div>
+      <div class="dialogActions">
+        <button id="closeProjectBtn" class="ghost" type="button">Close</button>
+      </div>
+    </div>
+  </dialog>
+
+  <noscript>IntentLens needs JavaScript for camera, storage and model calls.</noscript>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

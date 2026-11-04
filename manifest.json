@@ -1,0 +1,25 @@
+{
+  "name": "IntentLens",
+  "short_name": "IntentLens",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#0b1118",
+  "theme_color": "#0b1118",
+  "orientation": "any",
+  "scope": ".",
+  "lang": "en",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='192' height='192' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' fill='%230b1118'/%3E%3Ccircle cx='96' cy='96' r='76' fill='%23ff4d5e'/%3E%3Cpath d='M96 48L132 84L96 120L60 84Z' fill='%230b1118'/%3E%3Ccircle cx='96' cy='84' r='8' fill='%23ff4d5e'/%3E%3C/svg%3E",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='512' height='512' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' fill='%230b1118'/%3E%3Ccircle cx='256' cy='256' r='200' fill='%23ff4d5e'/%3E%3Cpath d='M256 128L352 224L256 320L160 224Z' fill='%230b1118'/%3E%3Ccircle cx='256' cy='224' r='20' fill='%23ff4d5e'/%3E%3C/svg%3E",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

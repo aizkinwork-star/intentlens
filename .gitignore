@@ -1,0 +1,41 @@
+# Secrets
+.env
+.env.*
+!.env.example
+API(SECRETS).txt
+api(secrets).txt
+*SECRETS*.txt
+*.pem
+*.key
+
+# Dependencies (this project has none, but future edits might add some)
+node_modules/
+
+# Logs and OS noise
+*.log
+.DS_Store
+Thumbs.db
+
+# User-owned data (SQLite + images) — never committed
+intentlens-data/
+
+# User-configured provider keys — never committed
+intentlens-config.json
+
+# Dataset (raw + processed) — never committed
+datasets/
+
+# Compact reference DB (generated)
+knn_reference_db_compact.json
+
+# Large local archives / build output
+*.zip
+*.rar
+*.7z
+electron/release/
+electron/node_modules/
+test_output*.txt
+
+# Generated PWA shared modules (single source is the repo root)
+pwa/lib/
+pwa/.nojekyll
