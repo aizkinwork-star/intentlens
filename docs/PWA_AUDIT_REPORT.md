@@ -43,19 +43,22 @@ What is verified:
 - API keys are memory-only in the phone build. Legacy plaintext key slots are
   deleted on boot; no key is written to localStorage, sessionStorage,
   IndexedDB, Cache Storage or the URL.
-- The service-worker shell cache was bumped to **v7**, and install fetches use
-  `cache: 'reload'` so a new version cannot copy stale assets.
+- The service-worker shell cache is **v9**. Install fetches use
+  `cache: 'reload'` so a new version cannot copy stale assets, and registration
+  uses `updateViaCache: 'none'` so GitHub Pages' 10-minute HTTP cache cannot
+  delay a worker update check.
 
 What still prevents a plain **READY**:
 
 1. **No physical Android/iOS device was available.** Camera permission,
    rear-camera selection, real landscape rotation, install prompts and marker
    alignment are **NOT TESTED — DEVICE REQUIRED**.
-2. **The live Pages image test is a post-deploy step.** The OpenRouter image
-   request was verified live from a Node client using the same request shape and
-   the real key. The deployed page's request log and storage behaviour are
-   verified separately; the end-to-end Pages image send must be recorded after
-   this commit is deployed.
+2. **The live Pages image path is verified, but only with a synthetic image.**
+   A deployed page sent two real images through OpenRouter on 2026-11-04 and
+   both returned HTTP 200 with valid JSON: the model named the red circle,
+   placed it on the left, and refused to pretend the synthetic image was an
+   electronics board. A real board photo is still required to judge component
+   accuracy.
 3. **Provider availability is a snapshot.** Model catalogues, free quotas,
    prices and CORS can change without notice.
 
@@ -77,7 +80,7 @@ this audit. Its encrypted credential file was not touched or deleted.
 | API key | JavaScript memory only | `state.apiKey` in `pwa/app.js` |
 | Provider request log | JavaScript memory only | `state.requestLog` in `pwa/app.js` |
 | Camera stream | RAM; tracks stopped on stop/hide/pagehide | `startCamera`, `stopCamera` |
-| Service worker shell | Cache Storage `intentlens-pwa-v7` | `pwa/sw.js` |
+| Service worker shell | Cache Storage `intentlens-pwa-v9` | `pwa/sw.js` |
 
 ### B2. Data flow
 
@@ -270,7 +273,7 @@ node --check server\routes\analyze.js
 node --check app.js
 ```
 
-Final result: **220 tests, 220 passed, 0 failed** across **27 source test files**
+Final result: **221 tests, 221 passed, 0 failed** across **27 source test files**
 (excluding `node_modules`, `datasets`, `intentlens-data` and build output).
 
 Relevant coverage:
@@ -308,24 +311,51 @@ Browser smoke test (localhost, simulated camera/provider):
 
 The Pages gate previously failed on Node 20 because the desktop store tests
 import `node:sqlite`, which exists only from Node 22.5. The workflow now uses
-Node 24 and `package.json` declares `>=22.5`.
+Node 24 and `package.json` declares `>=22.5`. Every push touched by this audit
+deployed successfully.
 
-The service worker cache is `intentlens-pwa-v7`. The v7 bump exists because
-`provider.js`, `app.js`, `index.html`, `styles.css` and `sw.js` all changed.
-A returning client can still run the previous cached shell once after a deploy;
-the worker reloads the page once when it takes control, and install fetches with
-`cache: 'reload'` so an unexpired HTTP cache cannot poison the new version.
+The service worker cache is `intentlens-pwa-v9`. The version was bumped for each
+shell change during the audit. Two deployment traps were fixed rather than
+documented away:
 
-Post-deploy checks to record in the deployment log:
+1. Install fetches use `cache: 'reload'`. Without it, an unexpired HTTP cache
+   could copy the previous `app.js` into a new, versioned cache.
+2. Registration uses `updateViaCache: 'none'`. GitHub Pages serves `sw.js` with
+   `Cache-Control: max-age=600`, so a default update check could keep using a
+   ten-minute-old worker. During this audit that exact trap made the first
+   post-deploy test load the old request shape; the fix and a fresh deploy
+   removed it.
 
-| Check | Expected |
+A returning client can still run the previous cached shell for one navigation;
+the worker reloads the page once when a new version takes control.
+
+Post-deploy evidence (2026-11-04):
+
+| Check | Result |
 |---|---|
-| Pages workflow | Deploy job completes |
-| Served `sw.js` cache name | `intentlens-pwa-v7` |
-| Served `provider.js` | Contains `nvidia/nemotron-3.5-super-vl:free`; `PROVIDERS` has no `nim` or `blockrun` key |
-| Request log card | Present in `index.html` |
-| Real Pages image send | One 200 from `openrouter.ai`, log shows endpoint/model/status, no key in URL/storage |
+| Pages workflow | **PASS**: deploy job completed for every commit |
+| Served `sw.js` cache name | **PASS**: `intentlens-pwa-v9` after the final deploy |
+| Served `provider.js` | **PASS**: default `nvidia/nemotron-3.5-super-vl:free`; no `nim` or `blockrun` provider key |
+| Served `prompt.js` | **PASS**: embeds the exact `COMPONENT_SCHEMA` |
+| Request log card | **PASS**: present in the deployed `index.html` |
+| Real Pages image send | **PASS**: two requests, both HTTP 200 from `openrouter.ai` |
+| Live request shape | **PASS**: `max_tokens: 8192`, `response_format: {type:'json_object'}`, `reasoning: {effort:'low'}`, one `text` and one `image_url` part, schema present in the prompt |
+| Live answer | **PASS**: valid JSON; named the red circle, said red is on the left, and refused to treat the synthetic image as a real board |
+| Request-log row | **PASS**: `200 OK`, endpoint, host, model, `vision · image attached`, latency, tokens, `$0`, request id |
+| Key in URL/storage | **PASS**: absent from URL, localStorage, sessionStorage, Cache Storage and IndexedDB; present only in memory |
 | Physical Android camera | **NOT TESTED — DEVICE REQUIRED** |
+
+The page under test was the deployed `https://aizkinwork-star.github.io/intentlens/`
+origin. The camera was a synthetic `canvas.captureStream()` with a red circle and
+blue rectangle; no physical camera was claimed.
+
+Final v9 live run (2026-11-04): HTTP 200 in 21.03 s, 4,185 tokens, `$0`, request
+id `pwa_mw1shsqu_e3vyqh`. The answer named the red circle and blue square and
+said red was on the left. The captured request body had `max_tokens: 8192`,
+`response_format: {"type":"json_object"}`, `reasoning: {"effort":"low"}`, one
+`text` plus one `image_url` part, and the schema in the text. The same run
+confirmed `intentlens-pwa-v9` and an empty key search across URL, storage,
+Cache Storage and IndexedDB.
 
 ---
 
@@ -401,14 +431,12 @@ No mid-range Android measurements were possible. Code-level observations:
 
 1. On a real Android and iOS phone, run [DEVICE_TEST_CHECKLIST.md](DEVICE_TEST_CHECKLIST.md)
    and record the device/browser versions.
-2. After this commit deploys, send one real synthetic image from the live Pages
-   URL through OpenRouter and record the request-log row (endpoint, model,
-   status, latency).
-3. Send one real board photo and confirm the answer names something visible.
-   Do not treat a synthetic success as proof of electronics accuracy.
-4. Keep the phone key memory-only. Use the desktop app when key persistence is
+2. Send one real board photo from the live Pages URL and confirm the answer
+   names something visible. Do not treat a synthetic success as proof of
+   electronics accuracy.
+3. Keep the phone key memory-only. Use the desktop app when key persistence is
    required.
-5. Re-check provider prices, free quotas and CORS before a public demo; they are
+4. Re-check provider prices, free quotas and CORS before a public demo; they are
    not guaranteed.
 
 ---

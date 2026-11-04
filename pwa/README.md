@@ -128,12 +128,10 @@ Before claiming the PWA works on a physical phone, verify:
 
 **Physical-device status:** the camera, landscape, permission and install
 checks are **NOT TESTED — DEVICE REQUIRED**. Desktop browser emulation is not
-proof of Android/iOS camera behaviour. What was verified live against the
-provider is a real image request through OpenRouter. The deployed-page
-end-to-end image send is recorded after each deployment in
-[../docs/PWA_AUDIT_REPORT.md](../docs/PWA_AUDIT_REPORT.md). The shell, service
-worker, text chat, request log and absence of keys in URL/storage are verified
-in the browser.
+proof of Android/iOS camera behaviour. A deployed page sent a real synthetic
+image through OpenRouter and returned valid JSON; the request log, shell service
+worker, text chat and absence of keys in URL/storage were verified in the live
+browser. Details: [../docs/PWA_AUDIT_REPORT.md](../docs/PWA_AUDIT_REPORT.md).
 
 ## Security limits
 

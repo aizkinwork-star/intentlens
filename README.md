@@ -200,7 +200,7 @@ Output: `electron/release/IntentLens Setup 0.4.0.exe`.
 
 ```cmd
 npm test
-:: 27 source test files, 220 tests, 0 failures at the 2026-11-04 checkpoint
+:: 27 source test files, 221 tests, 0 failures at the 2026-11-04 checkpoint
 ```
 
 `npm test` excludes `node_modules`, `datasets`, `intentlens-data` and build
@@ -243,12 +243,13 @@ once when a new worker takes control.
 
 ### Phone status
 
-- **Verified against the provider with the real key:** a free OpenRouter vision
-  request returned 200 and correctly named a synthetic image.
+- **Verified end to end on the deployed page:** a synthetic red circle and blue
+  rectangle sent from the live Pages origin returned HTTP 200 with valid JSON;
+  the request log showed the endpoint, model, status, latency and `$0` cost, and
+  the key was absent from the URL, storage and IndexedDB.
 - **Verified in the deployed browser:** shell, manifest, service worker, text
   chat, request log, and no key in URL/storage/IndexedDB.
-- **Recorded after each deployment:** the end-to-end Pages image send, in
-  [docs/PWA_AUDIT_REPORT.md](docs/PWA_AUDIT_REPORT.md).
+- **Details and the exact request shape:** [docs/PWA_AUDIT_REPORT.md](docs/PWA_AUDIT_REPORT.md).
 - **NOT TESTED — DEVICE REQUIRED:** physical Android/iOS camera, permission
   prompts, landscape rotation, install prompts and touch tracking. Desktop
   emulation is not proof of device behaviour.
