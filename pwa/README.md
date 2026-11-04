@@ -33,8 +33,8 @@ hidden. Nothing falls back silently.
 
 | Provider | Status in this PWA | Default / model | Cost | Notes |
 |---|---|---|---|---|
-| **OpenRouter** | Browser CORS `*`, verified | `nvidia/nemotron-3.5-super-vl:free` (free vision) | Free by default; paid Meta optional | The free vision default was verified with a synthetic image. Paid Meta Llama 4 Maverick/Scout are hidden until **Model access → Paid** is selected. Maverick is **not free**: $0.1875/M input, $0.6525/M output. |
-| **Groq** | Browser CORS `*`, account-dependent | **No default.** Preview candidates: `meta-models/muse-spark-open` (Meta) and `qwen/qwen3.8-27b` | Account / preview | Access and vision support vary by account. Llama 3.3 70B Versatile is Enterprise-only, retired for Free/Developer on 2026-08-16, and text-only, so it is never a default or vision model. Choose a candidate, enable Preview, and Test before relying on it. |
+| **OpenRouter** | Browser CORS `*`, verified | `meta-llama/llama-4-maverick` (Meta vision) | **Paid per token** | Verified with a synthetic image. Bills your OpenRouter account. |
+| **Groq** | Browser CORS `*`, **text/voice only** | None | Groq account | No image input: image requests are refused before any network call. Llama 3.3 70B Versatile is Enterprise-only on Groq. |
 | **NVIDIA NIM** | **Blocked by CORS** | `meta/muse-glimmer-30b` (Meta vision) | NVIDIA account | Endpoint `https://integrate.api.nvidia.com/v1/chat/completions`. Verified with a real image on the desktop path. No `Access-Control-Allow-Origin`, so the phone refuses with `PROVIDER_CORS_BLOCKED`. Use the PC app or a relay. |
 | **Cloudflare Workers AI** | **Blocked by CORS** | `@cf/meta/llama-3.2-11b-vision-instruct` (Meta vision) | Free tier / account | Endpoint template `https://api.cloudflare.com/client/v4/accounts/{account}/ai/run/{model}`. Preflight returns 405 with no CORS. Desktop only. |
 | **BlockRun** | **Blocked by CORS + unpaid** | `meta-llama/llama-4-maverick` (Meta vision) | **Paid x402** | Endpoint `https://api.blockrun.ai/v1/chat/completions`. Hidden from the free tier. The supplied key returned HTTP 402 `Payment verification failed`; no CORS. |
@@ -49,9 +49,8 @@ names the endpoint, the CORS evidence and the desktop/relay alternative.
 
 - The model field is editable. You can type any model id the provider accepts.
 - Known text-only models are refused for images before a request is made.
-- A **Model access** selector controls visibility: **Free only** (default),
-  **Preview**, or **Paid**. Paid/preview model names stay hidden otherwise, and a
-  known locked model is refused with `MODEL_ACCESS_LOCKED` before the network.
+- Only Meta models are accepted. Any other id is refused with `NON_META_MODEL`
+  before a key check or network call. **Model access** is paid per token.
 - A model not in the catalogue is sent as typed; the provider decides whether
   it exists. The request body uses the exact typed id, and the request log shows
   the id sent and the id returned.
@@ -73,14 +72,16 @@ and a live provider answer are still **NOT TESTED**.
    iOS Safari: Share → **Add to Home Screen**.
 3. Open the installed icon. Camera permission is requested only after tapping
    **Start camera**.
-4. Tap **Settings**, choose **Model access → Free only**, choose **OpenRouter**,
-   paste your key, and press **Save**. The key is kept in memory for this tab
-   only. The default is the free vision model
-   `nvidia/nemotron-3.5-super-vl:free`; paid Meta models stay hidden unless you
-   enable paid access.
+4. Tap **Settings**, choose **OpenRouter**, paste your key, and press **Save**.
+   The key is kept in memory for this tab only. The default is
+   `meta-llama/llama-4-maverick`, a paid Meta vision model.
 5. Tap **Allow cloud for this session**.
-6. Frame a board in landscape, tap **Capture**, type a question, then **Send**.
-7. Check the **Provider request log** to see the exact endpoint and model used.
+6. Frame a board in landscape and tap **Capture**, or tap **Upload photo** to use
+   an existing picture. Type a question, then **Send**. If several cameras exist,
+   a camera picker appears after permission is granted.
+7. **Export project / Import project** moves a project between devices as a
+   JSON file. This is a manual transfer, not live sync.
+8. Check the **Provider request log** to see the exact endpoint and model used.
 
 Camera and microphone need a secure context. GitHub Pages is HTTPS, so the
 installed PWA works. A plain `http://192.168.x.x` LAN address will not get

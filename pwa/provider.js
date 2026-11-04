@@ -12,42 +12,39 @@
 // hosts stay visible with their endpoint and CORS reason, and are refused before
 // any network call.
 //
-// Free models are the default. Paid model names stay hidden until the user
-// explicitly enables paid access; a known paid model is refused before the
-// network call when free mode is selected. Nothing here invents a fallback: if
-// the chosen provider or model cannot do what was asked, the request fails with
-// an explicit message.
+// HARD CONSTRAINT: only Meta-published models may be called. Every model id is
+// checked by isMetaModelId() before any key check or network call, including ids
+// typed by hand for Modal or a custom relay. Access is paid-tier by default.
+// Nothing here invents a fallback: if the chosen provider or model cannot do what
+// was asked, the request fails with an explicit message.
 
 export const PROVIDERS = {
   openrouter: {
     id: 'openrouter',
-    label: 'OpenRouter — free vision / paid Meta',
+    label: 'OpenRouter — Meta Llama (paid)',
     endpoint: 'https://openrouter.ai/api/v1/chat/completions',
     host: 'openrouter.ai',
-    // Free by default so a first request does not bill the user. Paid Meta
-    // models are selectable only after paid access is enabled.
-    defaultModel: 'nvidia/nemotron-3.5-super-vl:free',
+    defaultModel: 'meta-llama/llama-4-maverick',
     paidDefaultModel: 'meta-llama/llama-4-maverick',
     browserCors: 'verified-allowed',
     vision: 'verified',
     consent: false,
-    retention: 'OpenRouter routes each request to the upstream model provider. Check that model page for its data policy; free does not automatically mean private.',
-    note: 'Free vision models are the default, so a first request does not bill you. Paid Meta Llama 4 Maverick and Scout are hidden until you enable paid access. Maverick is genuinely multimodal, but it is NOT free: $0.1875/M input and $0.6525/M output, and a small canary cost $0.0000219. Enable paid access only if you have billing set up on OpenRouter.',
+    retention: 'OpenRouter routes each request to the upstream model provider. Check that model page for its data policy.',
+    note: 'Meta Llama models only. Maverick is genuinely multimodal and is NOT free: $0.1875/M input and $0.6525/M output, and a small canary cost $0.0000219. Enable paid access only if you have billing set up on OpenRouter.',
   },
   groq: {
     id: 'groq',
-    label: 'Groq — account-dependent vision/text',
+    label: 'Groq — Meta text/voice only (no image input)',
     endpoint: 'https://api.groq.com/openai/v1/chat/completions',
     host: 'api.groq.com',
     // No automatic default. Groq access and vision support vary by account, so
     // the model is chosen explicitly and must pass Test before it is trusted.
     defaultModel: '',
-    previewDefaultModel: 'meta-models/muse-spark-open',
     browserCors: 'verified-allowed',
-    vision: 'conditional',
+    vision: 'none',
     consent: false,
     retention: 'Groq API terms apply; prompts are sent to Groq for this request.',
-    note: 'No default: Groq access and vision capability depend on your account. Llama 3.3 70B Versatile is Enterprise-only, was retired for Free and Developer users on 2026-08-16, and is text-only, so it is never used for images. The documented vision candidates are Meta Muse Spark Open (limited preview) and Qwen 3.8 27B; neither is verified here. Enable preview access, choose a candidate, paste your key, and press Test before relying on it.',
+    note: 'Text, chat and voice input only. Images cannot be sent to Groq: it has no vision access in this app, so image requests are refused before any network call. Use OpenRouter (or the desktop app) for photos. Llama 3.3 70B Versatile is Enterprise-only; your account may expose no Meta chat model at all, so press Test before relying on it.',
   },
   'nvidia-nim': {
     id: 'nvidia-nim',
@@ -139,42 +136,8 @@ export const PROVIDER_HOSTS = Object.values(PROVIDERS)
 
 // OpenRouter catalogue checked live on 2026-11-04 (GET /api/v1/models) and,
 // where marked verified, with a real synthetic image request. Free models are
-// listed first; paid Meta models carry their exact prices and stay hidden until
-// the user enables paid access. Free does not mean private.
+// Meta models only, each with its exact price.
 export const OPENROUTER_MODELS = {
-  'nvidia/nemotron-3.5-super-vl:free': {
-    label: 'NVIDIA Nemotron 3.5 Super VL — free, vision (non-Meta fallback)',
-    pricing: 'free',
-    tier: 'free',
-    modalities: ['text', 'image', 'video'],
-    vision: true,
-    verified: true,
-    jsonMode: true,
-    reasoning: true,
-    note: 'Verified with a synthetic image: correctly named a red circle and blue rectangle. Reasoning uses output tokens, so allow enough max_tokens. Non-Meta fallback.',
-  },
-  'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free': {
-    label: 'NVIDIA Nemotron 3 Nano Omni — free, vision (non-Meta fallback)',
-    pricing: 'free',
-    tier: 'free',
-    modalities: ['text', 'image', 'video', 'audio'],
-    vision: true,
-    verified: true,
-    jsonMode: false,
-    reasoning: true,
-    note: 'Verified with a synthetic image in this audit. Non-Meta fallback.',
-  },
-  'dots-studio/dots-3-note-preview:free': {
-    label: 'Dots 3 Note Preview — free, vision (non-Meta fallback)',
-    pricing: 'free',
-    tier: 'free',
-    modalities: ['text', 'image'],
-    vision: true,
-    verified: true,
-    jsonMode: true,
-    reasoning: true,
-    note: 'Verified with a synthetic image in this audit. Non-Meta fallback.',
-  },
   'meta-llama/llama-4-maverick': {
     label: 'Meta Llama 4 Maverick — vision, paid per token',
     pricing: '$0.1875/M input, $0.6525/M output',
@@ -217,71 +180,29 @@ export const OPENROUTER_MODELS = {
   },
 };
 
-// Groq account models. Access varies by account, so nothing here is a default
-// and nothing is verified on the supplied account. Llama 3.3 70B Versatile is
-// Enterprise-only, retired for Free/Developer on 2026-08-16, and text-only.
-// Documented vision candidates are Meta Muse Spark Open (limited preview) and
-// Qwen 3.8 27B (non-Meta). Both are unverified here; Test before relying on them.
+// Groq models. Groq is text/voice only in IntentLens: no model here accepts an
+// image. Llama 3.3 70B Versatile is Enterprise-only on Groq, so your account may
+// expose no Meta chat model at all; press Test before relying on it.
 export const GROQ_TEXT_MODELS = {
-  'meta-models/muse-spark-open': {
-    label: 'Meta Muse Spark Open — vision, limited preview',
-    pricing: 'Limited preview; account access required',
-    tier: 'preview',
-    modalities: ['text', 'image'],
-    vision: true,
-    verified: false,
-    meta: true,
-    note: 'Documented Groq vision candidate on a limited preview. It is NOT verified on the supplied account; Test key will show whether your account has it. Enable preview access before selecting it.',
-  },
-  'qwen/qwen3.8-27b': {
-    label: 'Qwen 3.8 27B — vision candidate, limited preview (non-Meta)',
-    pricing: 'Limited preview; account access required',
-    tier: 'preview',
-    modalities: ['text', 'image'],
-    vision: true,
-    verified: false,
-    meta: false,
-    note: 'Documented Groq vision candidate per the current provider docs, but not image-tested here. It is not a Meta model. Enable preview access and Test before relying on it.',
-  },
-  'openai/gpt-oss-120b': {
-    label: 'OpenAI GPT-OSS 120B — text, verified (non-Meta)',
-    pricing: 'Groq account limits apply',
-    tier: 'free',
-    modalities: ['text'],
-    vision: false,
-    verified: true,
-    meta: false,
-    note: 'Verified with a text-only request on 2026-11-04. Not a Meta model; kept as a labelled text-only fallback.',
-  },
-  'openai/gpt-oss-20b': {
-    label: 'OpenAI GPT-OSS 20B — text (non-Meta)',
-    pricing: 'Groq account limits apply',
-    tier: 'free',
-    modalities: ['text'],
-    vision: false,
-    verified: false,
-    meta: false,
-    note: 'Not a Meta model. Text only.',
-  },
-  'allam-2-7b': {
-    label: 'ALLaM 2 7B — text',
-    pricing: 'Groq account limits apply',
-    tier: 'free',
-    modalities: ['text'],
-    vision: false,
-    verified: false,
-    meta: false,
-    note: 'Not a Meta model. Text only.',
-  },
   'meta-llama/llama-3.3-70b-versatile': {
-    label: 'Meta Llama 3.3 70B Versatile — Enterprise only, text',
-    pricing: 'Enterprise plan only',
+    label: 'Meta Llama 3.3 70B Versatile — text only (Enterprise on Groq)',
+    pricing: 'Groq account limits apply',
     tier: 'enterprise',
     modalities: ['text'],
     vision: false,
     verified: false,
     meta: true,
-    note: 'Enterprise-only model, retired for Free and Developer users on 2026-08-16. It is text-only and is never used for images or as the app default.',
+    note: 'Text, chat and voice transcript only. Images are always refused for Groq. Enterprise-only on Groq, so it may not exist on your account.',
+  },
+  'meta-models/muse-spark-open': {
+    label: 'Meta Muse Spark Open — text only here (limited preview)',
+    pricing: 'Limited preview; account access required',
+    tier: 'preview',
+    modalities: ['text'],
+    vision: false,
+    verified: false,
+    meta: true,
+    note: 'Used for text only. Image input is disabled for every Groq model in this app.',
   },
 };
 
@@ -414,6 +335,17 @@ export const PROVIDER_MODELS = {
   modal: MODAL_MODELS,
 };
 
+
+// HARD CONSTRAINT: Meta-published models only. Any other vendor's model is
+// refused before a key check or network call.
+const META_MODEL_ID = /^(meta-llama\/|meta\/|meta-models\/|@cf\/meta\/)/i;
+const NON_META_MARKERS = /nemotron|nvidia|gpt-oss|qwen|mistral|gemma|deepseek|dots-/i;
+
+export function isMetaModelId(model) {
+  const id = String(model || '').trim();
+  return META_MODEL_ID.test(id) && !NON_META_MARKERS.test(id);
+}
+
 function fail(code, message, extra = {}) {
   return { ok: false, code, message, ...extra };
 }
@@ -435,7 +367,7 @@ export const ACCESS_TIERS = ['free', 'preview', 'paid'];
 const TIER_RANK = { free: 0, preview: 1, paid: 2, enterprise: 2 };
 
 /** The default model for a provider at the selected access tier. */
-export function defaultModelFor(providerId, tier = 'free') {
+export function defaultModelFor(providerId, tier = 'paid') {
   const provider = PROVIDERS[providerId];
   if (!provider) return '';
   if (tier === 'paid' && provider.paidDefaultModel) return provider.paidDefaultModel;
@@ -446,7 +378,7 @@ export function defaultModelFor(providerId, tier = 'free') {
 }
 
 /** Catalogue entries visible at the selected access tier. */
-export function modelsFor(providerId, tier = 'free') {
+export function modelsFor(providerId, tier = 'paid') {
   const catalogue = PROVIDER_MODELS[providerId];
   if (!catalogue) return {};
   const limit = TIER_RANK[tier] ?? 0;
@@ -460,8 +392,8 @@ export function modelTier(providerId, model) {
   return info?.tier || null;
 }
 
-/** Known paid/preview models are refused while free mode is selected. */
-export function modelAllowedAtTier(providerId, model, tier = 'free') {
+/** Known preview-tier models are refused until preview access is selected. */
+export function modelAllowedAtTier(providerId, model, tier = 'paid') {
   const rank = TIER_RANK[modelTier(providerId, model)];
   if (rank === undefined) return true; // unknown typed id: the provider decides
   return rank <= (TIER_RANK[tier] ?? 0);
@@ -471,7 +403,7 @@ export function modelFor(providerId, override) {
   const chosen = String(override || '').trim();
   if (chosen) return chosen;
   // Never fall back to another provider's model.
-  return defaultModelFor(providerId, 'free');
+  return defaultModelFor(providerId, 'paid');
 }
 
 export function modelInfo(providerId, model) {
@@ -577,7 +509,7 @@ export async function callModel({
   prompt,
   imageDataUrl = null,
   baseUrl = '',
-  accessTier = 'free',
+  accessTier = 'paid',
   timeoutMs = 180000,
   expectJson = true,
   requestMode = '',
@@ -617,10 +549,17 @@ export async function callModel({
   if (!requestedModel) {
     return fail('NO_MODEL', 'Choose or type a model id in Settings. No model is sent and no request is made.', meta);
   }
+  if (!isMetaModelId(requestedModel)) {
+    return fail(
+      'NON_META_MODEL',
+      `${requestedModel} is not a Meta model. IntentLens only calls Meta-published models, so no request was made.`,
+      meta,
+    );
+  }
   if (!modelAllowedAtTier(providerId, requestedModel, accessTier)) {
     return fail(
       'MODEL_ACCESS_LOCKED',
-      `${requestedModel} is a ${modelTier(providerId, requestedModel)} model and paid access is off. Enable preview/paid access in Settings only if you have that account, or choose a free model.`,
+      `${requestedModel} is a ${modelTier(providerId, requestedModel)} model and that access level is off. Enable preview or paid access in Settings only if you have that account.`,
       meta,
     );
   }

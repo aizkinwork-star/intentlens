@@ -1450,6 +1450,7 @@ async function startCamera() {
   try {
     setStatus('Starting camera…', 'busy');
     await camera.start();
+    await populateCamSel(); // device labels only exist after permission
     state.assistant.photoLoaded = false;
     state.assistant.aligned = false;
     renderWorkspace();
@@ -1479,6 +1480,30 @@ async function stopCamera() {
   if (trackedPill) trackedPill.hidden = true;
   hideHandOutline();
 }
+
+const camSel = $('camSel');
+const CAM_KEY = 'intentlens.cameraId';
+try { camera.deviceId = localStorage.getItem(CAM_KEY) || ''; } catch { /* optional */ }
+
+async function populateCamSel() {
+  if (!camSel || !camera.listDevices) return;
+  const devices = await camera.listDevices();
+  const keep = camera.deviceId || '';
+  camSel.replaceChildren(new Option('Default camera', ''));
+  devices.forEach((d, i) => camSel.appendChild(new Option(d.label || `Camera ${i + 1}`, d.deviceId)));
+  camSel.value = devices.some((d) => d.deviceId === keep) ? keep : '';
+  camSel.hidden = devices.length < 2;
+}
+
+camSel?.addEventListener('change', async () => {
+  camera.deviceId = camSel.value;
+  try { localStorage.setItem(CAM_KEY, camSel.value); } catch { /* optional */ }
+  if (camera.getStatus().state === 'ready') {
+    await stopCamera();
+    await startCamera();
+  }
+});
+navigator.mediaDevices?.addEventListener?.('devicechange', () => populateCamSel());
 
 camBtn.addEventListener('click', async () => {
   if (camera.getStatus().state === 'ready') await stopCamera();
@@ -3815,7 +3840,7 @@ function selectedSetupProvider() {
 const SETUP_TIER_RANK = { free: 0, preview: 1, paid: 2, enterprise: 2 };
 
 function selectedSetupTier() {
-  return $('setupAccessTier')?.value || localModelStatus?.accessTier || 'free';
+  return $('setupAccessTier')?.value || localModelStatus?.accessTier || 'paid';
 }
 
 function setupVisionModels(provider) {

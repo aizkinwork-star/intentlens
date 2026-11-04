@@ -112,8 +112,8 @@ without pretending it already works.
 │                         │                                          │
 │         ┌───────────────┴────────────────┐                         │
 │         ▼                                ▼                         │
-│   OpenRouter API                   Groq API (account-dependent)    │
-│   free vision (default)            no default; preview vision only │
+│   OpenRouter API                   Groq API (text/voice only)      │
+│   Meta Llama 4 Maverick (paid)     no image input                  │
 │         │                                                          │
 │         └──────── HTTPS + CORS ─────────► upstream model           │
 │                                                                    │
@@ -297,41 +297,45 @@ Never commit `.env`, `API Keys*.txt`, `credentials.safe` or
 
 ### Provider matrix
 
-Free models are the priority everywhere. Paid model names are hidden unless the
-user explicitly enables paid access; a known paid model is refused before the
-network call while free mode is selected. The desktop catalogue is Meta-only, so
-its free tier is the free-allocation Meta hosts (NVIDIA NIM, Cloudflare). The
-phone can also use free non-Meta OpenRouter vision models. A blank cell means the
-host is not offered there. "Desktop only" means the host works through the
-Electron server but cannot be read by a browser because of CORS.
+**Only Meta-published models are ever called, on every provider.** Every model
+id is checked against a Meta-only allowlist before a key check or network call;
+anything else, including ids typed by hand, is refused with `NON_META_MODEL`.
+Access is **paid** by default: no free Meta vision model was usable, so the app
+assumes you have billing on the host you choose. "Desktop only" means the host
+works through the Electron server but cannot be read by a browser because of CORS.
 
 | Provider | Desktop | Phone PWA | Default / model | Cost | Notes |
 |---|---|---|---|---|---|
-| **OpenRouter** | **Yes** | **Yes** | Phone: `nvidia/nemotron-3.5-super-vl:free`. Desktop: `meta-llama/llama-4-maverick` only after paid access | Free by default; paid Meta optional | CORS `*`. Phone defaults to a free vision model and lists paid Meta models only under paid access. Maverick is genuinely multimodal but **not free**: $0.1875/M input, $0.6525/M output. |
-| **NVIDIA NIM** | **Yes** | **Listed, blocked** | `meta/muse-glimmer-30b` (Meta vision) | Free tier / NVIDIA account | Muse verified with a real image. First in desktop failover. No `Access-Control-Allow-Origin`; the phone shows the endpoint and refuses before network. |
-| **Cloudflare Workers AI** | **Yes** | **Listed, blocked** | `@cf/meta/llama-3.2-11b-vision-instruct` (Meta vision) | Free tier / account | Verified with a real image after licence acceptance. Second in desktop failover. Preflight OPTIONS returns 405 and no CORS; needs Account ID + token. |
-| **BlockRun** | **Yes (paid)** | **Listed, blocked** | `meta-llama/llama-4-maverick` (Meta vision) | **Paid x402** | Hidden from the free tier. The supplied key returned HTTP 402 `Payment verification failed` and the host sends no CORS. |
-| **Modal** | **Yes (paid)** | **Listed, user endpoint** | `meta-llama/Llama-4-Maverick-17B-128E-Instruct` | **Paid** | Hidden from the free tier. Paste your deployed `*.modal.run` OpenAI-compatible URL. **NOT tested** in the audit. |
-| **Groq** | **Yes, no default** | **Yes, no default** | None. Preview candidates: `meta-models/muse-spark-open` (Meta) and `qwen/qwen3.8-27b` | Account / preview | Access and vision support depend on your account. Llama 3.3 70B Versatile is Enterprise-only, retired for Free/Developer on 2026-08-16, and text-only, so it is never a default or a vision model. No model is sent until one is chosen and tested. |
-| **Custom relay** | Not wired | **Yes** | Your choice | Your cost | Your HTTPS relay must allow this Pages origin. Use it for a blocked host if you do not want the desktop app. |
+| **OpenRouter** | **Yes** | **Yes** | `meta-llama/llama-4-maverick` (Meta vision) | **Paid per token** | CORS `*`, so it is the only image-capable host the phone can call directly. $0.1875/M input, $0.6525/M output. |
+| **Cloudflare Workers AI** | **Yes** | **Listed, blocked** | `@cf/meta/llama-3.2-11b-vision-instruct` (Meta vision) | Cloudflare account pricing | Verified with a real image after licence acceptance. Preflight OPTIONS returns 405 and no CORS; needs Account ID + token. |
+| **NVIDIA NIM** | **Yes** | **Listed, blocked** | `meta/muse-glimmer-30b` (Meta vision) | NVIDIA account | Hosts Meta models only here. No `Access-Control-Allow-Origin`, so the phone refuses before network. |
+| **BlockRun** | **Yes (paid)** | **Listed, blocked** | `meta-llama/llama-4-maverick` (Meta vision) | **Paid x402** | The supplied key returned HTTP 402 `Payment verification failed` and the host sends no CORS. |
+| **Modal** | **Yes (paid)** | **Listed, user endpoint** | `meta-llama/Llama-4-Maverick-17B-128E-Instruct` | **Paid** | Paste your deployed `*.modal.run` OpenAI-compatible URL. **NOT tested** in the audit. |
+| **Groq** | **Text/voice only** | **Text/voice only** | None | Groq account | **No image input, ever.** Chat and voice transcripts only; image requests are refused before any network call. Llama 3.3 70B Versatile is Enterprise-only on Groq, so a free account may expose no Meta chat model. |
+| **Custom relay** | Not wired | **Yes** | Your choice (Meta ids only) | Your cost | Your HTTPS relay must allow this Pages origin. Non-Meta model ids are still refused. |
+
+**Limitations of the paid-only setup.** On the phone, every provider call goes
+straight from the browser, so only OpenRouter (and text-only Groq) can work
+without a relay; Cloudflare, NVIDIA-hosted Meta models and BlockRun need the PC
+app or your own relay. Phone camera and photo upload have **not been tested on a
+physical phone**. Free tiers on the listed hosts may exist but are not relied on.
 
 ### Desktop provider setup
 
 1. Menu → **Vision Provider & Model** → **Configure provider**.
-2. Choose a **Model access** level. **Free only** is the default; paid hosts and
-   models stay hidden until you explicitly enable Preview or Paid.
-3. Choose NVIDIA NIM, Cloudflare Workers AI, OpenRouter, BlockRun, Modal or Groq.
+2. **Model access** is **All Meta models (paid per token)**. Only Meta models
+   are ever offered or sent.
+3. Choose OpenRouter, Cloudflare Workers AI, NVIDIA NIM, BlockRun, Modal or Groq
+   (Groq is text/voice only).
 4. Enter the key. Cloudflare also needs the Account ID; Modal also needs the
    HTTPS URL of your deployed endpoint.
 5. Choose a vision model from that provider's Meta catalogue.
 6. Press **Save & test**.
 
 A provider with a catalogued **vision** model is eligible even when the model is
-not verified yet, so BlockRun and Modal can be configured and tested after paid
-access is enabled instead of being hidden. The UI keeps the "not verified yet"
+not verified yet, so BlockRun and Modal can be configured and tested. The UI keeps the "not verified yet"
 warning and the test result tells you whether it actually works. Text-only and
-classifier models are never eligible for images. Groq has no default: choose a
-preview vision candidate and press Test before relying on it.
+classifier models are never eligible for images. Groq never receives an image.
 
 Modal is **paid and was not tested**. BlockRun is **paid** and the supplied key
 returned HTTP 402. Neither is presented as working.
@@ -339,17 +343,15 @@ returned HTTP 402. Neither is presented as working.
 ### Phone provider setup
 
 1. Settings → Provider.
-2. **Model access** defaults to **Free only**. The phone default is
-   `nvidia/nemotron-3.5-super-vl:free`, a free vision model, so a first request
-   does not bill you. Paid Meta Llama 4 Maverick/Scout stay hidden until paid
-   access is enabled.
+2. **Model access** is **All Meta models (paid per token)**. The default model is
+   `meta-llama/llama-4-maverick` on OpenRouter, which bills your OpenRouter
+   account per token.
 3. Paste a key; it stays in memory for this tab. The key is sent directly from
    the browser and is never stored.
-4. Optional: type any model id. The exact id is sent in the request body and is
-   shown in the request log. Known text-only models are refused for images;
-   known paid models are refused in free mode; unknown ids are sent as typed and
-   the provider decides.
-5. NVIDIA NIM, Cloudflare Workers AI and BlockRun are listed with their endpoint
+4. Optional: type a Meta model id. The exact id is sent in the request body and
+   is shown in the request log. Non-Meta ids and text-only models are refused
+   for images before any network call.
+5. Cloudflare Workers AI, NVIDIA-hosted Meta models and BlockRun are listed with their endpoint
    and a **blocked** reason. They are refused before any network call on the
    phone. Use the PC app or your own relay.
 6. Modal and Custom relay accept a user-supplied HTTPS base URL. Modal is paid
@@ -360,8 +362,8 @@ returned HTTP 402. Neither is presented as working.
 Copy `.env.example` to `.env` and set only the providers you use:
 
 ```text
-# Free only by default. Set to preview or paid only if you have that access.
-MODEL_ACCESS_TIER=free
+# Paid by default (all usable Meta vision models are paid or account-gated).
+MODEL_ACCESS_TIER=paid
 
 OPENROUTER_API_KEY=...
 OPENROUTER_MODEL_ID=meta-llama/llama-4-maverick
@@ -384,13 +386,12 @@ MODAL_MODEL_ID=meta-llama/Llama-4-Maverick-17B-128E-Instruct
 
 # No default. Set a model you have confirmed with Test connection.
 GROQ_API_KEY=...
-GROQ_VISION_MODEL=
 
-PROVIDER_PRIORITY=nvidia-nim,cloudflare-workers-ai,groq,openrouter,blockrun,modal
+PROVIDER_PRIORITY=openrouter,cloudflare-workers-ai,nvidia-nim,blockrun,modal,groq
 ALLOW_OUTBOUND_NETWORK=true
 ```
 
-`MODEL_ACCESS_TIER=free` makes paid hosts ineligible even if their key is saved.
+`MODEL_ACCESS_TIER` is always treated as paid unless you explicitly set `preview`.
 Set it to `paid` only when you actually have billing on that provider.
 
 `ALLOW_OUTBOUND_NETWORK=false` blocks cloud analysis and provider tests without
@@ -406,8 +407,8 @@ rectangle), never private photos.
 
 | Host | What was checked | Result |
 |---|---|---|
-| `openrouter.ai` | CORS preflight; free vision; paid Meta vision | CORS `*`. `nvidia/nemotron-3.5-super-vl:free` and two free alternatives returned 200 and correctly named the shapes. `meta-llama/llama-4-maverick` returned 200; canary cost $0.0000219. |
-| `api.groq.com` | CORS; model list; text; vision | CORS `*`. 11 models; Meta entries only Prompt Guard 2 22M/86M classifiers; no vision model. GPT-OSS 120B and Qwen 3.8 27B text calls returned 200. |
+| `openrouter.ai` | CORS preflight; paid Meta vision | CORS `*`. `meta-llama/llama-4-maverick` returned 200 and correctly named the shapes; a small canary cost about $0.00002. |
+| `api.groq.com` | CORS; model list; text | CORS `*`. Meta entries on the tested account were only Prompt Guard 2 22M/86M classifiers; no Meta chat or vision model. Groq is therefore text/voice only in IntentLens. |
 | `integrate.api.nvidia.com` | CORS; Muse image | No CORS. `meta/muse-glimmer-30b` returned 200 and correctly named the shapes. 11B returned 404; 90B timed out. |
 | `api.cloudflare.com` | CORS; Workers AI image | No CORS (OPTIONS 405). `@cf/meta/llama-3.2-11b-vision-instruct` returned 200 after licence acceptance and correctly named the shapes. |
 | `api.blockrun.ai` | Text and image | 115 models listed, but both calls returned 402 `Payment verification failed`; no CORS. Paid and currently unusable with the supplied key. |
@@ -430,14 +431,12 @@ The development agents that helped build this repository were **not Meta
 models**, because Meta model API access was not available to them. That does not
 describe the shipped inference path:
 
-- Free models are the default. The phone uses the free OpenRouter vision model
-  `nvidia/nemotron-3.5-super-vl:free`; the desktop free tier is NVIDIA NIM
-  (Muse Glimmer 30B) and Cloudflare Workers AI (Llama 3.2 11B Vision).
-- Paid Meta models are available only after paid access is enabled: OpenRouter
-  and BlockRun to Llama 4 Maverick, Modal to Llama 4 Maverick. Groq has **no
-  default**; its documented vision candidates are preview-only and unverified.
-- Non-Meta free OpenRouter vision models and Groq's GPT-OSS/Qwen text models stay
-  selectable as labelled fallbacks, never as a silent substitution for Meta.
+- **Only Meta models are called**, on every provider. A hard allowlist check
+  runs before any key check or request, and `metaOnly.test.js` fails the build
+  if a non-Meta model appears in a catalogue.
+- Vision: OpenRouter and BlockRun to Llama 4 Maverick, Modal to Llama 4
+  Maverick, Cloudflare to Llama 3.2 11B Vision, NVIDIA-hosted Meta Muse Glimmer.
+- Groq is **text and voice only**; it never receives an image.
 - Classifiers (Prompt Guard, Llama Guard) are never presented as chat or vision
   models.
 

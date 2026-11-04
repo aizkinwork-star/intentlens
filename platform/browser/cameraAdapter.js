@@ -5,8 +5,8 @@
 import { CameraAdapter, CameraFrame } from '../cameraAdapter.js';
 
 export class BrowserCameraAdapter extends CameraAdapter {
-  constructor({ kind = 'phone-camera', facingMode = 'environment', width = 1280, height = 720 } = {}) {
-    super({ kind, facingMode, width, height });
+  constructor({ kind = 'phone-camera', facingMode = 'environment', width = 1280, height = 720, deviceId = '' } = {}) {
+    super({ kind, facingMode, width, height, deviceId });
   }
 
   async start() {
@@ -18,14 +18,7 @@ export class BrowserCameraAdapter extends CameraAdapter {
     this.state = 'starting';
     this.detail = null;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: this.kind === 'phone-camera' ? { ideal: 'environment' } : this.facingMode,
-          width: { ideal: this.requestedWidth },
-          height: { ideal: this.requestedHeight },
-          audio: false,
-        },
-      });
+      const stream = await this._openStream();
       this.stream = stream;
       this.video = document.createElement('video');
       this.video.playsInline = true;
@@ -42,6 +35,35 @@ export class BrowserCameraAdapter extends CameraAdapter {
           ? 'No camera found on this device.'
           : `Camera failed: ${err.message}`;
       throw err;
+    }
+  }
+
+  // Opens the chosen camera (e.g. an external USB webcam) by deviceId. If it was
+  // unplugged, falls back to the default camera instead of failing.
+  async _openStream() {
+    const size = { width: { ideal: this.requestedWidth }, height: { ideal: this.requestedHeight } };
+    const gum = (video) => navigator.mediaDevices.getUserMedia({ video, audio: false });
+    if (this.deviceId) {
+      try {
+        return await gum({ ...size, deviceId: { exact: this.deviceId } });
+      } catch (err) {
+        if (!['OverconstrainedError', 'NotFoundError'].includes(err.name)) throw err;
+        this.deviceId = '';
+      }
+    }
+    return gum({
+      ...size,
+      facingMode: this.kind === 'phone-camera' ? { ideal: 'environment' } : this.facingMode,
+    });
+  }
+
+  // Video inputs the OS exposes. Labels are empty until camera permission is granted.
+  async listDevices() {
+    if (!navigator.mediaDevices?.enumerateDevices) return [];
+    try {
+      return (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput');
+    } catch {
+      return [];
     }
   }
 

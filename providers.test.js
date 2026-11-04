@@ -41,13 +41,13 @@ test('outbound hosts are HTTPS and allowlisted only', () => {
   assert.equal(isAllowedOutboundHost('not a url'), false);
 });
 
-test('default provider priority is free-first, paid hosts last', () => {
+test('default provider priority puts vision hosts first and text-only Groq last', () => {
   assert.deepEqual(
-    (process.env.PROVIDER_PRIORITY || 'nvidia-nim,cloudflare-workers-ai,groq,openrouter,blockrun,modal')
+    (process.env.PROVIDER_PRIORITY || 'openrouter,cloudflare-workers-ai,nvidia-nim,blockrun,modal,groq')
       .split(',').map((s) => s.trim()).filter(Boolean),
-    ['nvidia-nim', 'cloudflare-workers-ai', 'groq', 'openrouter', 'blockrun', 'modal'],
+    ['openrouter', 'cloudflare-workers-ai', 'nvidia-nim', 'blockrun', 'modal', 'groq'],
   );
-  assert.ok(config.providerPriority.indexOf('nvidia-nim') < config.providerPriority.indexOf('openrouter'));
+  assert.ok(config.providerPriority.indexOf('openrouter') < config.providerPriority.indexOf('groq'));
 });
 
 test('placeholder keys never make a provider configured', () => {

@@ -15,6 +15,7 @@ import {
   modelAllowedAtTier,
   providerConfigured,
   providerSupportsModel,
+  normalizeTier,
 } from '../config.js';
 import {
   loadCredentials,
@@ -135,7 +136,7 @@ export async function handleSaveCloudProvider(req, res) {
   const modelId = String(body?.modelId || '').trim();
   const textModel = String(body?.textModel || '').trim();
   const tierInput = String(body?.accessTier || '').toLowerCase();
-  const requestedTier = ['free', 'preview', 'paid'].includes(tierInput) ? tierInput : null;
+  const requestedTier = tierInput ? normalizeTier(tierInput) : null;
   const accessTier = requestedTier || config.accessTier;
 
   // Priority-only update.
@@ -360,8 +361,7 @@ export async function handleTestCloudProvider(req, res) {
   const apiKey = String(body.apiKey || stored[envKey] || process.env[envKey] || '').trim();
   const modelId = String(body.modelId || stored[PROVIDER_ENV[provider].model] || selectedModel(provider) || '').trim();
   const accountId = String(body.accountId || stored.CLOUDFLARE_ACCOUNT_ID || process.env.CLOUDFLARE_ACCOUNT_ID || '').trim();
-  const tierInput = String(body.accessTier || config.accessTier || 'free').toLowerCase();
-  const accessTier = ['free', 'preview', 'paid'].includes(tierInput) ? tierInput : 'free';
+  const accessTier = normalizeTier(body.accessTier || config.accessTier);
 
   if (!config.allowOutboundNetwork) {
     json(res, 200, {

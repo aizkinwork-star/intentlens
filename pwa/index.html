@@ -3,8 +3,8 @@
 <head>
   <!-- connect-src allows any HTTPS origin only because Modal deployments and the
        optional "Custom relay" provider must point at a user-owned URL. Fixed
-       providers are OpenRouter, Groq, NVIDIA NIM, Cloudflare Workers AI and
-       BlockRun. GitHub Pages cannot set response headers, so this CSP is
+       providers are OpenRouter, Groq (text only), NVIDIA NIM, Cloudflare Workers AI and
+       BlockRun, all restricted to Meta models. GitHub Pages cannot set response headers, so this CSP is
        delivered as a meta tag only. -->
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -52,8 +52,17 @@
     <section class="controls">
       <button id="cameraBtn" class="primary" type="button">Start camera</button>
       <button id="captureBtn" type="button" disabled>Capture</button>
+      <button id="uploadBtn" type="button">Upload photo</button>
+      <input id="uploadInput" type="file" accept="image/*" hidden>
       <button id="micBtn" type="button" disabled>Mic</button>
       <button id="chatBtn" class="ghost" type="button" aria-pressed="false">Chat</button>
+    </section>
+
+    <section class="controls">
+      <select id="cameraSelect" aria-label="Camera" hidden></select>
+      <button id="exportBtn" class="ghost" type="button">Export project</button>
+      <button id="importBtn" class="ghost" type="button">Import project</button>
+      <input id="importInput" type="file" accept="application/json,.json" hidden>
     </section>
 
     <section class="commandRow">
@@ -126,9 +135,7 @@
 
       <label>Model access
         <select id="accessTier">
-          <option value="free" selected>Free only (recommended)</option>
-          <option value="preview">Include limited-preview models</option>
-          <option value="paid">Include paid models (I have access)</option>
+          <option value="paid" selected>All Meta models (paid per token)</option>
         </select>
       </label>
       <p id="accessNote" class="meta"></p>

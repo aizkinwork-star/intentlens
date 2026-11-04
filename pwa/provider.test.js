@@ -20,22 +20,21 @@ test('extractJson returns null when there is no object', () => {
   assert.equal(extractJson('{"broken":'), null);
 });
 
-test('free defaults win and there is no cross-provider substitution', () => {
+test('paid Meta defaults win and there is no cross-provider substitution', () => {
   for (const provider of Object.values(PROVIDERS)) {
     assert.ok(provider.label, provider.id);
     assert.ok(provider.browserCors, provider.id);
   }
-  // Free vision first: a first request must not bill the user.
-  assert.equal(PROVIDERS.openrouter.defaultModel, 'nvidia/nemotron-3.5-super-vl:free');
-  assert.match(PROVIDERS.openrouter.defaultModel, /:free$/);
+  // The default is a Meta vision model, billed per token.
+  assert.equal(PROVIDERS.openrouter.defaultModel, 'meta-llama/llama-4-maverick');
   // Groq has no safe default: access and vision support vary by account.
   assert.equal(PROVIDERS.groq.defaultModel, '');
   assert.equal(modelFor('groq', ''), '');
   assert.equal(modelFor('custom', ''), '');
   assert.equal(modelFor('custom', 'custom-model'), 'custom-model');
-  // Paid defaults only appear after the user enables paid access.
+  // Paid is the default access level.
   assert.equal(defaultModelFor('openrouter', 'paid'), 'meta-llama/llama-4-maverick');
-  assert.equal(defaultModelFor('groq', 'preview'), 'meta-models/muse-spark-open');
+  assert.equal(defaultModelFor('groq', 'preview'), '');
   // The full provider set is visible, including desktop-only hosts.
   for (const id of ['openrouter', 'groq', 'nvidia-nim', 'cloudflare-workers-ai', 'blockrun', 'modal', 'custom']) {
     assert.ok(PROVIDERS[id], id);
@@ -49,14 +48,14 @@ test('free defaults win and there is no cross-provider substitution', () => {
   assert.match(PROVIDERS.modal.label, /untested/i);
 });
 
-test('free access hides paid/preview models until the user opts in', () => {
+test('narrowing access to free hides paid and preview models; paid shows them all', () => {
   assert.equal(modelAllowedAtTier('openrouter', 'meta-llama/llama-4-maverick', 'free'), false);
   assert.equal(modelAllowedAtTier('openrouter', 'meta-llama/llama-4-maverick', 'paid'), true);
   assert.equal('meta-llama/llama-4-maverick' in modelsFor('openrouter', 'free'), false);
-  assert.equal('nvidia/nemotron-3.5-super-vl:free' in modelsFor('openrouter', 'free'), true);
+  assert.equal('meta-llama/llama-4-maverick' in modelsFor('openrouter'), true);
   assert.equal(modelAllowedAtTier('groq', 'meta-llama/llama-3.3-70b-versatile', 'free'), false);
   assert.equal(modelAllowedAtTier('groq', 'meta-models/muse-spark-open', 'free'), false);
   assert.equal(modelAllowedAtTier('groq', 'meta-models/muse-spark-open', 'preview'), true);
   // A typed id that is not catalogued is left to the provider to judge.
-  assert.equal(modelAllowedAtTier('openrouter', 'someone/new-model:free', 'free'), true);
+  assert.equal(modelAllowedAtTier('openrouter', 'meta-llama/new-model', 'free'), true);
 });

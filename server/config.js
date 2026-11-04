@@ -87,11 +87,11 @@ export const META_MODEL_CATALOG = {
       // No automatic default. Access and vision support vary by account, so the
       // model must be chosen explicitly and tested before it is trusted.
       'meta-models/muse-spark-open': {
-        name: 'Meta Muse Spark Open (limited preview, vision)',
-        modality: 'vision',
+        name: 'Meta Muse Spark Open (limited preview, text only here)',
+        modality: 'text',
         verified: false,
         tier: 'preview',
-        note: 'Documented Groq vision candidate on a limited preview. Not verified on the supplied account; Test connection shows whether your account has it.',
+        note: 'Text only in IntentLens: Groq has no vision access here, so images are never sent to Groq. Test connection shows whether your account has the model.',
       },
       'meta-llama/llama-3.3-70b-versatile': {
         name: 'Meta Llama 3.3 70B Versatile (Enterprise only, text)',
@@ -319,11 +319,16 @@ export const localModelConfig = LOCAL_MODEL_DEFAULTS;
 export const MAX_JSON_BODY_BYTES = 12 * 1024 * 1024;
 export const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
-// Free models are prioritised. Paid hosts (OpenRouter, BlockRun, Modal) only
+// Vision-capable Meta hosts come first; Groq is text/voice only and last. Paid hosts only
 // become eligible after the user explicitly enables paid access.
-const DEFAULT_PROVIDER_PRIORITY = 'nvidia-nim,cloudflare-workers-ai,groq,openrouter,blockrun,modal';
+const DEFAULT_PROVIDER_PRIORITY = 'openrouter,cloudflare-workers-ai,nvidia-nim,blockrun,modal,groq';
 
 export const ACCESS_TIERS = ['free', 'preview', 'paid'];
+
+/** Unset or legacy 'free' means paid (the superset). Only an explicit 'preview' narrows it. */
+export function normalizeTier(value) {
+  return String(value || '').trim().toLowerCase() === 'preview' ? 'preview' : 'paid';
+}
 const TIER_RANK = { free: 0, preview: 1, paid: 2, enterprise: 2 };
 
 /** Tier declared on a catalogue entry; unknown/older entries default to free. */
@@ -333,7 +338,7 @@ export function modelTier(providerId, modelId) {
 }
 
 /** A known paid/preview model is refused while a lower tier is selected. */
-export function modelAllowedAtTier(providerId, modelId, tier = 'free') {
+export function modelAllowedAtTier(providerId, modelId, tier = 'paid') {
   const rank = TIER_RANK[modelTier(providerId, modelId)];
   if (rank === undefined) return true;
   return rank <= (TIER_RANK[tier] ?? 0);
@@ -366,9 +371,9 @@ export const config = {
   modalModelId: (process.env.MODAL_MODEL_ID || 'meta-llama/Llama-4-Maverick-17B-128E-Instruct').trim(),
   providerPriority: (process.env.PROVIDER_PRIORITY || DEFAULT_PROVIDER_PRIORITY)
     .split(',').map((s) => s.trim()).filter(Boolean),
-  // Free by default. Paid model names stay hidden/ineligible until the user
-  // explicitly switches this to preview or paid in provider setup.
-  accessTier: (process.env.MODEL_ACCESS_TIER || 'free').toLowerCase(),
+  // Paid is the default and the superset: Meta vision models on every host are
+  // paid or account-gated, so a free-only tier left the app with no usable model.
+  accessTier: normalizeTier(process.env.MODEL_ACCESS_TIER),
   allowOutboundNetwork: bool(process.env.ALLOW_OUTBOUND_NETWORK, true),
   // Local speech-to-text. Empty unless STT_URL points at this machine.
   sttUrl: isLoopbackUrl(process.env.STT_URL) ? String(process.env.STT_URL).trim() : '',

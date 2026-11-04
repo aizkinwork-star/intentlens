@@ -13,7 +13,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { normalizeNimBaseUrl } from '../config.js';
+import { normalizeNimBaseUrl, normalizeTier } from '../config.js';
 
 const SECRET_KEYS = [
   'NIM_API_KEY',
@@ -262,9 +262,9 @@ export async function applyCredentialsToConfig(config) {
   config.modalApiKey = (env.MODAL_API_KEY || '').trim();
   config.modalBaseUrl = (env.MODAL_BASE_URL || config.modalBaseUrl || '').trim();
   config.modalModelId = (env.MODAL_MODEL_ID || config.modalModelId || 'meta-llama/Llama-4-Maverick-17B-128E-Instruct').trim();
-  config.providerPriority = (env.PROVIDER_PRIORITY || config.providerPriority?.join(',') || 'nvidia-nim,cloudflare-workers-ai,groq,openrouter,blockrun,modal')
+  config.providerPriority = (env.PROVIDER_PRIORITY || config.providerPriority?.join(',') || 'openrouter,cloudflare-workers-ai,nvidia-nim,blockrun,modal,groq')
     .split(',').map((s) => s.trim()).filter(Boolean);
-  config.accessTier = (env.MODEL_ACCESS_TIER || config.accessTier || 'free').toLowerCase();
+  config.accessTier = normalizeTier(env.MODEL_ACCESS_TIER || config.accessTier);
 }
 
 export const SECRET_ENV_KEYS = SECRET_KEYS;

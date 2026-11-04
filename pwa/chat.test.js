@@ -14,6 +14,8 @@ import {
   modelFor,
   providerSupportsImages,
   modelAcceptsImages,
+  PROVIDER_MODELS,
+  isMetaModelId,
 } from './provider.js';
 import { cameraErrorMessage, computeCaptureSize } from './camera.js';
 import { escapeHtml, safeHref } from './safe.js';
@@ -63,7 +65,7 @@ test('text chat request has a text-only content array and no image payload', asy
   const result = await callChatModel({
     providerId: 'groq',
     apiKey: 'sentinel-key-chat-test',
-    model: 'openai/gpt-oss-120b',
+    model: 'meta-llama/llama-3.3-70b-versatile',
     prompt: 'Hello',
     fetchImpl: impl,
   });
@@ -103,8 +105,8 @@ test('vision request does include one image_url when an image is passed', async 
   assert.equal(body.model, PROVIDERS.openrouter.defaultModel);
   assert.equal(body.max_tokens, 8192);
   assert.deepEqual(body.response_format, { type: 'json_object' });
-  // The free default is a reasoning model, so a low-effort hint is expected.
-  assert.deepEqual(body.reasoning, { effort: 'low' });
+  // The paid Meta default is not a reasoning model, so no reasoning hint is sent.
+  assert.equal(body.reasoning, undefined);
   const imageParts = body.messages[0].content.filter((part) => part.type === 'image_url');
   assert.equal(imageParts.length, 1);
   assert.equal(imageParts[0].image_url.url, 'data:image/jpeg;base64,AAAA');
@@ -130,13 +132,13 @@ test('a text-only provider or model refuses an image before any network call', a
   const groqText = await callModel({
     providerId: 'groq',
     apiKey: 'sentinel-key',
-    model: 'openai/gpt-oss-120b',
+    model: 'meta-llama/llama-3.3-70b-versatile',
     prompt: 'describe',
     imageDataUrl: 'data:image/jpeg;base64,AAAA',
     fetchImpl: impl,
   });
   assert.equal(groqText.ok, false);
-  assert.equal(groqText.code, 'MODEL_TEXT_ONLY');
+  assert.equal(groqText.code, 'VISION_UNSUPPORTED'); // Groq never gets an image
 
   const textModel = await callModel({
     providerId: 'openrouter',
@@ -152,13 +154,14 @@ test('a text-only provider or model refuses an image before any network call', a
   assert.equal(called, 0);
 });
 
-test('a paid model is refused while free access is selected, before the network', async () => {
+test('a paid model is refused if access is explicitly narrowed to free, before the network', async () => {
   let called = 0;
   const impl = async () => { called += 1; throw new Error('must not be called'); };
   const result = await callModel({
     providerId: 'openrouter',
     apiKey: 'sentinel-key',
     model: 'meta-llama/llama-4-maverick',
+    accessTier: 'free',
     prompt: 'describe',
     imageDataUrl: 'data:image/jpeg;base64,AAAA',
     fetchImpl: impl,
@@ -170,7 +173,7 @@ test('a paid model is refused while free access is selected, before the network'
 
 test('a typed model id is sent verbatim in the request body', async () => {
   const { impl, calls } = fakeFetch();
-  const typed = 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free';
+  const typed = 'meta-llama/llama-4-future-vision';
   const result = await callModel({
     providerId: 'openrouter',
     apiKey: 'sentinel-key',
@@ -187,21 +190,20 @@ test('a typed model id is sent verbatim in the request body', async () => {
 test('provider presets expose every host and label the browser-blocked ones', () => {
   assert.equal(PROVIDERS.openrouter.browserCors, 'verified-allowed');
   assert.equal(PROVIDERS.groq.browserCors, 'verified-allowed');
-  assert.equal(PROVIDERS.openrouter.defaultModel, 'nvidia/nemotron-3.5-super-vl:free');
+  assert.equal(PROVIDERS.openrouter.defaultModel, 'meta-llama/llama-4-maverick');
   assert.ok(PROVIDERS.openrouter.defaultModel in OPENROUTER_MODELS);
   assert.equal(OPENROUTER_MODELS[PROVIDERS.openrouter.defaultModel].vision, true);
-  assert.equal(OPENROUTER_MODELS[PROVIDERS.openrouter.defaultModel].tier, 'free');
+  assert.equal(OPENROUTER_MODELS[PROVIDERS.openrouter.defaultModel].tier, 'paid');
 
-  // Groq: no default, and its vision candidates are preview-only.
-  assert.equal(PROVIDERS.groq.vision, 'conditional');
+  // Groq: text/voice only, no default, no image input.
+  assert.equal(PROVIDERS.groq.vision, 'none');
   assert.equal(PROVIDERS.groq.defaultModel, '');
-  assert.equal(PROVIDERS.groq.previewDefaultModel, 'meta-models/muse-spark-open');
+  assert.equal(PROVIDERS.groq.previewDefaultModel, undefined);
   assert.equal(GROQ_TEXT_MODELS['meta-models/muse-spark-open'].tier, 'preview');
   assert.equal(GROQ_TEXT_MODELS['meta-llama/llama-3.3-70b-versatile'].vision, false);
   assert.equal(GROQ_TEXT_MODELS['meta-llama/llama-3.3-70b-versatile'].tier, 'enterprise');
-  assert.equal(providerSupportsImages('groq'), true);
+  assert.equal(providerSupportsImages('groq'), false);
   assert.equal(providerSupportsImages('openrouter'), true);
-  assert.equal(modelAcceptsImages('openrouter', 'nvidia/nemotron-3.5-super-vl:free'), true);
   assert.equal(modelAcceptsImages('openrouter', 'meta-llama/llama-4-maverick'), true);
   assert.equal(modelAcceptsImages('openrouter', 'meta-llama/llama-3.3-70b-instruct'), false);
   assert.equal(modelAcceptsImages('groq', ''), false);
@@ -223,12 +225,11 @@ test('provider presets expose every host and label the browser-blocked ones', ()
   assert.equal(modelFor('custom', 'my-model'), 'my-model');
 });
 
-test('free vision models are listed before paid Meta models on the phone', () => {
-  const keys = Object.keys(OPENROUTER_MODELS);
-  const firstPaid = keys.findIndex((id) => OPENROUTER_MODELS[id].tier === 'paid');
-  const lastFree = keys.map((id) => OPENROUTER_MODELS[id].tier).lastIndexOf('free');
-  assert.ok(lastFree >= 0 && firstPaid > lastFree, 'free entries must come first');
-  assert.equal(GROQ_TEXT_MODELS['meta-llama/llama-3.3-70b-versatile'].vision, false);
+test('every catalogued phone model is Meta, and no Groq model accepts images', () => {
+  for (const catalogue of Object.values(PROVIDER_MODELS)) {
+    for (const id of Object.keys(catalogue)) assert.equal(isMetaModelId(id), true, id);
+  }
+  for (const info of Object.values(GROQ_TEXT_MODELS)) assert.equal(info.vision, false);
 });
 
 test('a browser-blocked provider refuses before any network call and names its endpoint', async () => {
@@ -253,7 +254,7 @@ test('a network failure never echoes the sentinel key or the Authorization heade
   const result = await callModel({
     providerId: 'groq',
     apiKey: sentinel,
-    model: 'openai/gpt-oss-120b',
+    model: 'meta-llama/llama-3.3-70b-versatile',
     prompt: 'x',
     fetchImpl: async () => { throw new Error('offline'); },
   });

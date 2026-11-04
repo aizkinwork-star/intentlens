@@ -27,6 +27,7 @@ import {
   modelAllowedAtTier,
   modelAcceptsImages,
   providerSupportsImages,
+  isMetaModelId,
 } from './provider.js';
 import { cameraErrorMessage, computeCaptureSize, tryLockLandscape, unlockOrientation } from './camera.js';
 import { escapeHtml } from './safe.js';
@@ -51,6 +52,12 @@ const els = {
   gridLabel: $('gridLabel'),
   cameraBtn: $('cameraBtn'),
   captureBtn: $('captureBtn'),
+  uploadBtn: $('uploadBtn'),
+  uploadInput: $('uploadInput'),
+  cameraSelect: $('cameraSelect'),
+  exportBtn: $('exportBtn'),
+  importBtn: $('importBtn'),
+  importInput: $('importInput'),
   micBtn: $('micBtn'),
   chatBtn: $('chatBtn'),
   chatCard: $('chatCard'),
@@ -108,7 +115,7 @@ const state = {
   gridSize: DEFAULT_GRID_SIZE,
   providerId: 'openrouter',
   model: '',
-  accessTier: 'free',
+  accessTier: 'paid',
   baseUrl: '',
   apiKey: '',
   tts: true,
@@ -135,6 +142,7 @@ function setBusy(value) {
   state.busy = value;
   els.sendBtn.disabled = value;
   els.captureBtn.disabled = value || !state.stream;
+  els.uploadBtn.disabled = value;
   els.repeatBtn.disabled = value;
   els.explainBtn.disabled = value;
   els.settingsBtn.disabled = value;
@@ -518,6 +526,41 @@ function renderResult(result, latencyMs) {
   els.answer.classList.remove('hidden');
 }
 
+const CAMERA_KEY = 'intentlens.cameraId';
+function savedCameraId() {
+  try { return localStorage.getItem(CAMERA_KEY) || ''; } catch { return ''; }
+}
+function saveCameraId(id) {
+  try { if (id) localStorage.setItem(CAMERA_KEY, id); else localStorage.removeItem(CAMERA_KEY); } catch { /* optional */ }
+}
+
+async function refreshCameraList() {
+  if (!navigator.mediaDevices?.enumerateDevices || !els.cameraSelect) return;
+  let devices = [];
+  try {
+    devices = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput');
+  } catch { return; }
+  const current = els.cameraSelect.value || savedCameraId();
+  els.cameraSelect.replaceChildren(new Option('Default camera', ''));
+  devices.forEach((d, i) => els.cameraSelect.appendChild(new Option(d.label || `Camera ${i + 1}`, d.deviceId)));
+  els.cameraSelect.value = devices.some((d) => d.deviceId === current) ? current : '';
+  els.cameraSelect.hidden = devices.length < 2;
+}
+
+async function openCameraStream() {
+  const size = { width: { ideal: 1920 }, height: { ideal: 1080 } };
+  const wanted = els.cameraSelect?.value || savedCameraId();
+  if (wanted) {
+    try {
+      return await navigator.mediaDevices.getUserMedia({ video: { ...size, deviceId: { exact: wanted } }, audio: false });
+    } catch (error) {
+      if (!['OverconstrainedError', 'NotFoundError'].includes(error?.name)) throw error;
+      saveCameraId(''); // the chosen camera was unplugged: fall back to the default
+    }
+  }
+  return navigator.mediaDevices.getUserMedia({ video: { ...size, facingMode: { ideal: 'environment' } }, audio: false });
+}
+
 async function startCamera() {
   if (!navigator.mediaDevices?.getUserMedia) {
     throw new Error('Camera needs HTTPS (GitHub Pages is fine) and a browser with getUserMedia.');
@@ -525,14 +568,7 @@ async function startCamera() {
   stopCamera();
   setStatus('Requesting camera permission…', 'busy');
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: { ideal: 'environment' },
-        width: { ideal: 1920 },
-        height: { ideal: 1080 },
-      },
-      audio: false,
-    });
+    const stream = await openCameraStream();
     state.stream = stream;
     els.video.srcObject = stream;
     await els.video.play();
@@ -540,6 +576,7 @@ async function startCamera() {
     els.cameraBtn.textContent = 'Stop camera';
     els.captureBtn.disabled = false;
     updateRotateHint();
+    await refreshCameraList(); // labels are only available after permission
     setStatus('Camera live. Frame a part, then Capture.', 'ok');
     const lock = await tryLockLandscape();
     if (lock.locked) setStatus('Camera live in landscape. Frame a part, then Capture.', 'ok');
@@ -577,7 +614,11 @@ async function captureFrame() {
   const context = canvas.getContext('2d');
   if (!context) throw new Error('This browser cannot capture a frame.');
   context.drawImage(els.video, 0, 0, width, height);
+  await storeCaptured(canvas, 'Frame captured');
+}
 
+async function storeCaptured(canvas, label) {
+  const { width, height } = canvas;
   const blob = await new Promise((resolve, reject) => {
     canvas.toBlob((value) => (value ? resolve(value) : reject(new Error('Capture failed.'))), 'image/jpeg', 0.9);
   });
@@ -593,7 +634,96 @@ async function captureFrame() {
   state.captured = { id: row.id, dataUrl, blob, width, height };
   showStill(dataUrl, width, height);
   await db.touchProject(state.project.id);
-  setStatus(`Frame captured (${width}×${height}). Ask a question, then Send.`, 'ok');
+  setStatus(`${label} (${width}×${height}). Ask a question, then Send.`, 'ok');
+}
+
+async function loadUploadedPhoto(file) {
+  if (!file || !/^image\//i.test(file.type)) throw new Error('Choose an image file (JPEG, PNG or WebP).');
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error('This image could not be read.'));
+      el.src = url;
+    });
+    const size = computeCaptureSize(img.naturalWidth, img.naturalHeight, 1600);
+    if (!size) throw new Error('The image has no usable dimensions.');
+    const canvas = document.createElement('canvas');
+    canvas.width = size.width;
+    canvas.height = size.height;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('This browser cannot process the image.');
+    context.drawImage(img, 0, 0, size.width, size.height);
+    await storeCaptured(canvas, 'Photo loaded');
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+// ------------------------------------------------ project export / import
+// There is no server between phone and PC, so projects move as a portable
+// JSON file (messages + images). This is a manual transfer, not live sync.
+function dataUrlToBlob(dataUrl) {
+  const [head, b64] = String(dataUrl).split(',');
+  const mime = /^data:(image\/[a-z0-9.+-]+)/i.exec(head || '')?.[1];
+  if (!mime) throw new Error('Unsupported image in project file.');
+  const bin = atob(b64 || '');
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
+  return new Blob([bytes], { type: mime });
+}
+
+async function exportProject() {
+  if (!state.project) return;
+  const [messages, images] = await Promise.all([
+    db.listMessages(state.project.id),
+    db.listImages(state.project.id, 1000),
+  ]);
+  const bundle = {
+    format: 'intentlens-project-v1',
+    exportedAt: new Date().toISOString(),
+    project: { name: state.project.name, summary: state.project.summary || '' },
+    messages,
+    images: images.map(({ blob, ...rest }) => rest),
+  };
+  const url = URL.createObjectURL(new Blob([JSON.stringify(bundle)], { type: 'application/json' }));
+  const link = document.createElement('a');
+  const slug = String(state.project.name || 'project').replace(/[^a-z0-9]+/gi, '-').slice(0, 40) || 'project';
+  link.href = url;
+  link.download = `${slug}.intentlens.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+  setStatus(`Exported ${messages.length} messages and ${images.length} images.`, 'ok');
+}
+
+async function importProject(file) {
+  const bundle = JSON.parse(await file.text());
+  if (bundle?.format !== 'intentlens-project-v1' || !bundle.project) {
+    throw new Error('This is not an IntentLens project file.');
+  }
+  const project = await db.createProject(`${bundle.project.name || 'Imported'} (imported)`);
+  const idMap = new Map();
+  for (const img of bundle.images || []) {
+    const row = await db.putImage({
+      projectId: project.id,
+      blob: dataUrlToBlob(img.dataUrl),
+      dataUrl: img.dataUrl,
+      width: img.width,
+      height: img.height,
+      gridSize: img.gridSize,
+      createdAt: img.createdAt,
+    });
+    idMap.set(img.id, row.id);
+  }
+  for (const message of bundle.messages || []) {
+    await db.addMessage({ ...message, projectId: project.id, imageId: idMap.get(message.imageId) || null });
+  }
+  state.project = project;
+  await refreshProjects();
+  setStatus(`Imported "${project.name}".`, 'ok');
 }
 
 function projectContext() {
@@ -935,7 +1065,7 @@ function toggleMic() {
 
 function updateModelNote() {
   const providerId = els.providerSelect.value || state.providerId;
-  const tier = els.accessTier?.value || state.accessTier || 'free';
+  const tier = els.accessTier?.value || state.accessTier || 'paid';
   const model = els.modelInput.value.trim() || defaultModelFor(providerId, tier) || '';
   const info = modelInfo(providerId, model);
   if (!info) {
@@ -954,7 +1084,7 @@ function updateModelNote() {
 function syncProviderDetail(providerId) {
   const provider = PROVIDERS[providerId];
   if (!provider) return;
-  const tier = els.accessTier?.value || state.accessTier || 'free';
+  const tier = els.accessTier?.value || state.accessTier || 'paid';
   const cors = provider.unavailableInBrowser
     ? `Browser CORS: BLOCKED — ${provider.blockedMessage || 'the host does not allow this origin.'}`
     : `Browser CORS: ${provider.browserCors}.`;
@@ -966,11 +1096,9 @@ function syncProviderDetail(providerId) {
   const defaultModel = defaultModelFor(providerId, tier);
   els.modelInput.placeholder = defaultModel || 'Type the exact model id';
   if (els.accessNote) {
-    els.accessNote.textContent = tier === 'paid'
-      ? 'Paid models are visible and may bill your account. Select one only if you have billing set up.'
-      : tier === 'preview'
-        ? 'Free and limited-preview models are visible. Preview models may need account approval and are not verified.'
-        : 'Free models only. Paid model names stay hidden until you enable paid access.';
+    els.accessNote.textContent = tier === 'preview'
+      ? 'Limited-preview Meta models are visible. They may need account approval and are not verified.'
+      : 'Meta models only. They are paid per token and bill your provider account, so set up billing first. Non-Meta models are never offered or sent.';
   }
   const baseUrlRow = $('baseUrlRow');
   if (baseUrlRow) baseUrlRow.hidden = !provider.requiresBaseUrl;
@@ -1179,6 +1307,28 @@ function wireEvents() {
     }
   });
 
+  els.uploadBtn.addEventListener('click', () => els.uploadInput.click());
+  els.uploadInput.addEventListener('change', async () => {
+    const file = els.uploadInput.files?.[0];
+    els.uploadInput.value = '';
+    if (!file) return;
+    try { await loadUploadedPhoto(file); } catch (error) { setStatus(String(error?.message || error), 'error'); }
+  });
+  els.exportBtn.addEventListener('click', () => exportProject().catch((e) => setStatus(String(e?.message || e), 'error')));
+  els.importBtn.addEventListener('click', () => els.importInput.click());
+  els.importInput.addEventListener('change', async () => {
+    const file = els.importInput.files?.[0];
+    els.importInput.value = '';
+    if (!file) return;
+    try { await importProject(file); } catch (error) { setStatus(`Import failed: ${error?.message || error}`, 'error'); }
+  });
+  els.cameraSelect.addEventListener('change', async () => {
+    saveCameraId(els.cameraSelect.value);
+    if (state.stream) {
+      try { await startCamera(); } catch (error) { setStatus(String(error?.message || error), 'error'); }
+    }
+  });
+  navigator.mediaDevices?.addEventListener?.('devicechange', refreshCameraList);
   els.micBtn.addEventListener('click', toggleMic);
   els.sendBtn.addEventListener('click', send);
   els.repeatBtn.addEventListener('click', repeat);
@@ -1294,16 +1444,13 @@ async function boot() {
   state.gridSize = Number(settings.gridSize) || DEFAULT_GRID_SIZE;
   const savedProvider = PROVIDERS[settings.providerId] ? settings.providerId : 'openrouter';
   state.providerId = savedProvider;
-  state.accessTier = ['free', 'preview', 'paid'].includes(settings.accessTier)
-    ? settings.accessTier
-    : 'free';
+  state.accessTier = 'paid'; // older builds saved 'free'/'preview'; paid is the superset
   // Older builds saved retired models. A model the user typed themselves is
   // kept unless it is a known paid model while free access is selected.
   const legacyRetired = new Set([
     'meta-llama/llama-3.3-70b-versatile',
-    'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning',
   ]);
-  const savedModel = settings.model && !legacyRetired.has(settings.model) ? settings.model : '';
+  const savedModel = settings.model && isMetaModelId(settings.model) && !legacyRetired.has(settings.model) ? settings.model : '';
   state.model = modelAllowedAtTier(savedProvider, savedModel, state.accessTier) ? savedModel : '';
   state.baseUrl = settings.baseUrl || '';
   state.tts = settings.tts === true;

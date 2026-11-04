@@ -23,12 +23,13 @@ export class CameraFrame {
 }
 
 export class CameraAdapter {
-  constructor({ kind = 'phone-camera', facingMode = 'environment', width = 1280, height = 720 } = {}) {
+  constructor({ kind = 'phone-camera', facingMode = 'environment', width = 1280, height = 720, deviceId = '' } = {}) {
     if (!CAMERA_KINDS.includes(kind)) {
       throw new Error(`Unknown camera kind ${kind}`);
     }
     this.kind = kind;
     this.facingMode = facingMode;
+    this.deviceId = deviceId; // '' = default camera; set to pick an external webcam
     this.requestedWidth = width;
     this.requestedHeight = height;
 
