@@ -252,7 +252,7 @@ test('phone CSP permits a user relay but the provider preset list stays fixed', 
   assert.match(html, /connect-src 'self' https:/);
   assert.doesNotMatch(html, /blockrun/i);
   const sw = readFileSync(join(here, 'sw.js'), 'utf8');
-  assert.match(sw, /intentlens-pwa-v7/);
+  assert.match(sw, /intentlens-pwa-v8/);
 });
 
 test('service worker refuses authorization-bearing and cross-origin requests', () => {
