@@ -112,7 +112,7 @@ without pretending it already works.
 │                         │                                          │
 │         ┌───────────────┴────────────────┐                         │
 │         ▼                                ▼                         │
-│   OpenRouter API                   Groq API (text only)      │
+│   OpenRouter API                   Groq API (text only)            │
 │   Meta Llama 4 Maverick (paid)     no image input                  │
 │         │                                                          │
 │         └──────── HTTPS + CORS ─────────► upstream model           │
