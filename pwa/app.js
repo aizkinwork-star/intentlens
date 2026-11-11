@@ -30,7 +30,7 @@ import {
   localBudgetStatus,
 } from './provider.js';
 import { loadBudget, saveBudget, loadLedger, appendUsage, clearLedger, DEFAULT_BUDGET } from './cost.js';
-import { cameraErrorMessage, computeCaptureSize, tryLockLandscape, unlockOrientation } from './camera.js';
+import { buildCameraConstraintLadder, cameraCapabilities, cameraErrorMessage, computeCaptureSize, openCameraWithFallback, setTorch, tryLockLandscape, unlockOrientation } from './camera.js';
 import { escapeHtml } from './safe.js';
 import { polygonPointsAttribute, edgeMidpoints } from './geometry.js';
 
@@ -56,6 +56,7 @@ const els = {
   uploadBtn: $('uploadBtn'),
   uploadInput: $('uploadInput'),
   cameraSelect: $('cameraSelect'),
+  torchBtn: $('torchBtn'),
   exportBtn: $('exportBtn'),
   importBtn: $('importBtn'),
   importInput: $('importInput'),
@@ -572,33 +573,43 @@ async function refreshCameraList() {
 }
 
 async function openCameraStream() {
-  const size = { width: { ideal: 1920 }, height: { ideal: 1080 } };
   const wanted = els.cameraSelect?.value || savedCameraId();
-  if (wanted) {
-    try {
-      return await navigator.mediaDevices.getUserMedia({ video: { ...size, deviceId: { exact: wanted } }, audio: false });
-    } catch (error) {
-      if (!['OverconstrainedError', 'NotFoundError'].includes(error?.name)) throw error;
-      saveCameraId(''); // the chosen camera was unplugged: fall back to the default
-    }
-  }
-  return navigator.mediaDevices.getUserMedia({ video: { ...size, facingMode: { ideal: 'environment' } }, audio: false });
+  const ladder = buildCameraConstraintLadder({ deviceId: wanted });
+  const result = await openCameraWithFallback(navigator.mediaDevices, ladder);
+  // A saved deviceId that needed the generic fallback is stale. Clear it so the
+  // next start does not spend two failed attempts before reaching a working one.
+  if (wanted && !String(result.step.reason).startsWith('selected camera')) saveCameraId('');
+  return result;
+}
+
+function videoTrack() {
+  return state.stream?.getVideoTracks?.()[0] || null;
+}
+
+function updateTorchUi() {
+  if (!els.torchBtn) return cameraCapabilities(videoTrack());
+  const capabilities = cameraCapabilities(videoTrack());
+  els.torchBtn.hidden = !capabilities.torch;
+  els.torchBtn.setAttribute('aria-pressed', 'false');
+  els.torchBtn.textContent = 'Torch';
+  return capabilities;
 }
 
 async function startCamera() {
   if (!navigator.mediaDevices?.getUserMedia) {
-    throw new Error('Camera needs HTTPS (GitHub Pages is fine) and a browser with getUserMedia.');
+    throw new Error('Camera needs a secure context (HTTPS or localhost). GitHub Pages is HTTPS, so the installed PWA works there.');
   }
   stopCamera();
   setStatus('Requesting camera permission…', 'busy');
   try {
-    const stream = await openCameraStream();
+    const { stream } = await openCameraStream();
     state.stream = stream;
     els.video.srcObject = stream;
     await els.video.play();
     showLive();
     els.cameraBtn.textContent = 'Stop camera';
     els.captureBtn.disabled = false;
+    updateTorchUi();
     updateRotateHint();
     await refreshCameraList(); // labels are only available after permission
     setStatus('Camera live. Frame a part, then Capture.', 'ok');
@@ -618,6 +629,7 @@ function stopCamera() {
   els.video.srcObject = null;
   els.cameraBtn.textContent = 'Start camera';
   els.captureBtn.disabled = true;
+  if (els.torchBtn) els.torchBtn.hidden = true;
   unlockOrientation();
   if (state.captured) showStill(state.captured.dataUrl, state.captured.width, state.captured.height);
   else showEmpty();
@@ -1313,6 +1325,20 @@ function wireEvents() {
     } catch (error) {
       setStatus(String(error?.message || error), 'error');
     }
+  });
+
+  els.torchBtn?.addEventListener('click', async () => {
+    const track = videoTrack();
+    if (!track) return;
+    const next = els.torchBtn.getAttribute('aria-pressed') !== 'true';
+    const result = await setTorch(track, next);
+    if (!result.applied) {
+      setStatus('This camera did not accept torch control.', 'error');
+      return;
+    }
+    els.torchBtn.setAttribute('aria-pressed', String(next));
+    els.torchBtn.textContent = next ? 'Torch on' : 'Torch';
+    setStatus(next ? 'Torch on.' : 'Torch off.', 'ok');
   });
 
   els.uploadBtn.addEventListener('click', () => els.uploadInput.click());

@@ -218,6 +218,8 @@ Note: stop all running servers before the suite. The auth tests spawn fixed port
 
 ## 8. Phone / mobile status
 
+> **Status update, 2026-11-11.** The standalone PWA is published on GitHub Pages, which is HTTPS and therefore a secure context. The camera works there, and so does gallery upload. The limitation below applies to a plain-`http://<lan-ip>:port` page and to live transfer into the desktop's HTTP server, not to the GitHub Pages PWA.
+
 - The camera requires a secure context. `localhost` (desktop) is secure; a phone opening `http://<lan-ip>:port` is not, so `getUserMedia` is unavailable there.
 - The app detects this (`mobileSupport.js`) and explains it; it does **not** relax backend auth to make a phone work.
 - "Upload photo" remains available over plain HTTP.
@@ -234,7 +236,7 @@ Note: stop all running servers before the suite. The auth tests spawn fixed port
 ## 10. Known failures, limits and unverified claims
 
 1. Live Meta inference unverified (see section 6).
-2. Phone camera over LAN HTTP blocked by the secure-context rule; no HTTPS setup yet.
+2. A plain-HTTP LAN page is blocked by the secure-context rule; use the HTTPS GitHub Pages PWA for the camera, or the LAN gallery upload over HTTP. Live phone-to-desktop sync is still not implemented.
 3. Real hardware photo/camera capture not tested — UI smoke used an uploaded generated PNG.
 4. Installer is unsigned and uses the default Electron icon, so Windows SmartScreen may warn.
 5. The local k-NN lookup is a whole-frame, weak reference lookup. It is labelled unverified and is not an identity source.

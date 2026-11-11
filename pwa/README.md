@@ -34,6 +34,8 @@ Every provider is visible in Settings. Browser-blocked hosts are refused before 
 
 Camera access needs a secure context. GitHub Pages is HTTPS, so the installed PWA works. A plain http://192.168.x.x LAN address will not get camera permission on Android Chrome.
 
+The camera start path tries the selected device at full resolution, then 720p, then any resolution, then the rear camera, then any camera. If the phone exposes a torch, a **Torch** button appears while the camera is live. Both behaviours are mocked in `camera.test.js`; they still need a real-device check.
+
 ## Local preview
 
 ```cmd

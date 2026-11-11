@@ -107,6 +107,31 @@ Before any feature work:
    coverage, or document honestly that local recognition is not ready.
 4. Until that passes, keep local classification advisory and require user confirmation.
 
+## Implemented reproducibility pipeline
+
+`perception/learning/ReferenceSelector.js`, `perception/learning/KnnLab.js` and
+`scripts/eval-accuracy.mjs` now implement steps 1–2:
+
+```bash
+node scripts/eval-accuracy.mjs \
+  --train datasets/processed/features_v1/train_features.jsonl \
+  --valid datasets/processed/features_v1/valid_features.jsonl \
+  --test  datasets/processed/features_v1/test_features.jsonl \
+  --per-class 5 --seed 1 --out datasets/processed/accuracy.json
+```
+
+- References are real train samples chosen by deterministic class-stratified
+  k-medoids; dense candidates reject gross outliers.
+- The calibration sweep is validation-only and includes class-balanced voting and
+  local distance scaling as explicit options.
+- The test split is evaluated once with the frozen configuration.
+- Missing splits, missing labels or malformed rows stop the run instead of
+  producing a number.
+- `trustworthy` is false below 30 labelled samples. The ≥85% target is still
+  unclaimed until this runs on real labelled photographs.
+
+The command is also available as `npm run eval:accuracy -- …`.
+
 ## Reproduce
 
 ```bash

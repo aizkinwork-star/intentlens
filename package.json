@@ -16,6 +16,7 @@
     "test:all": "node --test",
     "pwa:prepare": "node scripts/prepare-pwa.mjs",
     "pwa:serve": "node scripts/serve-pwa.mjs",
+    "eval:accuracy": "node scripts/eval-accuracy.mjs",
     "cli": "node cli/intentlens.mjs"
   }
 }

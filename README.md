@@ -233,6 +233,14 @@ Pure functions, no DOM and no OpenCV:
 
 If you want an accuracy figure, collect labelled boxes or labelled component outcomes first, then call `evaluateDetections` or `accuracyReport`. The UI shows confidence and coverage; it does not promote a heuristic score into an accuracy claim.
 
+The offline learning pipeline is reproducible and validation-only:
+
+```bat
+node scripts/eval-accuracy.mjs --train train.jsonl --valid valid.jsonl --test test.jsonl --out datasets/processed/accuracy.json
+```
+
+It selects deterministic k-medoids references from the **train** split, sweeps k / distance threshold / separation / class-balanced voting / local scaling on **validation**, freezes the winner, and evaluates **test once**. It exits instead of inventing a number when a split is missing, and every report carries the shared `trustworthy` flag (below 30 labelled samples is not a usable accuracy claim). See `docs/PERCEPTION_AND_ACCURACY.md` for the rules and `docs/KNN_EVALUATION.md` for the measured compact-index failure.
+
 ---
 
 ## Phone ↔ desktop transfer
@@ -245,7 +253,7 @@ There is no shared cloud account and no live socket between the phone and the PC
 2. Open the shown URL on a phone on the same Wi-Fi (for example `http://192.168.1.10:8000/sync.html?code=123456`).
 3. Choose a gallery photo and send it. The PC lists it; press **Load photo** to analyse it.
 
-Why gallery upload and not live sync: browser security requires a secure context for `getUserMedia`, and an HTTPS page cannot POST to a plain-HTTP LAN server. A file input has neither limitation. Codes are 6 digits from a cryptographic RNG, expire after 10 minutes, exist only in the server process, and only accept bounded PNG/JPEG/WebP payloads or short notes. Failed attempts are rate-limited. The server binds `0.0.0.0` for LAN use — do not expose it to the public internet.
+Why gallery upload and not live sync: a plain-HTTP LAN page is not a secure context, so it cannot use `getUserMedia`, and an HTTPS page cannot POST to a plain-HTTP LAN server. GitHub Pages itself is HTTPS, so the PWA camera **does** work there; only live sync between that page and the desktop's HTTP server is restricted. A file input has neither limitation. Codes are 6 digits from a cryptographic RNG, expire after 10 minutes, exist only in the server process, and only accept bounded PNG/JPEG/WebP payloads or short notes. Failed attempts are rate-limited. The server binds `0.0.0.0` for LAN use — do not expose it to the public internet.
 
 ### Offline project transfer
 
@@ -281,7 +289,7 @@ IntentLens does not train a neural network in this repository. “Training” me
 
 1. **Reference index** — `looseObjectTracker.js` and `KNNClassifier` store labelled feature vectors. `knn_reference_db_compact.bin` is the shipped compact index (generated; see `docs/KNN_EVALUATION.md`).
 2. **Capture examples** — menu → **k-NN Training** → select a region, type a label, **Capture example**. Labels are candidates, not verified facts.
-3. **Evaluate** — run the evaluation scripts in `docs/` or feed labelled boxes to `evaluateDetections`. Record precision, recall, F1, mean IoU and calibration.
+3. **Evaluate** — `node scripts/eval-accuracy.mjs --train … --valid … --test …` runs reproducible medoid selection, validation-only calibration and a single frozen test evaluation. You can also feed labelled boxes to `evaluateDetections` and record precision, recall, F1, mean IoU and calibration.
 4. **Calibrate** — use `calibrationReport` to compare confidence with outcomes. A model that says 0.9 and is right 60% of the time should not be trusted at 0.9.
 5. **Report honestly** — quote the sample count, the threshold, the split and the date. Do not quote a number from unlabelled data.
 
@@ -296,11 +304,13 @@ node scripts/prepare-pwa.mjs
 node scripts/run-source-tests.mjs
 ```
 
-Current suite: **300 tests across 33 source test files, 0 failures**. It includes:
+Current suite: **325 tests across 36 source test files, 0 failures**. It includes:
 
 - coordinate and result-validation tests,
 - provider catalogue, adapter, failover and budget tests,
 - PWA provider/CORS/budget behavior,
+- PWA camera constraint-ladder, torch and zoom capability tests (mocked),
+- deterministic medoid selection and validation-only k-NN calibration tests,
 - desktop UI text guards (no microphone/speech paths),
 - server auth, store and integration tests,
 - synthetic lighting, hinge and PCB-confidence suites,
@@ -333,7 +343,7 @@ Never commit `.env`, `intentlens-data/`, `intentlens-config.json`, generated `pw
 | `MODEL_QUOTA_EXHAUSTED` | No credit or free quota used up | Add credit or choose another provider/model |
 | `MODEL_TIMEOUT` | Slow or reasoning model | Retry, use a smaller image, or choose another model |
 | Budget error | Preflight would exceed a cap | Raise the cap in Budget settings or choose a cheaper model |
-| Phone cannot open camera | Insecure context | Use HTTPS or `localhost`; gallery upload works over plain HTTP |
+| Phone cannot open camera | A plain-`http://192.168.x.x` LAN page is not a secure context | Open the PWA over HTTPS (GitHub Pages is HTTPS and works) or `localhost`; gallery upload works over plain HTTP |
 | Phone cannot reach the desktop | Different network or firewall | Same Wi-Fi, allow the port, use the LAN URL shown on the PC |
 | `This page is out of date after a server restart` | Session token rotated | Reload the page |
 

@@ -236,6 +236,28 @@ counted, not silently dropped.
 
 This is the only sanctioned way to quote an accuracy figure in this project.
 
+### Reproducible reference selection and calibration
+
+The shipped 305-reference compact index used an undocumented selection recipe and measured **13.72% test top-1** (`docs/KNN_EVALUATION.md`). The replacement pipeline is explicit:
+
+- `perception/learning/ReferenceSelector.js` groups by class and selects real training samples with deterministic k-medoids. Classes at or below the budget are kept unchanged. Gross outliers are removed from the medoid candidate pool by a dense-sample rule, so a bad crop cannot become its own singleton reference.
+- `perception/learning/KnnLab.js` provides class-balanced voting, optional local distance scaling, a margin rejection rule, and a distance-matrix cache so a large calibration sweep does not recompute 2,027-dimensional distances for every candidate configuration.
+- Calibration always runs on **validation only**. The winning configuration is frozen, then `evaluateFrozen` / `evaluateSplit` evaluates **test once**. `scripts/eval-accuracy.mjs` enforces this split discipline and refuses to run without train, validation and test data.
+- Every metric uses the shared `MEASUREMENT_MIN_SAMPLES` trust flag. A number below 30 labelled samples is reported with `trustworthy: false` and is not a field-accuracy claim.
+- Class-balanced voting and local scaling remain **off by default at runtime** until measured data shows they improve a frozen test result. They are laboratory options, not silent behaviour changes.
+
+Synthetic fixtures prove the maths and the failure modes. They do not prove component accuracy on photographs, and the ≥85% target remains unclaimed.
+
+### PWA camera constraints and torch
+
+`pwa/camera.js` is pure and testable without a phone:
+
+- `buildCameraConstraintLadder` tries the selected device at full resolution, then 720p, then any resolution, then the rear camera at two sizes, then any camera. A stale saved `deviceId` is cleared when a generic step succeeds.
+- `openCameraWithFallback` retries only constraint / missing-device / `TypeError` failures. A denied permission or busy camera aborts immediately; retrying cannot fix those.
+- `cameraCapabilities` reports torch, a usable zoom range and continuous-focus support from `getCapabilities`/`getSettings`. `setTorch` and `setZoom` return `{ applied: false }` instead of throwing at the UI; zoom is clamped and snapped to the hardware step.
+- GitHub Pages is HTTPS and therefore a secure context, so the installed PWA camera works. The restriction is only for a plain `http://192.168.x.x` LAN page.
+- These are mocked tests. They do not prove that a specific Android or iOS camera exposes torch/zoom or produces a usable frame; that needs hardware.
+
 ---
 
 ## 4. How to measure accuracy honestly
@@ -280,6 +302,9 @@ modes; they do not prove field accuracy.
 | Board quad rejection | Yes | `gridConfidence.test.js` |
 | Component confidence + aggregation | Yes | `gridConfidence.test.js` |
 | Brier / ECE / accuracy honesty rule | Yes | `gridConfidence.test.js` |
+| Deterministic medoid reference selection | Yes | `referenceSelector.test.js` (synthetic) |
+| Validation-only calibration + frozen test evaluation | Yes | `knnLab.test.js`, `scripts/eval-accuracy.mjs` |
+| Camera fallback ladder + torch/zoom capabilities | Yes | `pwa/camera.test.js` (mocked) |
 | Physical phone / laptop hinge / PCB accuracy | **No** | Needs hardware |
 
 What still needs hardware validation:
