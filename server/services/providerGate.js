@@ -2,7 +2,8 @@
 //
 // A capture is never lost because inference is unavailable. Callers get a
 // structured reason and keep the locally stored capture.
-import { config, localModelAvailable, outboundNetworkAllowed } from '../config.js';
+
+import { localModelAvailable, outboundNetworkAllowed } from '../config.js';
 import { buildRouter } from './router.js';
 
 export function providerAvailability() {
@@ -10,7 +11,7 @@ export function providerAvailability() {
     return {
       available: false,
       code: 'AI_NOT_CONFIGURED',
-      message: 'Online visual reasoning is unavailable: no Meta vision provider is configured. Your capture is saved locally and you can still review it.',
+      message: 'Online visual reasoning is unavailable: no vision provider is configured. Your capture is saved locally and you can still review it. Add a key in Settings.',
     };
   }
   if (!outboundNetworkAllowed()) {
@@ -23,17 +24,17 @@ export function providerAvailability() {
   return { available: true };
 }
 
-/** Build the Meta-only router, or return null with a reason. */
+/** Build the multi-provider router, or return null with a reason. */
 export function tryBuildRouter() {
   try {
-    const router = buildRouter(config);
+    const router = buildRouter();
     if (!router || !router.providers?.length) {
       return {
         router: null,
         unavailable: {
           available: false,
           code: 'AI_NOT_CONFIGURED',
-          message: 'No Meta vision provider is configured. Add a key in Provider Setup. Your capture is saved locally.',
+          message: 'No vision provider is configured. Add a key in Settings. Your capture is saved locally.',
         },
       };
     }
@@ -44,7 +45,7 @@ export function tryBuildRouter() {
       unavailable: {
         available: false,
         code: 'AI_NOT_CONFIGURED',
-        message: `No usable Meta vision provider: ${err.message}. Your capture is saved locally.`,
+        message: `No usable vision provider: ${err.message}. Your capture is saved locally.`,
       },
     };
   }

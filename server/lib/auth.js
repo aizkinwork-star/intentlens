@@ -55,6 +55,8 @@ export function authMiddleware(req, res) {
   const path = url.pathname;
   if (!path.startsWith('/api/')) return true;
   if (path === '/api/health' || path === '/api/pair') return true;
+  // LAN photo transfer is guarded by a one-time code, not the desktop session.
+  if (path === '/api/sync/receive') return true;
   const header = req.headers['x-intentlens-token'] || req.headers['authorization'];
   const token = header && String(header).startsWith('Bearer ') ? String(header).slice(7) : header;
   if (!validateSessionToken(token)) {

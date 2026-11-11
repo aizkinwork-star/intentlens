@@ -132,6 +132,7 @@ export async function runComponentAnalysis({ router, request, project, signal })
     userText: prompt.userText,
     imageDataUrl: request.imageDataUrl,
     imageDataUrls: images,
+    imageMeta: { width: request.width, height: request.height },
     schema: COMPONENT_SCHEMA,
     allowWebSearch: false,
     requestId: request.requestId,

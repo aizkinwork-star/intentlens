@@ -17,25 +17,34 @@ Open the top-left menu -> **Vision Provider & Model** -> **Configure provider**.
 
 Supported providers, in default failover order:
 
-| Priority | Provider | Default Meta model |
+| Priority | Provider | Notes |
 |---|---|---|
-| 1 | OpenRouter | `meta-llama/llama-4-maverick` (vision, paid) |
-| 2 | NVIDIA NIM | `meta/muse-glimmer-30b` |
-| 3 | Cloudflare Workers AI | `@cf/meta/llama-3.2-11b-vision-instruct` |
-| 4 | BlockRun | `meta-llama/llama-4-maverick` (paid; HTTP 402 on the test key) |
-| 5 | Modal | `meta-llama/Llama-4-Maverick-17B-128E-Instruct` (paid; NOT tested) |
-| 6 | Groq | **no vision** (Prompt Guard classifiers only; Meta Llama 3.3 text first) |
+| 1 | OpenRouter | widest vision catalogue; free and paid models |
+| 2 | Groq | vision availability depends on your account |
+| 3 | Google AI Studio | Gemini; free tier available |
+| 4 | NVIDIA NIM | inference host `integrate.api.nvidia.com` |
+| 5 | Cloudflare Workers AI | needs an Account ID plus a Workers AI token |
+| 6 | Mistral | Pixtral / Mistral Small |
+| 7 | Cerebras | text catalogue only in this build; no vision model listed |
+| 8 | Together AI | open-weight vision models |
+| 9 | Hugging Face | router-style OpenAI-compatible endpoint |
+| 10 | DeepInfra | paid open-weight models |
+| 11 | OpenAI | GPT-4.1 / GPT-4o family |
+| 12 | Anthropic | Claude via the Messages API |
+| 13 | Ollama | local loopback, no key, no cloud request |
+| 14 | Custom relay | your own HTTPS OpenAI-compatible endpoint |
 
-Only Meta models are accepted. Text-only and classifier models are not sent
-images, non-Meta models are rejected, and unverified models are labelled instead
-of being described as working. Any catalogued vision model can be tested.
+Only **vision-capable** models receive an image. Text-only and classifier models
+are refused before a request is sent. Entries marked *verified* have answered a
+real image request on a test machine; everything else should be checked with
+**Test connection**. Prices in `modelRegistry.js` are planning figures, not
+invoices.
 
 ### OpenRouter (default)
 
 1. Create a key at https://openrouter.ai/keys.
 2. In IntentLens choose **OpenRouter**.
-3. Keep `meta-llama/llama-4-maverick` or choose a free vision model with the
-   price shown. Maverick is paid per token.
+3. Keep the default model or choose a free or paid vision model. The price is shown.
 4. Paste the key and press **Save & test**.
 
 ### NVIDIA NIM
@@ -45,15 +54,14 @@ of being described as working. Any catalogued vision model can be tested.
 3. Keep the base URL `https://integrate.api.nvidia.com`. A dashboard link such as
    `https://build.nvidia.com` is not an inference endpoint.
 4. Paste the key and press **Save & test**.
-5. Muse Glimmer is a reasoning model: a full request can take 80-120 seconds.
+5. Some large models are slow: a full request can take 80-120 seconds.
 
-### BlockRun and Modal (paid)
+### Custom relay
 
-- **BlockRun:** `https://api.blockrun.ai`. The supplied key returned HTTP 402
-  `Payment verification failed`; add credit before expecting a reply.
-- **Modal:** deploy your own OpenAI-compatible endpoint, paste its HTTPS
-  `*.modal.run` URL and your token. This path is **NOT tested** in the audit and
-  bills your Modal account.
+Deploy your own OpenAI-compatible endpoint and paste its HTTPS URL plus a token.
+HTTPS is required for non-loopback hosts. Plain HTTP is accepted only for
+`localhost`/`127.0.0.1`, and private LAN IP literals are refused so a saved relay
+cannot turn the server into a local-network proxy.
 
 ### Cloudflare Workers AI (fallback)
 
@@ -62,20 +70,15 @@ of being described as working. Any catalogued vision model can be tested.
 3. Copy the **Account ID** and **API Token**.
 4. In IntentLens choose **Cloudflare Workers AI**, enter both values, and test.
 
-### Groq (account-dependent preview; no default)
+### Groq (account-dependent)
 
 1. Create a key at https://console.groq.com/.
-2. There is **no default model**. Access and vision support depend on your
-   account, so choose a model explicitly and press **Test connection**.
-3. **Llama 3.3 70B Versatile is Enterprise-only**, was retired for Free and
-   Developer users on 2026-08-16, and is text-only. It is never a default and
-   never used for images.
-4. Documented vision candidates are **Meta Muse Spark Open** (limited preview)
-   and **Qwen 3.8 27B**. Enable Preview access before selecting one; neither is
-   verified on the supplied account.
-5. Prompt Guard entries are classifiers, not chat or vision models.
-6. If your account has no vision model, use OpenRouter, NVIDIA NIM,
-   Cloudflare Workers AI, BlockRun or Modal for image analysis.
+2. Access and vision support depend on your account, so choose a model explicitly
+   and press **Test connection**.
+3. Text-only model ids are refused before an image is sent.
+4. Classifier entries (for example Prompt Guard) are not chat or vision models.
+5. If your account has no vision model, use OpenRouter, Google AI Studio, NVIDIA
+   NIM, Cloudflare Workers AI, Mistral or a custom relay for image analysis.
 
 ## How credentials are stored
 
@@ -92,23 +95,36 @@ You can configure a headless server with `.env` instead of the UI:
 
 ```text
 OPENROUTER_API_KEY=...
-OPENROUTER_MODEL_ID=meta-llama/llama-4-maverick
+# OPENROUTER_MODEL_ID=google/gemini-2.5-flash
 
 NIM_ENABLED=true
 NIM_API_KEY=...
 NIM_BASE_URL=https://integrate.api.nvidia.com
-NIM_MODEL_ID=meta/muse-glimmer-30b
+# NIM_MODEL_ID=meta/muse-glimmer-30b
 
-BLOCKRUN_API_KEY=...
-MODAL_API_KEY=...
-MODAL_BASE_URL=https://your-workspace--your-app.modal.run
+CLOUDFLARE_API_TOKEN=...
+CLOUDFLARE_ACCOUNT_ID=...
+MISTRAL_API_KEY=...
+CEREBRAS_API_KEY=...
+TOGETHER_API_KEY=...
+HF_TOKEN=...
+DEEPINFRA_API_KEY=...
+OPENAI_API_KEY=...
+ANTHROPIC_API_KEY=...
+GEMINI_API_KEY=...
 
 GROQ_API_KEY=...
-GROQ_VISION_MODEL=
+# GROQ_VISION_MODEL=
+
+CUSTOM_API_KEY=...
+CUSTOM_BASE_URL=https://your-relay.example.workers.dev
 
 MODEL_ACCESS_TIER=free
-PROVIDER_PRIORITY=nvidia-nim,cloudflare-workers-ai,groq,openrouter,blockrun,modal
+PROVIDER_PRIORITY=openrouter,groq,google-ai-studio,nvidia-nim,cloudflare-workers-ai,mistral,cerebras,together,huggingface,deepinfra,openai,anthropic,ollama,custom
 ALLOW_OUTBOUND_NETWORK=true
+DAILY_BUDGET_USD=1.00
+MONTHLY_BUDGET_USD=10.00
+MAX_REQUEST_USD=0.25
 ```
 
 `ALLOW_OUTBOUND_NETWORK=false` disables cloud analysis and provider tests. Local
@@ -129,7 +145,7 @@ IntentLens uses text-only commands and responses.
 - **`NO CLOUD AI KEY` / `AI_NOT_CONFIGURED`** - no usable provider is configured.
 - **`NETWORK_DISABLED`** - set `ALLOW_OUTBOUND_NETWORK=true` and restart.
 - **`MODEL_AUTH_FAILED`** - replace the provider key.
-- **`MODEL_NOT_META`** - choose a Meta model from the catalog.
+- **`MODEL_NOT_VISION`** - choose a vision-capable model.
 - **`MODEL_QUOTA_EXHAUSTED`** - add credit or switch providers.
 - **Camera unavailable** - use `localhost`/HTTPS or **Upload photo**.
 

@@ -168,7 +168,7 @@ Modified:
 - `server/index.js` — new routes wired; `/api/analyze` kept intact.
 - `server/store.js` — `project_docs`, `captures`, immutable file writes, project/capture helpers, cleanup on delete.
 - `server/services/nimProvider.js`, `cloudflareProvider.js`, `groqProvider.js` — optional `schema` and multi-image `imageDataUrls`, backward compatible with `GROUNDING_SCHEMA` / `imageDataUrl`.
-- `server/config.js`, `server/lib/env.js`, `server/routes/providers.js`, `electron/main.js` — strict Meta-only runtime, provider credential handling and startup diagnostics in the same release window.
+- `server/config.js`, `server/lib/env.js`, `server/routes/providers.js`, `electron/main.js` — runtime provider state, provider credential handling and startup diagnostics in the same release window.
 - `electron/package.json` — `extraResources` now includes the new client modules and the frozen `datasets/processed/feature_scaler.json`.
 - `server.auth.test.js` — replaced fixed 2 s startup sleeps with health-readiness polling and guaranteed server shutdown (fixes parallel-run flakiness and hangs).
 

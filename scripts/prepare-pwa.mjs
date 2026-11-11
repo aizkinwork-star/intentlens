@@ -14,6 +14,8 @@ const lib = join(pwa, 'lib');
 const shared = [
   'grid.js',
   'componentResult.js',
+  'modelRegistry.js',
+  'costCore.js',
 ];
 
 mkdirSync(lib, { recursive: true });

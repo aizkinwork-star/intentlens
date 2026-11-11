@@ -1,7 +1,9 @@
-// server/services/huggingfaceProvider.js — Hugging Face (two services).
+// server/services/huggingfaceProvider.js — legacy Hugging Face helper (two services).
 // 1. Inference Providers (serverless): OpenAI-compatible chat completions with HF token.
 // 2. Spaces (Gradio API): queue + SSE event stream.
-// Meta-only: only enable an exact approved Meta model id / Space.
+//
+// DEPRECATED: the active Hugging Face path is openaiCompatibleProvider.js driven
+// by modelRegistry.js. This file is kept for reference and is not wired in.
 
 import { appError } from '../lib/errors.js';
 

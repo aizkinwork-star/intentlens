@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "main": "electron/main.js",
-  "description": "Task-aware visual grounding prototype: phone camera + command + Meta Model API + 64x64 overlay grid",
+  "description": "Task-aware visual grounding prototype: phone/PC camera + command + any vision provider + grid overlay + local perception",
   "engines": {
     "node": ">=22.5"
   },
@@ -15,6 +15,7 @@
     "test:source": "node scripts/run-source-tests.mjs",
     "test:all": "node --test",
     "pwa:prepare": "node scripts/prepare-pwa.mjs",
-    "pwa:serve": "node scripts/serve-pwa.mjs"
+    "pwa:serve": "node scripts/serve-pwa.mjs",
+    "cli": "node cli/intentlens.mjs"
   }
 }

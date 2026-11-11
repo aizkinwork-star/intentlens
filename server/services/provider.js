@@ -1,4 +1,8 @@
-// server/services/provider.js — Meta-only provider interface + failover router.
+// server/services/provider.js — provider interface + failover router.
+//
+// Provider-agnostic: any catalogued vision provider with a usable key can be
+// selected. See modelRegistry.js for the catalogue and server/services/router.js
+// for ordering.
 //
 // Every provider returns the same contract. Failover is sequential and bounded:
 // auth failures, quota exhaustion, rate limits, outages and timeouts move to the
@@ -10,7 +14,7 @@ import { appError } from '../lib/errors.js';
 
 const NEVER_FAILOVER = new Set([
   'COMMAND_MISSING', 'CAMERA_FRAME_MISSING', 'IMAGE_TOO_LARGE', 'IMAGE_DECODE_FAILED',
-  'BAD_JSON', 'MODEL_BAD_RESPONSE', 'RESULT_SCHEMA_INVALID', 'MODEL_NOT_META',
+  'BAD_JSON', 'MODEL_BAD_RESPONSE', 'RESULT_SCHEMA_INVALID',
 ]);
 
 const HEALTH = new Map();
@@ -103,6 +107,34 @@ export class ProviderRouter {
         continue;
       }
 
+      // Hard budget preflight. A request that cannot fit is skipped in favour
+      // of a cheaper provider; if no provider fits, the last budget error wins.
+      let preflight = null;
+      if (this.costManager) {
+        const inputText = `${input.instructions || ''}\n${input.userText || ''}`;
+        const image = input.imageMeta || (input.imageDataUrl ? { width: 1024, height: 1024 } : null);
+        preflight = this.costManager.preflight({
+          providerId: provider.id,
+          modelId: provider.modelId,
+          inputText,
+          image,
+        });
+        if (!preflight.ok) {
+          lastError = appError(preflight.code, preflight.message);
+          attempts.push({
+            id: provider.id,
+            modelId: provider.modelId || null,
+            ok: false,
+            skipped: true,
+            code: preflight.code,
+            category: 'budget',
+            estimateUsd: preflight.estimateUsd,
+            estimatedInputTokens: preflight.estimatedInputTokens,
+          });
+          continue;
+        }
+      }
+
       const started = Date.now();
       try {
         const raw = await provider.analyze(input, signal);
@@ -113,7 +145,19 @@ export class ProviderRouter {
         health.cooldownUntil = 0;
         health.lastError = null;
         health.lastErrorCategory = null;
-        attempts.push({ id: provider.id, modelId: provider.modelId || null, ok: true, ms });
+        attempts.push({ id: provider.id, modelId: provider.modelId || null, ok: true, ms, estimateUsd: preflight?.estimateUsd ?? null });
+        if (this.costManager) {
+          try {
+            this.costManager.recordUsage({
+              providerId: provider.id,
+              modelId: provider.modelId,
+              requestId: input.requestId || '',
+              inputTokens: raw?.usage ? 0 : (preflight?.estimatedInputTokens || 0),
+              outputTokens: raw?.usage ? 0 : (preflight?.maxOutputTokens || 0),
+              usage: raw?.usage || null,
+            });
+          } catch { /* ledger persistence must not fail the request */ }
+        }
         return {
           result: raw,
           providerUsed: provider.id,
@@ -121,6 +165,7 @@ export class ProviderRouter {
           modelId: provider.modelId || null,
           fallbackOccurred: attempted > 0,
           attempts,
+          budget: preflight ? { estimateUsd: preflight.estimateUsd, remainingUsd: preflight.snapshot.remainingUsd } : null,
         };
       } catch (err) {
         attempted += 1;
@@ -175,7 +220,7 @@ export function mapHttpError(status, body, { retryAfterMs } = {}) {
     return err;
   }
   if (status === 404) {
-    const err = appError('MODEL_UPSTREAM_ERROR', 'The selected Meta model is not available on this account.');
+    const err = appError('MODEL_UPSTREAM_ERROR', 'The selected model is not available on this account or provider.');
     err.providerDetail = detail;
     err.modelUnavailable = true;
     return err;

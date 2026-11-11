@@ -2,17 +2,21 @@
 
 IntentLens is a local-first web app served by a small Node.js backend. Camera,
 grid, tap/drag tracking and the k-NN reference classifier run on this machine.
-Cloud image analysis is optional and uses Meta-published vision models only.
+Cloud image analysis is optional and sends the frame only to the vision provider
+you configure.
 
 ## What you need
 
 - **Windows 10/11** and **Node.js 22.5+** from https://nodejs.org/
 - Internet on the first run (Electron is installed once)
-- A provider key for cloud AI (Meta models only):
-  - OpenRouter (recommended, paid per token): https://openrouter.ai/keys
+- A provider key for cloud AI (any one of these works):
+  - OpenRouter (free and paid models): https://openrouter.ai/keys
+  - Google AI Studio: https://aistudio.google.com/apikey
+  - Groq: https://console.groq.com/ (vision depends on the account)
+  - NVIDIA NIM: https://build.nvidia.com/
   - Cloudflare Workers AI: https://dash.cloudflare.com/
-  - NVIDIA NIM (hosts Meta models): https://build.nvidia.com/
-  - Groq: text-only. It never receives images.
+  - Mistral, Together, Hugging Face, DeepInfra, OpenAI, Anthropic, or local Ollama
+  - A custom HTTPS OpenAI-compatible relay you control
 - **Phone:** no download. Open https://aizkinwork-star.github.io/intentlens/ ,
   served straight from this repository. See [../pwa/README.md](../pwa/README.md).
 
@@ -164,7 +168,7 @@ press **Find it**.
 - **`NO CLOUD AI KEY` / `AI_NOT_CONFIGURED`** - open provider setup and save a real key.
 - **`NETWORK_DISABLED`** - set `ALLOW_OUTBOUND_NETWORK=true` and restart.
 - **`MODEL_AUTH_FAILED`** - replace the provider key.
-- **`MODEL_NOT_META`** - choose a model from the Meta-only catalog.
+- **`MODEL_NOT_VISION`** - choose a vision-capable model.
 - **`MODEL_QUOTA_EXHAUSTED`** - add credit or switch providers.
 - **Camera unavailable** - use `localhost`/HTTPS or upload a photo.
 - **Page says it is out of date after a server restart** - the page should refresh the
@@ -178,7 +182,7 @@ press **Find it**.
 | `electron\release\IntentLens Setup 0.4.0.exe` | Desktop installer |
 | `setup.bat` / `setup.ps1` | Legacy browser-server installers |
 | `server/index.js` | Local HTTP backend and route dispatch |
-| `server/config.js` | Meta-only catalog, priority and feature flags |
+| `server/config.js` | Runtime provider state, priority and feature flags |
 | `server/routes/providers.js` | Provider save/test/delete/status |
 | `server/routes/analyze.js` | Request validation, network gate and orchestration |
 | `server/services/nimProvider.js` | NVIDIA NIM adapter |

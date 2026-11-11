@@ -1,22 +1,23 @@
-// POST /api/analyze — v8 local-first, strict Meta-only cloud inference.
+// POST /api/analyze — local-first, multi-provider cloud inference.
 //
-// Order: validate request -> build explicit context -> call a verified Meta
-// vision model via a cloud provider (NVIDIA NIM primary, Cloudflare Workers AI
-// next) -> validate output -> return GroundingResult. Groq is skipped unless
-// the account actually exposes a verified Meta vision model.
+// Order: validate request -> build explicit context -> call the configured
+// vision model through the provider failover router -> validate output ->
+// return GroundingResult. Any catalogued vision model in any configured
+// provider may be used; a text-only model is never sent an image.
 //
-// v7 non-negotiables:
-//   - Meta Llama Vision models only, hosted via cloud providers.
-//   - No API keys in browser code; keys live in backend .env.
-//   - Outbound network restricted to allowlisted inference hosts.
-//   - Fail closed when all providers unavailable.
-//   - No per-frame AI calls; tracker handles local tracking.
+// Non-negotiables:
+//   - Only a vision-capable model receives an image.
+//   - No API keys in browser code; keys live in the backend encrypted store.
+//   - A hard token/cost preflight runs before every outbound request.
+//   - Outbound network restricted to known hosts plus explicit HTTPS relays.
+//   - Fail closed when all providers are unavailable.
+//   - No per-frame AI calls; the tracker handles local tracking.
 //   - No web search at runtime; local source vault instead.
 
 import { randomUUID } from 'node:crypto';
 import { readJson, json, recordServerLog } from '../lib/http.js';
 import { appError, errorPayload } from '../lib/errors.js';
-import { META_MODEL_CATALOG, config, localModelConfig, modelMode, localModelAvailable, outboundNetworkAllowed, isAllowedOutboundHost } from '../config.js';
+import { config, localModelConfig, modelMode, localModelAvailable, outboundNetworkAllowed, providerRuntime } from '../config.js';
 import { isValidPoint, isValidBox, GRID_SIZES, DEFAULT_GRID_SIZE } from '../../grid.js';
 import { buildGroundingPrompt, summarizeContext, resolveLimits } from '../services/contextBuilder.js';
 import { ContextBudget } from '../services/contextBudget.js';
@@ -27,6 +28,7 @@ import { buildLocalVaultSearchProvider } from '../services/searchAdapter.js';
 import { toGroundingResult } from '../services/groundingValidator.js';
 import { validateInstructionPlan } from '../services/instructionValidator.js';
 import { record as benchRecord, getAllStats } from '../services/benchmark.js';
+import { costStatusForClient } from '../services/costManager.js';
 import { mockGrounding } from '../services/mockModel.js';
 
 const IMAGE_DATA_URL = /^data:image\/(jpeg|jpg|png|webp|gif|x-icon);base64,[a-z0-9+/=\s]+$/i;
@@ -38,48 +40,24 @@ function decodedBytes(dataUrl) {
   return Math.floor(((dataUrl.length - comma - 1) * 3) / 4);
 }
 
-/** Exact upstream target for logs. Cloudflare's account id is never logged. */
+/** Exact upstream target for logs. Account ids and keys are never logged. */
 function inferenceTarget(providerId, modelId) {
-  if (providerId === 'nvidia-nim') {
+  const runtime = providerRuntime(providerId);
+  if (!runtime) {
+    const endpoint = chatCompletionsUrl(config.modalBaseUrl || '');
+    let host = '';
+    try { host = new URL(endpoint).hostname; } catch { /* ignore */ }
+    return { endpoint, host };
+  }
+  if (runtime.kind === 'cloudflare') {
     return {
-      endpoint: 'https://integrate.api.nvidia.com/v1/chat/completions',
-      host: META_MODEL_CATALOG['nvidia-nim']?.host || 'integrate.api.nvidia.com',
+      endpoint: `https://api.cloudflare.com/client/v4/accounts/{account}/ai/run/${modelId || runtime.modelId}`,
+      host: 'api.cloudflare.com',
     };
   }
-  if (providerId === 'cloudflare-workers-ai') {
-    return {
-      endpoint: `https://api.cloudflare.com/client/v4/accounts/{account}/ai/run/${modelId}`,
-      host: META_MODEL_CATALOG['cloudflare-workers-ai']?.host || 'api.cloudflare.com',
-    };
-  }
-  if (providerId === 'groq') {
-    return {
-      endpoint: 'https://api.groq.com/openai/v1/chat/completions',
-      host: META_MODEL_CATALOG.groq?.host || 'api.groq.com',
-    };
-  }
-  if (providerId === 'openrouter') {
-    return {
-      endpoint: 'https://openrouter.ai/api/v1/chat/completions',
-      host: META_MODEL_CATALOG.openrouter?.host || 'openrouter.ai',
-    };
-  }
-  if (providerId === 'blockrun') {
-    return {
-      endpoint: 'https://api.blockrun.ai/v1/chat/completions',
-      host: META_MODEL_CATALOG.blockrun?.host || 'api.blockrun.ai',
-    };
-  }
-  if (providerId === 'modal') {
-    const endpoint = chatCompletionsUrl(config.modalBaseUrl);
-    let host = 'modal.run';
-    try { host = new URL(endpoint).hostname; } catch { /* keep fallback */ }
-    return {
-      endpoint: endpoint || '(modal endpoint missing)',
-      host,
-    };
-  }
-  return { endpoint: '', host: '' };
+  let host = '';
+  try { host = new URL(runtime.endpoint).hostname; } catch { /* ignore */ }
+  return { endpoint: runtime.endpoint || '', host };
 }
 
 function sanitizeSceneMap(list) {
@@ -213,7 +191,7 @@ export async function analyzeHandler(req, res, store) {
     const isLocalAvailable = localModelAvailable();
 
     if (!isLocalAvailable) {
-      throw appError('AI_NOT_CONFIGURED', 'No vision-capable Meta model is configured. Connect OpenRouter, NVIDIA NIM, Cloudflare Workers AI, BlockRun or Modal. Groq needs a Meta vision model on your account.');
+      throw appError('AI_NOT_CONFIGURED', 'No vision provider is configured. Add a provider key in Settings (OpenRouter, Groq, Google AI Studio, NVIDIA NIM, Cloudflare, Mistral and others are supported).');
     }
     if (!outboundNetworkAllowed()) {
       throw appError('NETWORK_DISABLED', 'Outbound network is disabled in .env (ALLOW_OUTBOUND_NETWORK=false). Local camera, grid, tracking and k-NN still work.');
@@ -230,7 +208,7 @@ export async function analyzeHandler(req, res, store) {
     }
 
     if (!router || !router.providers?.length) {
-      throw appError('AI_NOT_CONFIGURED', 'No Meta vision provider is configured. Add a key in Provider Setup.');
+      throw appError('AI_NOT_CONFIGURED', 'No vision provider is configured. Add a key in Provider Setup.');
     }
 
     // Build local vault search provider if store is available.
@@ -256,6 +234,7 @@ export async function analyzeHandler(req, res, store) {
         instructions: prompt.instructions,
         userText: prompt.userText,
         imageDataUrl: clean.frame.dataUrl,
+        imageMeta: { width: clean.frame.width, height: clean.frame.height },
         allowWebSearch: false,
         requestId: clean.requestId,
         frameId: clean.frame.frameId,
@@ -338,6 +317,8 @@ export async function analyzeHandler(req, res, store) {
         latencyMs: Date.now() - started,
         context: summarizeContext(clean, resolveLimits('none')),
         projectId: clean.projectId,
+        budget: routed.budget || null,
+        cost: costStatusForClient(),
         benchmark: getAllStats(),
       },
     };

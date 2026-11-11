@@ -1,20 +1,22 @@
 // server/services/openaiCompatibleProvider.js — generic OpenAI-compatible
-// adapter for OpenRouter, BlockRun and user-deployed Modal endpoints.
+// adapter for OpenRouter, Groq, Google AI Studio, NVIDIA NIM, Mistral, Cerebras,
+// Together, Hugging Face, DeepInfra, OpenAI, Ollama, Modal and custom relays.
 //
-// Meta-only: the caller must pass a model id from that provider's catalog, and
-// the adapter refuses anything that is not catalogued as vision. Keys stay in
-// the backend process and are never logged.
+// The adapter is vendor-neutral. It refuses a text-only or classifier model for
+// image input, but it no longer imposes a Meta-only allowlist. Keys stay in the
+// backend process and are never logged.
 
 import { mapHttpError, retryAfterMs } from './provider.js';
+import { appError } from '../lib/errors.js';
 import { GROUNDING_SCHEMA } from './groundingSchema.js';
-import { providerSupportsVisionModel } from '../config.js';
+import { getModel, getProvider, normalizeProviderId } from '../../modelRegistry.js';
 
 function unfence(text) {
   const m = /^\s*```(?:json)?\s*([\s\S]*?)\s*```\s*$/i.exec(text);
   return (m ? m[1] : text).trim();
 }
 
-function extractJson(text) {
+export function extractJson(text) {
   const body = unfence(String(text || ''));
   try { return JSON.parse(body); } catch { /* try a substring */ }
   const start = body.indexOf('{');
@@ -47,7 +49,7 @@ export function chatCompletionsUrl(baseUrl) {
   let clean;
   try {
     const url = new URL(raw);
-    if (url.protocol !== 'https:') return '';
+    if (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))) return '';
     clean = `${url.origin}${url.pathname.replace(/\/+$/, '')}`;
   } catch {
     return '';
@@ -57,25 +59,40 @@ export function chatCompletionsUrl(baseUrl) {
   return `${clean}/v1/chat/completions`;
 }
 
-export function buildOpenAICompatibleProvider({ id, name, endpoint, host, apiKey, modelId, timeoutMs = 120000 } = {}) {
-  if (!id || !endpoint) throw new Error('OpenAI-compatible provider requires id and endpoint');
-  if (!apiKey) throw new Error(`${name || id} provider requires apiKey`);
-  if (!modelId) throw new Error(`${name || id} provider requires an explicit Meta vision model id`);
-  if (!providerSupportsVisionModel(id, modelId)) {
-    throw new Error(`${name || id} model ${modelId} is not an allowlisted Meta vision model`);
+export function buildOpenAICompatibleProvider({
+  id,
+  name,
+  endpoint,
+  host,
+  apiKey,
+  modelId,
+  timeoutMs = 120000,
+  maxTokens = 3072,
+  headers: extraHeaders = {},
+  allowUnknownModel = false,
+  providerKind = 'openai',
+} = {}) {
+  const providerId = normalizeProviderId(id);
+  if (!providerId || !endpoint) throw new Error('OpenAI-compatible provider requires id and endpoint');
+  if (!modelId) throw new Error(`${name || providerId} provider requires an explicit model id`);
+  const info = getModel(providerId, modelId);
+  if (!allowUnknownModel) {
+    if (!info) throw new Error(`${name || providerId} model ${modelId} is not in the ${getProvider(providerId)?.label || providerId} catalogue`);
+    if (info.modality === 'classifier') throw new Error(`${name || providerId} model ${modelId} is a classifier only`);
   }
 
   return {
-    id,
-    name: name || id,
+    id: providerId,
+    name: name || getProvider(providerId)?.label || providerId,
     modelId,
-    capabilities: { imageInput: true, structuredOutput: true, webGrounding: false },
+    capabilities: { imageInput: info ? info.vision === true : true, structuredOutput: true, webGrounding: false },
+    pricing: info ? { inputPerM: info.inputPerM, outputPerM: info.outputPerM } : null,
 
     async healthCheck() {
       try {
         const res = await fetch(endpoint, {
           method: 'POST',
-          headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
+          headers: { ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}), 'content-type': 'application/json', ...extraHeaders },
           body: JSON.stringify({
             model: modelId,
             messages: [{ role: 'user', content: 'Reply with OK only.' }],
@@ -88,7 +105,7 @@ export function buildOpenAICompatibleProvider({ id, name, endpoint, host, apiKey
           const body = await res.text().catch(() => '');
           return { ok: false, status: res.status, detail: `HTTP ${res.status}: ${body.slice(0, 200)}` };
         }
-        return { ok: true, detail: `${name || id} reachable` };
+        return { ok: true, detail: `${name || providerId} reachable` };
       } catch (err) {
         return { ok: false, detail: err.message || String(err) };
       }
@@ -99,14 +116,23 @@ export function buildOpenAICompatibleProvider({ id, name, endpoint, host, apiKey
       const images = Array.isArray(imageDataUrls) && imageDataUrls.length
         ? imageDataUrls
         : (imageDataUrl ? [imageDataUrl] : []);
+      if (images.length && info && info.vision !== true) {
+        const err = appError('MODEL_UPSTREAM_ERROR', `${name || providerId} model ${modelId} is text-only and cannot accept an image`);
+        err.badRequest = true;
+        throw err;
+      }
       const schemaHint = `\n\nReply with ONE JSON object only (no markdown) matching this schema:\n${JSON.stringify(outputSchema)}`;
 
       const headers = {
-        authorization: `Bearer ${apiKey}`,
         'content-type': 'application/json',
+        ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
+        ...extraHeaders,
       };
-      if (id === 'openrouter') {
-        headers['x-title'] = 'IntentLens';
+      if (providerId === 'openrouter') headers['x-title'] = 'IntentLens';
+      if (providerId === 'anthropic') {
+        headers['anthropic-version'] = '2023-06-01';
+        delete headers.authorization;
+        if (apiKey) headers['x-api-key'] = apiKey;
       }
 
       const body = {
@@ -119,7 +145,7 @@ export function buildOpenAICompatibleProvider({ id, name, endpoint, host, apiKey
           ] },
         ],
         temperature: 0.1,
-        max_tokens: 3072,
+        max_tokens: Math.max(256, Math.min(8192, Number(maxTokens) || 3072)),
         stream: false,
       };
 
@@ -136,8 +162,8 @@ export function buildOpenAICompatibleProvider({ id, name, endpoint, host, apiKey
         });
       } catch (err) {
         if (signal?.aborted) throw err;
-        if (err.name === 'TimeoutError' || err.name === 'AbortError') throw mapHttpError(504, `${name || id} timeout`);
-        throw mapHttpError(503, `${name || id} unreachable: ${err.message || err}`);
+        if (err.name === 'TimeoutError' || err.name === 'AbortError') throw mapHttpError(504, `${name || providerId} timeout`);
+        throw mapHttpError(503, `${name || providerId} unreachable: ${err.message || err}`);
       }
 
       const raw = await res.text();
@@ -145,13 +171,13 @@ export function buildOpenAICompatibleProvider({ id, name, endpoint, host, apiKey
 
       let parsed = null;
       try { parsed = raw ? JSON.parse(raw) : null; } catch { parsed = null; }
-      if (!parsed) throw new Error(`${name || id} returned an empty body`);
+      if (!parsed) throw new Error(`${name || providerId} returned an empty body`);
 
       const text = messageText(parsed?.choices?.[0]?.message);
-      if (!text) throw new Error(`${name || id} returned no content`);
+      if (!text) throw new Error(`${name || providerId} returned no content`);
 
       const rawJson = extractJson(text);
-      if (!rawJson) throw new Error(`${name || id} did not return valid JSON`);
+      if (!rawJson) throw new Error(`${name || providerId} did not return valid JSON`);
 
       return {
         text: JSON.stringify(rawJson),
@@ -159,6 +185,7 @@ export function buildOpenAICompatibleProvider({ id, name, endpoint, host, apiKey
         searchedWeb: false,
         httpStatus: res.status,
         returnedModel: parsed?.model || modelId,
+        usage: parsed?.usage || null,
         endpoint,
         host: host || '',
       };

@@ -27,7 +27,9 @@ import {
   modelAcceptsImages,
   providerSupportsImages,
   isMetaModelId,
+  localBudgetStatus,
 } from './provider.js';
+import { loadBudget, saveBudget, loadLedger, appendUsage, clearLedger, DEFAULT_BUDGET } from './cost.js';
 import { cameraErrorMessage, computeCaptureSize, tryLockLandscape, unlockOrientation } from './camera.js';
 import { escapeHtml } from './safe.js';
 import { polygonPointsAttribute, edgeMidpoints } from './geometry.js';
@@ -83,8 +85,15 @@ const els = {
   modelInput: $('modelInput'),
   modelList: $('modelList'),
   modelNote: $('modelNote'),
+  accountIdInput: $('accountIdInput'),
+  accountIdRow: $('accountIdRow'),
   keyInput: $('keyInput'),
   baseUrlInput: $('baseUrlInput'),
+  budgetDaily: $('budgetDaily'),
+  budgetMonthly: $('budgetMonthly'),
+  budgetRequest: $('budgetRequest'),
+  budgetStatus: $('budgetStatus'),
+  clearBudgetBtn: $('clearBudgetBtn'),
   gridSelect: $('gridSelect'),
   testProviderBtn: $('testProviderBtn'),
   clearKeyBtn: $('clearKeyBtn'),
@@ -113,7 +122,10 @@ const state = {
   model: '',
   accessTier: 'paid',
   baseUrl: '',
+  accountId: '',
   apiKey: '',
+  budget: { ...DEFAULT_BUDGET },
+  ledger: [],
   allowCloud: false,
   mode: 'vision',       // 'vision' sends one still; 'chat' sends text only
   busy: false,
@@ -164,6 +176,25 @@ function usageSummary(usage) {
   if (Number.isFinite(cost) && cost > 0) bits.push(`$${cost.toFixed(7).replace(/0+$/, '').replace(/\.$/, '')}`);
   else if (Number.isFinite(cost) && cost === 0) bits.push('$0');
   return bits.join(' · ');
+}
+
+async function recordUsageFromResult(result) {
+  if (!result?.ok || !result.usageEntry) return;
+  try {
+    state.ledger = await appendUsage(result.usageEntry);
+    renderBudgetStatus();
+  } catch { /* local bookkeeping must not fail the answer */ }
+}
+
+function renderBudgetStatus() {
+  if (!els.budgetStatus) return;
+  const snap = localBudgetStatus(state.budget, state.ledger);
+  const today = `$${snap.todayUsd.toFixed(4)}`;
+  const month = `$${snap.monthUsd.toFixed(4)}`;
+  const left = `$${snap.remainingUsd.toFixed(4)}`;
+  const warn = snap.warn ? ' · warning threshold reached' : '';
+  els.budgetStatus.textContent = `Spent today ${today} of $${snap.budget.dailyUsd.toFixed(2)}; this month ${month} of $${snap.budget.monthlyUsd.toFixed(2)}. Remaining ${left}${warn}.`;
+  els.budgetStatus.className = snap.exhausted ? 'warn' : 'meta';
 }
 
 function recordRequest(result) {
@@ -735,9 +766,15 @@ function requireCloudReady() {
     setStatus('Cloud is off. Tap “Allow cloud for this session” first.', 'error');
     return false;
   }
-  if (!state.apiKey) {
+  const provider = PROVIDERS[state.providerId];
+  if (provider?.requiresKey && !state.apiKey) {
     openSettings();
     setStatus('Add a provider key in Settings. It is kept in memory only.', 'error');
+    return false;
+  }
+  if (provider?.requiresAccountId && !state.accountId) {
+    openSettings();
+    setStatus('Add the Cloudflare Account ID in Settings.', 'error');
     return false;
   }
   if (navigator.onLine === false) {
@@ -769,12 +806,16 @@ async function sendChat(command) {
     const response = await callChatModel({
       providerId: state.providerId,
       apiKey: state.apiKey,
-      model: modelFor(state.providerId, state.model),
+      model: modelFor(state.providerId, state.model, state.accessTier),
       accessTier: state.accessTier,
       baseUrl: state.baseUrl,
+      accountId: state.accountId,
+      budget: state.budget,
+      ledger: state.ledger,
       prompt: `${instructions}\n\n${userText}`,
     });
     recordRequest(response);
+    await recordUsageFromResult(response);
 
     if (!response.ok) {
       setStatus(response.message, 'error');
@@ -875,13 +916,17 @@ async function send() {
     const response = await callModel({
       providerId: state.providerId,
       apiKey: state.apiKey,
-      model: modelFor(state.providerId, state.model),
+      model: modelFor(state.providerId, state.model, state.accessTier),
       accessTier: state.accessTier,
       baseUrl: state.baseUrl,
+      accountId: state.accountId,
+      budget: state.budget,
+      ledger: state.ledger,
       prompt,
       imageDataUrl: state.captured.dataUrl,
     });
     recordRequest(response);
+    await recordUsageFromResult(response);
 
     if (!response.ok) {
       setStatus(response.message, 'error');
@@ -948,12 +993,16 @@ async function explain() {
     const response = await callModel({
       providerId: state.providerId,
       apiKey: state.apiKey,
-      model: modelFor(state.providerId, state.model),
+      model: modelFor(state.providerId, state.model, state.accessTier),
       accessTier: state.accessTier,
       baseUrl: state.baseUrl,
+      accountId: state.accountId,
+      budget: state.budget,
+      ledger: state.ledger,
       prompt: `${instructions}\n\n${userText}`,
     });
     recordRequest(response);
+    await recordUsageFromResult(response);
 
     if (!response.ok) {
       setStatus(`Explain failed (no retry): ${response.message}`, 'error');
@@ -990,6 +1039,15 @@ async function repeat() {
   setStatus('Repeated the stored answer. 0 AI requests.', 'ok');
 }
 
+function pricingLabel(info) {
+  if (!info) return '';
+  if (info.tier === 'free' && !info.inputPerM && !info.outputPerM) return 'free tier / no per-token charge';
+  const inPrice = Number(info.inputPerM) || 0;
+  const outPrice = Number(info.outputPerM) || 0;
+  if (!inPrice && !outPrice) return `${info.tier} tier`;
+  return `$${inPrice.toFixed(2)}/M input, $${outPrice.toFixed(2)}/M output`;
+}
+
 function updateModelNote() {
   const providerId = els.providerSelect.value || state.providerId;
   const tier = els.accessTier?.value || state.accessTier || 'paid';
@@ -998,13 +1056,18 @@ function updateModelNote() {
   if (!info) {
     els.modelNote.textContent = providerId === 'custom'
       ? 'Any model id your relay accepts can be typed here. It is sent exactly as typed.'
-      : 'This model id is not in the verified catalogue. It will be sent as typed; the provider decides whether it exists and whether it can read images.';
+      : 'This model id is not in the shared catalogue. It will be sent as typed; the provider decides whether it exists and whether it can read images.';
     return;
   }
-  const bits = [info.label];
-  if (info.pricing) bits.push(info.pricing);
-  bits.push(info.vision ? 'accepts images' : 'text only — images are refused');
-  if (info.verified) bits.push('verified in this audit');
+  const bits = [
+    info.name || info.id,
+    `${info.tier} tier`,
+    pricingLabel(info),
+    info.vision ? 'accepts images' : 'text only — images are refused',
+    `${Math.round((info.contextWindow || 0) / 1000)}k context`,
+  ];
+  if (info.openWeight) bits.push('open weights');
+  if (info.verified) bits.push('verified with a real image here');
   els.modelNote.textContent = `${bits.join(' · ')}. ${info.note || ''}`.trim();
 }
 
@@ -1015,30 +1078,32 @@ function syncProviderDetail(providerId) {
   const cors = provider.unavailableInBrowser
     ? `Browser CORS: BLOCKED — ${provider.blockedMessage || 'the host does not allow this origin.'}`
     : `Browser CORS: ${provider.browserCors}.`;
-  const base = `${provider.note} ${cors}`;
+  const base = `${provider.description || ''} ${cors}`;
   const endpointBit = provider.endpoint && !base.includes(provider.endpoint)
     ? ` Endpoint: ${provider.endpoint}`
     : '';
-  els.providerNote.textContent = `${base}${endpointBit}`;
+  els.providerNote.textContent = `${base}${endpointBit}`.trim();
   const defaultModel = defaultModelFor(providerId, tier);
   els.modelInput.placeholder = defaultModel || 'Type the exact model id';
   if (els.accessNote) {
-    els.accessNote.textContent = tier === 'preview'
-      ? 'Limited-preview Meta models are visible. They may need account approval and are not verified.'
-      : 'Meta models only. They are paid per token and bill your provider account, so set up billing first. Non-Meta models are never offered or sent.';
+    els.accessNote.textContent = tier === 'free'
+      ? 'Only free-tier models are listed and allowed. A paid model is refused before the request.'
+      : tier === 'preview'
+        ? 'Free and preview models are listed. Preview access may need account approval.'
+        : 'Every catalogue model is listed. Paid models bill your provider account directly.';
   }
   const baseUrlRow = $('baseUrlRow');
   if (baseUrlRow) baseUrlRow.hidden = !provider.requiresBaseUrl;
   els.baseUrlInput.disabled = !provider.requiresBaseUrl;
-  els.baseUrlInput.placeholder = providerId === 'modal'
-    ? 'https://your-workspace--your-app.modal.run'
-    : 'https://your-relay.example.workers.dev';
+  els.baseUrlInput.placeholder = 'https://your-relay.example.workers.dev';
+  if (els.accountIdRow) els.accountIdRow.hidden = !provider.requiresAccountId;
+  if (els.accountIdInput) els.accountIdInput.disabled = !provider.requiresAccountId;
   const catalogue = modelsFor(providerId, tier);
   els.modelList.replaceChildren();
   for (const [id, info] of Object.entries(catalogue)) {
     const option = document.createElement('option');
     option.value = id;
-    option.label = `${info.label}${info.pricing ? ` — ${info.pricing}` : ''}`;
+    option.label = `${info.name}${info.tier !== 'paid' ? ` (${info.tier})` : ''}${info.vision ? ' · vision' : ' · text'}`;
     els.modelList.appendChild(option);
   }
   updateModelNote();
@@ -1064,8 +1129,13 @@ function openSettings() {
   els.modelInput.value = state.model;
   els.keyInput.value = state.apiKey;
   els.baseUrlInput.value = state.baseUrl;
+  if (els.accountIdInput) els.accountIdInput.value = state.accountId;
+  if (els.budgetDaily) els.budgetDaily.value = String(state.budget.dailyUsd);
+  if (els.budgetMonthly) els.budgetMonthly.value = String(state.budget.monthlyUsd);
+  if (els.budgetRequest) els.budgetRequest.value = String(state.budget.maxRequestUsd);
   els.gridSelect.value = String(state.gridSize);
   updateProviderUi();
+  renderBudgetStatus();
   if (!els.settingsDialog.open) els.settingsDialog.showModal();
 }
 
@@ -1079,6 +1149,12 @@ function readSettingsForm() {
     // Only keep a base URL for providers that actually use one, so a stale
     // relay/deployment URL is never carried into a fixed-host request.
     baseUrl: PROVIDERS[providerId]?.requiresBaseUrl ? els.baseUrlInput.value.trim() : '',
+    accountId: PROVIDERS[providerId]?.requiresAccountId ? (els.accountIdInput?.value.trim() || '') : '',
+    budget: {
+      dailyUsd: Number(els.budgetDaily?.value) || DEFAULT_BUDGET.dailyUsd,
+      monthlyUsd: Number(els.budgetMonthly?.value) || DEFAULT_BUDGET.monthlyUsd,
+      maxRequestUsd: Number(els.budgetRequest?.value) || DEFAULT_BUDGET.maxRequestUsd,
+    },
     gridSize: Number(els.gridSelect.value) || DEFAULT_GRID_SIZE,
   };
 }
@@ -1090,6 +1166,8 @@ async function saveSettings() {
   state.accessTier = values.accessTier;
   state.apiKey = values.apiKey;          // memory only, never persisted
   state.baseUrl = values.baseUrl;
+  state.accountId = values.accountId;
+  state.budget = await saveBudget(values.budget);
   state.gridSize = values.gridSize;
 
   // Settings are not sensitive, so they may persist. The key never is.
@@ -1097,6 +1175,7 @@ async function saveSettings() {
   await db.setSetting('model', state.model);
   await db.setSetting('accessTier', state.accessTier);
   await db.setSetting('baseUrl', state.baseUrl);
+  await db.setSetting('accountId', state.accountId);
   await db.setSetting('gridSize', state.gridSize);
   await db.deleteSetting('rememberKey');
   await db.deleteSetting('apiKey');
@@ -1104,6 +1183,7 @@ async function saveSettings() {
   els.gridLabel.textContent = `Grid ${state.gridSize}×${state.gridSize}`;
   updateCloudUi();
   drawGrid();
+  renderBudgetStatus();
   els.settingsDialog.close();
   setStatus('Settings saved. The key stays in memory for this tab only.', 'ok');
 }
@@ -1117,8 +1197,13 @@ function clearKey() {
 
 async function runProviderTest() {
   const values = readSettingsForm();
-  if (!values.apiKey) {
+  const provider = PROVIDERS[values.providerId];
+  if (provider?.requiresKey && !values.apiKey) {
     setStatus('Add a key before testing.', 'error');
+    return;
+  }
+  if (provider?.requiresAccountId && !values.accountId) {
+    setStatus('Add the Cloudflare Account ID before testing.', 'error');
     return;
   }
   els.testProviderBtn.disabled = true;
@@ -1267,6 +1352,12 @@ function wireEvents() {
   els.closeSettingsBtn.addEventListener('click', () => els.settingsDialog.close());
   els.testProviderBtn.addEventListener('click', runProviderTest);
   els.clearKeyBtn.addEventListener('click', clearKey);
+  els.clearBudgetBtn?.addEventListener('click', async () => {
+    await clearLedger();
+    state.ledger = [];
+    renderBudgetStatus();
+    setStatus('Local cost ledger cleared. Provider invoices still apply.', 'ok');
+  });
 
   els.providerSelect.addEventListener('change', () => {
     const next = els.providerSelect.value;
@@ -1364,15 +1455,13 @@ async function boot() {
   state.gridSize = Number(settings.gridSize) || DEFAULT_GRID_SIZE;
   const savedProvider = PROVIDERS[settings.providerId] ? settings.providerId : 'openrouter';
   state.providerId = savedProvider;
-  state.accessTier = 'paid'; // older builds saved 'free'/'preview'; paid is the superset
-  // Older builds saved retired models. A model the user typed themselves is
-  // kept unless it is a known paid model while free access is selected.
-  const legacyRetired = new Set([
-    'meta-llama/llama-3.3-70b-versatile',
-  ]);
-  const savedModel = settings.model && isMetaModelId(settings.model) && !legacyRetired.has(settings.model) ? settings.model : '';
-  state.model = modelAllowedAtTier(savedProvider, savedModel, state.accessTier) ? savedModel : '';
+  state.accessTier = ['free', 'preview', 'paid'].includes(settings.accessTier) ? settings.accessTier : 'paid';
+  const savedModel = settings.model || '';
+  state.model = !savedModel || modelAllowedAtTier(savedProvider, savedModel, state.accessTier) ? savedModel : '';
   state.baseUrl = settings.baseUrl || '';
+  state.accountId = settings.accountId || '';
+  state.budget = await loadBudget();
+  state.ledger = await loadLedger();
   await db.deleteSetting('tts'); // remove the legacy voice preference
   // Legacy plaintext keys from older builds are deleted, not migrated.
   await db.deleteSetting('apiKey');
@@ -1384,6 +1473,7 @@ async function boot() {
   updateProviderUi();
   updateCloudUi();
   updateChatModeUi();
+  renderBudgetStatus();
   clearRequestLog();
 
   await refreshProjects();

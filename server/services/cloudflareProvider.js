@@ -1,11 +1,12 @@
 // server/services/cloudflareProvider.js — Cloudflare Workers AI adapter.
 //
 // POST https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run/{model}
-// Meta models only. The key lives in the backend process and is never logged.
+// Any model in the Cloudflare catalogue is allowed. The token stays in the
+// backend process and is never logged.
 
 import { mapHttpError, retryAfterMs } from './provider.js';
 import { GROUNDING_SCHEMA } from './groundingSchema.js';
-import { providerSupportsVisionModel } from '../config.js';
+import { getModel } from '../../modelRegistry.js';
 
 function unfence(text) {
   const m = /^\s*```(?:json)?\s*([\s\S]*?)\s*```\s*$/i.exec(text);
@@ -18,9 +19,9 @@ export function buildCloudflareProvider({ accountId, apiToken, modelId, timeoutM
   if (!accountId || !apiToken || !modelId) {
     throw new Error('Cloudflare provider requires accountId, apiToken and modelId');
   }
-  if (!providerSupportsVisionModel('cloudflare-workers-ai', modelId)) {
-    throw new Error(`Cloudflare model ${modelId} is not an allowlisted Meta vision model`);
-  }
+  const info = getModel('cloudflare-workers-ai', modelId);
+  if (!info) throw new Error(`Cloudflare model ${modelId} is not in the catalogue`);
+  if (info.modality === 'classifier') throw new Error(`Cloudflare model ${modelId} is a classifier only`);
 
   const baseUrl = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${modelId}`;
 
@@ -62,6 +63,9 @@ export function buildCloudflareProvider({ accountId, apiToken, modelId, timeoutM
       const images = Array.isArray(imageDataUrls) && imageDataUrls.length
         ? imageDataUrls
         : (imageDataUrl ? [imageDataUrl] : []);
+      if (images.length && info.vision !== true) {
+        throw mapHttpError(400, `Cloudflare model ${modelId} is text-only and cannot accept an image`);
+      }
       const schemaHint = `\n\nReply with ONE JSON object only (no markdown) matching this schema:\n${JSON.stringify(outputSchema)}`;
       const body = {
         model: modelId,
@@ -116,6 +120,7 @@ export function buildCloudflareProvider({ accountId, apiToken, modelId, timeoutM
         searchedWeb: false,
         httpStatus: res.status,
         returnedModel: parsed?.model || modelId,
+        usage: parsed?.result?.usage || parsed?.usage || null,
         endpoint: `https://api.cloudflare.com/client/v4/accounts/{account}/ai/run/${modelId}`,
         host: 'api.cloudflare.com',
       };

@@ -1,12 +1,12 @@
 # IntentLens — MVP Architecture & Implementation Specification
 
 > **Historical note:** This is the original MVP build specification, kept for design
-> context. The desktop implementation uses a Meta-only catalogue across OpenRouter,
-> NVIDIA NIM, Cloudflare Workers AI, BlockRun, Modal and Groq (Groq has no Meta
-> vision model on the supplied account). The phone PWA uses OpenRouter directly and
-> lists the other hosts with explicit CORS reasons. The default grid is
-> 64x64, and a local k-NN classifier runs on the device. See `../README.md` for
-> current behavior, verified providers and limitations.
+> context. **It is historical.** Sections written before the multi-provider change
+> describe a Meta-only allowlist that no longer exists; the current provider and
+> budget design is in `MULTI_PROVIDER_ARCHITECTURE.md`, and the lighting, tracking
+> and PCB/heuristic accuracy design is in `PERCEPTION_AND_ACCURACY.md`. The
+> default grid is 64x64, and a local k-NN classifier runs on the device. See
+> `../README.md` for current behavior, verified providers and limitations.
 
 **Document status:** Build specification for a time-boxed hackathon prototype  
 **Date:** 26 October 2026  

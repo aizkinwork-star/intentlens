@@ -46,7 +46,7 @@
           <div class="menuHeading" data-section="localmodel">Vision Provider &amp; Model <span class="menuChevron">▼</span></div>
           <div class="menuBody" id="menuBody-localmodel" style="display:block">
             <div class="menuRow note">
-              Cloud AI is optional. Meta Llama models only, hosted by OpenRouter, NVIDIA NIM, Cloudflare Workers AI, BlockRun, Modal or Groq with your own key. Camera preview, grid, tap-to-track and the k-NN reference index run locally.
+              Cloud AI is optional. Any catalogued provider (free or paid) can be used with your own key: OpenRouter, Groq, Google AI Studio, NVIDIA NIM, Cloudflare Workers AI, Mistral, Cerebras, Together, Hugging Face, DeepInfra, OpenAI, Anthropic, local Ollama, or a custom HTTPS relay. Camera preview, grid, tap-to-track and the k-NN reference index run locally.
             </div>
             <div class="menuRow">
               <span class="menuLabel">Runtime</span>
@@ -61,12 +61,12 @@
               <span id="lmModelId" class="menuValue">—</span>
             </div>
             <div class="menuRow">
-              <span class="menuLabel">Is Meta model</span>
+              <span class="menuLabel">Model type</span>
               <span id="lmIsMeta" class="menuValue">—</span>
             </div>
             <div class="menuRow">
               <span class="menuLabel">Failover order</span>
-              <span id="lmPriority" class="menuValue">OpenRouter → Cloudflare → NVIDIA → BlockRun → Modal → Groq (text only)</span>
+              <span id="lmPriority" class="menuValue">OpenRouter → Groq → Google AI Studio → NVIDIA NIM → Cloudflare → Mistral → Cerebras → Together → Hugging Face → DeepInfra → OpenAI → Anthropic → Ollama → Custom</span>
             </div>
             <div class="menuRow" style="gap:6px; margin-top:8px;">
               <button id="lmTest" type="button" class="small">Test provider</button>
@@ -96,7 +96,33 @@
                 <input type="checkbox" id="diagOverlayToggle"> Show diagnostics overlay
               </label>
             </div>
+            <div class="menuRow">
+              <label style="display:flex;align-items:center;gap:6px;font-size:.72rem;">
+                <input type="checkbox" id="hingeModeToggle"> Hinge / articulation tracking (experimental)
+              </label>
+            </div>
+            <div class="menuRow note" style="font-size:.68rem;">
+              Hinge tracking estimates the angle between two board edges, or a coarse frame-only hint. It is local and model-free. A hint is never presented as a calibrated measurement.
+            </div>
             <div id="diagOverlay" style="font-size:.68rem;color:var(--muted);margin-top:4px;"></div>
+          </div>
+        </div>
+
+        <!-- Phone transfer -->
+        <div class="menuSection">
+          <div class="menuHeading" data-section="sync">Phone Transfer (LAN) <span class="menuChevron">▼</span></div>
+          <div class="menuBody" id="menuBody-sync">
+            <div class="menuRow note" style="font-size:.7rem;">
+              Send a gallery photo from a phone on the same Wi-Fi. The phone opens this computer's upload page and uses a one-time code. Gallery upload works over plain HTTP; live phone camera and live sync do not, because browsers require HTTPS for camera access and block HTTPS→HTTP requests.
+            </div>
+            <div class="menuRow" style="gap:6px; margin-top:6px;">
+              <button id="syncCreateBtn" type="button" class="small">Create upload code</button>
+              <button id="syncRefreshBtn" type="button" class="small ghost">Refresh received</button>
+            </div>
+            <div id="syncCodeValue" class="menuValue" style="font-size:1.1rem; letter-spacing:.25em; margin-top:6px;">—</div>
+            <div id="syncUrlValue" class="menuValue" style="font-size:.68rem; word-break:break-all; margin-top:2px;"></div>
+            <div id="syncExpiry" class="menuValue" style="font-size:.68rem; margin-top:2px;"></div>
+            <ul id="syncItems" style="list-style:none;padding:0;margin:6px 0 0;font-size:.72rem;"></ul>
           </div>
         </div>
 
@@ -282,7 +308,7 @@
           <div class="menuHeading" data-section="privacy">Privacy &amp; Data <span class="menuChevron">▼</span></div>
           <div class="menuBody" id="menuBody-privacy">
             <div class="menuRow note">
-              IntentLens is local-first, not fully offline. Camera preview, grid, tap-to-track and the k-NN reference index run on this device. Analyze sends only the captured frame, your command and relevant task/object context to the Meta model host you selected.
+              IntentLens is local-first, not fully offline. Camera preview, grid, tap-to-track and the k-NN reference index run on this device. Analyze sends only the captured frame, your command and relevant task/object context to the AI provider you selected.
             </div>
             <div class="menuRow note">
               Requests use your own provider credential and are subject to that provider's policies, quotas and billing. No continuous live video is streamed. There is no local LLM; commands and responses are text-only.
@@ -439,7 +465,7 @@
     <div class="setupHeader">
       <div>
         <h2>Connect Vision AI Provider</h2>
-        <span class="setupSub">Meta models only · your key stays on this PC</span>
+        <span class="setupSub">Free or paid providers · your key stays on this PC</span>
       </div>
       <button id="setupClose" type="button" class="setupClose" title="Close (Esc)">✕</button>
     </div>
@@ -453,25 +479,48 @@
         <div class="setupRow">
           <label for="setupProv">Provider</label>
           <select id="setupProv">
-            <option value="nvidia-nim">NVIDIA NIM — Meta vision models</option>
-            <option value="cloudflare-workers-ai">Cloudflare Workers AI — Meta vision models</option>
-            <option value="openrouter">OpenRouter — Meta Llama 4 (paid per token, recommended)</option>
-            <option value="blockrun">BlockRun — Meta models (paid marketplace; HTTP 402 on test key)</option>
-            <option value="modal">Modal — your deployed endpoint (paid; untested)</option>
-            <option value="groq">Groq — Meta text only (no images)</option>
+            <option value="openrouter">OpenRouter — free and paid models</option>
+            <option value="groq">Groq — text and vision models</option>
+            <option value="google-ai-studio">Google AI Studio — Gemini models</option>
+            <option value="nvidia-nim">NVIDIA NIM — hosted open models</option>
+            <option value="cloudflare-workers-ai">Cloudflare Workers AI — hosted open models</option>
+            <option value="mistral">Mistral — open and commercial</option>
+            <option value="cerebras">Cerebras — fast hosted inference</option>
+            <option value="together">Together AI — open models</option>
+            <option value="huggingface">Hugging Face — router</option>
+            <option value="deepinfra">DeepInfra — open models</option>
+            <option value="openai">OpenAI — GPT models</option>
+            <option value="anthropic">Anthropic — Claude models</option>
+            <option value="ollama">Ollama — local, no key</option>
+            <option value="custom">Custom HTTPS relay</option>
           </select>
         </div>
         <div class="setupRow">
           <label for="setupAccessTier">Model access</label>
           <select id="setupAccessTier">
-            <option value="paid" selected>All Meta models (paid per token)</option>
+            <option value="free">Free-tier models only</option>
+            <option value="preview">Free + preview models</option>
+            <option value="paid" selected>All models (paid may bill)</option>
           </select>
-          <div id="setupAccessNote" class="setupHint">Meta models only. They bill your provider account, so set up billing first.</div>
+          <div id="setupAccessNote" class="setupHint">All models are visible. Paid models bill your provider account directly.</div>
         </div>
         <div class="setupRow" id="setupModelRow">
-          <label for="setupModel">Meta vision model</label>
+          <label for="setupModel">Vision model</label>
           <select id="setupModel"></select>
           <div id="setupModelNote" class="setupHint"></div>
+        </div>
+        <div class="setupRow" style="display:block;">
+          <label>Hard cost budget (USD, estimated)</label>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;">
+            <label style="font-size:.7rem;">Daily <input id="setupBudgetDaily" type="number" min="0" step="0.01" style="width:90px;"></label>
+            <label style="font-size:.7rem;">Monthly <input id="setupBudgetMonthly" type="number" min="0" step="0.01" style="width:90px;"></label>
+            <label style="font-size:.7rem;">Per request <input id="setupBudgetRequest" type="number" min="0" step="0.01" style="width:90px;"></label>
+          </div>
+          <div id="setupBudgetStatus" class="setupHint"></div>
+          <div style="display:flex;gap:8px;margin-top:4px;">
+            <button id="setupBudgetSave" type="button" class="small ghost">Save budget</button>
+            <button id="setupBudgetReset" type="button" class="small ghost">Clear ledger</button>
+          </div>
         </div>
         <div class="setupRow" id="setupAccountRow" hidden>
           <label for="setupAccount" id="setupAccountLabel">Cloudflare Account ID</label>
@@ -506,15 +555,18 @@
             <span id="helpGuideChevron" style="font-size:.7rem;">▼</span>
           </div>
           <div id="helpGuideContent">
-            <div class="helpGuideStep"><strong>All six providers use one account-wide key each.</strong> You do not need a separate key per model. Only Meta vision models are allowed for images; text-only Meta models are never sent an image. Model entries marked <em>verified</em> have answered a real image request on this account; others still need a test.</div>
-            <div class="helpGuideStep"><strong>OpenRouter (paid):</strong> create a key at <a href="https://openrouter.ai/keys" target="_blank" rel="noopener" class="menuLink">openrouter.ai/keys</a> (<span class="helpGuideCode">sk-or-v1-...</span>). Meta Llama 4 Maverick is genuinely multimodal but NOT free: <strong>$0.1875/M input and $0.6525/M output</strong>. Set up billing on OpenRouter first. Only Meta models are ever sent.</div>
-            <div class="helpGuideStep"><strong>NVIDIA NIM:</strong> sign in at <a href="https://build.nvidia.com/" target="_blank" rel="noopener" class="menuLink">build.nvidia.com</a>, click <em>Get API Key</em>, and paste the <span class="helpGuideCode">nvapi-...</span> value. The inference base URL is pre-filled (<span class="helpGuideCode">https://integrate.api.nvidia.com</span>) - leave it as-is. <strong>Muse Glimmer 30B is the verified model here</strong>; on the account we tested, Llama 3.2 11B returned 404, Llama 3.2 90B timed out, and Llama 4 Maverick is end-of-life. Muse Glimmer is a reasoning model: a full analysis can take 80-120 seconds.</div>
-            <div class="helpGuideStep"><strong>Cloudflare Workers AI:</strong> in <a href="https://dash.cloudflare.com/" target="_blank" rel="noopener" class="menuLink">dash.cloudflare.com</a> copy the 32-character <em>Account ID</em>, then create an API token at <em>My Profile → API Tokens → Create Token</em>. Use <em>Custom token</em>, add the permission <em>Account → Workers AI → Read</em> (or <em>Read all resources</em>), scope it to your account, and paste the token and Account ID above. A token that only has R2/Workers permissions will fail with 401.</div>
-            <div class="helpGuideStep"><strong>BlockRun (paid):</strong> the supplied test key returned HTTP 402 “Payment verification failed” on 2026-11-04, so it needs payment credit before it can answer. It lists Meta models and uses <span class="helpGuideCode">https://api.blockrun.ai</span>. Desktop/server-side only: the host sends no browser CORS header.</div>
-            <div class="helpGuideStep"><strong>Modal (paid, untested):</strong> deploy your own OpenAI-compatible endpoint (usually <span class="helpGuideCode">https://&lt;workspace&gt;--&lt;app&gt;-&lt;function&gt;.modal.run</span>) and paste both the token and that URL. This path was <strong>not tested</strong> in the audit and bills your Modal account. CORS is whatever your deployment allows.</div>
-            <div class="helpGuideStep"><strong>Groq (text only):</strong> at <a href="https://console.groq.com/keys" target="_blank" rel="noopener" class="menuLink">console.groq.com/keys</a>, create a key (<span class="helpGuideCode">gsk_...</span>). Groq has no vision access in IntentLens, so text chat works but images are refused before any request. Llama 3.3 70B Versatile is Enterprise-only on Groq, so your account may expose no Meta chat model; press Test to find out. Use OpenRouter for photos.</div>
+            <div class="helpGuideStep"><strong>One account-wide key per provider.</strong> You do not need a separate key per model. Only vision-capable models receive an image; text-only and classifier models are refused before any request. Model entries marked <em>verified</em> have answered a real image request on this machine; everything else still needs a test.</div>
+            <div class="helpGuideStep"><strong>Free and paid.</strong> Use the <em>Model access</em> selector to list free, preview or paid models. Free models cost nothing but are often rate-limited. Paid models bill the provider account directly; the hard budget below is an estimate, not an invoice.</div>
+            <div class="helpGuideStep"><strong>OpenRouter:</strong> create a key at <a href="https://openrouter.ai/keys" target="_blank" rel="noopener" class="menuLink">openrouter.ai/keys</a>. It exposes free and paid models, including open-weight vision models.</div>
+            <div class="helpGuideStep"><strong>Google AI Studio:</strong> create a key at <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener" class="menuLink">aistudio.google.com/app/apikey</a>. Gemini models accept images; some have a free tier.</div>
+            <div class="helpGuideStep"><strong>NVIDIA NIM:</strong> sign in at <a href="https://build.nvidia.com/" target="_blank" rel="noopener" class="menuLink">build.nvidia.com</a>, click <em>Get API Key</em>, and paste the <span class="helpGuideCode">nvapi-...</span> value. The inference URL is pre-filled; leave it as-is.</div>
+            <div class="helpGuideStep"><strong>Cloudflare Workers AI:</strong> copy the 32-character <em>Account ID</em> and create a token with <em>Workers AI → Read</em> at <a href="https://dash.cloudflare.com/" target="_blank" rel="noopener" class="menuLink">dash.cloudflare.com</a>.</div>
+            <div class="helpGuideStep"><strong>Groq:</strong> create a key at <a href="https://console.groq.com/keys" target="_blank" rel="noopener" class="menuLink">console.groq.com/keys</a>. Vision availability depends on your account; press Test to find out.</div>
+            <div class="helpGuideStep"><strong>OpenAI / Anthropic / Mistral / Cerebras / Together / Hugging Face / DeepInfra:</strong> paste a key from that provider's dashboard. Some hosts block direct browser calls, so use the desktop app or an HTTPS relay for those.</div>
+            <div class="helpGuideStep"><strong>Ollama (local):</strong> no key. Run Ollama on the same machine and keep the base URL at <span class="helpGuideCode">http://localhost:11434</span>. Plain HTTP is allowed only for loopback.</div>
+            <div class="helpGuideStep"><strong>Custom relay:</strong> an OpenAI-compatible HTTPS endpoint you control. HTTPS is required; private LAN IP literals are refused. Type any model id the relay accepts.</div>
+            <div class="helpGuideStep"><strong>Failover and budget:</strong> auth, quota, rate-limit, timeout and outage errors move to the next configured provider. Before every attempt the server reserves the worst-case token/cost estimate against your daily, monthly and per-request caps. When the budget is exhausted, the request is refused with a reason instead of being sent.</div>
             <div class="helpGuideStep"><strong>Links open in your default browser</strong> (Chrome, Edge, ...). If nothing opens, copy the address manually.</div>
-            <div class="helpGuideStep"><strong>Failover:</strong> OpenRouter, Cloudflare, NVIDIA-hosted Meta models, BlockRun and Modal for images; Groq only for text. Auth, quota, rate-limit and outage errors move to the next configured provider. Only Meta models are ever used. Track IDs, corrections and instructions are preserved.</div>
           </div>
         </div>
       </div>

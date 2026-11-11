@@ -32,10 +32,12 @@ There is **no local LLM** and no local Llama model in this build. Local classifi
 produces candidates, not electrical facts. Confirm component identity before relying
 on it.
 
-## Meta-only policy
+## Provider policy
 
-Only models published by Meta are eligible. Non-Meta models are rejected before
-saving. Text-only Meta models are never sent images.
+Any catalogued vision provider can be used with your own key, free or paid. Only
+vision-capable models receive an image; text-only and classifier models are
+refused before a request is sent. A model above the selected access tier is not
+listed. See `MULTI_PROVIDER_ARCHITECTURE.md` for the catalogue and budget design.
 
 Provider keys are encrypted at rest with Electron `safeStorage` or Windows DPAPI and
 are never returned to the browser or written to logs.

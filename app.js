@@ -123,6 +123,9 @@ window.buildPcbSceneContext = buildPcbSceneContext;
 import { BoardRegistrar } from './perception/pcb/BoardRegistrar.js';
 import { ComponentPresenceVerifier } from './perception/pcb/ComponentPresenceVerifier.js';
 import { OpticalFlowTracker } from './perception/tracking/OpticalFlowTracker.js';
+import { HingeTracker, classifyHinge } from './perception/tracking/HingeTracker.js';
+import { adaptivePreprocess, analyzeLighting } from './perception/lighting/adaptivePreprocess.js';
+import { aggregateConfidence, boardQuadQuality, componentConfidence } from './perception/pcb/gridConfidence.js';
 window.OpticalFlowTrackerCtor = OpticalFlowTracker;
 window.BoardRegistrarCtor = BoardRegistrar;
 window.ComponentPresenceVerifierCtor = ComponentPresenceVerifier;
@@ -159,6 +162,13 @@ const trackCanvas = document.createElement('canvas');
 trackCanvas.width = W;
 trackCanvas.height = H;
 const trackCtx = trackCanvas.getContext('2d');
+// Small offscreen copy used only for lighting measurement and the coarse hinge
+// estimator. Reading a 1280x720 frame once per second would waste CPU on a
+// low-power laptop; 320x180 is enough to classify exposure and orientation.
+const lightingCanvas = document.createElement('canvas');
+lightingCanvas.width = 320;
+lightingCanvas.height = 180;
+const lightingCtx = lightingCanvas.getContext('2d', { willReadFrequently: true });
 const statusEl = $('status'), answerEl = $('answer'), metaEl = $('meta'), sourcesEl = $('sources'), input = $('command');
 const modeEl = $('mode');
 const submitBtn = $('submit'), cancelBtn = $('cancel');
@@ -198,9 +208,17 @@ const PROVIDER_NAMES = {
   openrouter: 'OpenRouter',
   'nvidia-nim': 'NVIDIA NIM',
   'cloudflare-workers-ai': 'Cloudflare Workers AI',
-  blockrun: 'BlockRun',
-  modal: 'Modal',
   groq: 'Groq',
+  'google-ai-studio': 'Google AI Studio',
+  mistral: 'Mistral',
+  cerebras: 'Cerebras',
+  together: 'Together AI',
+  huggingface: 'Hugging Face',
+  deepinfra: 'DeepInfra',
+  openai: 'OpenAI',
+  anthropic: 'Anthropic',
+  ollama: 'Ollama (local)',
+  custom: 'Custom HTTPS relay',
 };
 
 function configuredProviders() {
@@ -219,13 +237,66 @@ function providerLabel(id) {
   return fromCatalog || PROVIDER_NAMES[id] || id;
 }
 
+/** Format a USD amount without implying invoice precision. */
+function money(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '—';
+  if (n >= 1) return `$${n.toFixed(2)}`;
+  return `$${n.toFixed(4)}`;
+}
+
+/**
+ * Populate the budget controls and status line from /api/providers.
+ * Fields are only overwritten when they match the last rendered values, so a
+ * half-typed number is never replaced by a background refresh.
+ */
+function renderBudgetUi({ force = false } = {}) {
+  const data = localModelStatus;
+  const cfg = data?.budgetConfig;
+  const budget = data?.budget;
+  const setField = (id, value) => {
+    const el = $(id);
+    if (!el || value == null) return;
+    const next = String(value);
+    if (force || document.activeElement !== el) {
+      if (el.dataset.rendered !== next) el.value = next;
+      el.dataset.rendered = next;
+    }
+  };
+  if (cfg) {
+    setField('setupBudgetDaily', cfg.dailyUsd);
+    setField('setupBudgetMonthly', cfg.monthlyUsd);
+    setField('setupBudgetRequest', cfg.maxRequestUsd);
+  }
+  const status = $('setupBudgetStatus');
+  if (status) {
+    if (!budget) {
+      status.textContent = 'Budget status unavailable until the backend responds.';
+    } else {
+      const warn = budget.exhausted
+        ? ' — budget exhausted, requests are refused'
+        : (budget.warn ? ' — near the configured cap' : '');
+      status.textContent = `Today ${money(budget.todayUsd)} / ${money(budget.budget?.dailyUsd)} · `
+        + `this month ${money(budget.monthUsd)} / ${money(budget.budget?.monthlyUsd)} · `
+        + `${budget.requests || 0} request(s) this month. Estimates only; provider invoices are authoritative.${warn}`;
+      status.className = 'setupHint' + (budget.exhausted || budget.warn ? ' warn' : '');
+    }
+  }
+}
+
 function renderProviderStatus() {
   const data = localModelStatus;
   if (lmRuntimeEl) lmRuntimeEl.textContent = data?.runtime === 'cloud-generative' ? 'cloud generative (optional)' : 'local perception only';
   const active = activeProvider();
   if (lmProviderEl) lmProviderEl.textContent = active ? providerLabel(active) : 'none configured';
   if (lmModelIdEl) lmModelIdEl.textContent = active ? (data.providers?.find((p) => p.id === active)?.modelId || '—') : 'offline';
-  if (lmIsMetaEl) lmIsMetaEl.textContent = active ? 'yes' : 'n/a';
+  if (lmIsMetaEl) {
+    const activeRow = data?.providers?.find((p) => p.id === active);
+    const info = activeRow?.modelId ? data?.catalog?.[active]?.models?.[activeRow.modelId] : null;
+    lmIsMetaEl.textContent = active
+      ? (info ? `${info.modality}${info.openWeight ? ' · open weights' : ''}` : 'unknown')
+      : 'n/a';
+  }
   if (lmPriorityEl) lmPriorityEl.textContent = (data?.priority || []).map(providerLabel).join(' → ') || '—';
   if (lmOutboundEl) {
     lmOutboundEl.textContent = data?.allowOutboundNetwork === false
@@ -250,6 +321,7 @@ async function loadLocalModelStatus() {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     localModelStatus = await res.json();
     renderProviderStatus();
+    renderBudgetUi();
     if (state.menuOpen) renderMenu();
     return localModelStatus;
   } catch {
@@ -270,19 +342,19 @@ function updateTrainCount() {
 }
 
 function describeTestResult(data) {
-  if (data?.ok) return `OK · ${data.modelId || 'Meta model'} answered in ${data.ms || 0} ms.`;
+  if (data?.ok) return `OK · ${data.modelId || 'model'} answered in ${data.ms || 0} ms.`;
   const category = String(data?.category || 'failed').replaceAll('_', ' ');
   const detail = data?.detail ? ` — ${data.detail}` : '';
   const hint = {
     network_disabled: 'Outbound network is off. Set ALLOW_OUTBOUND_NETWORK=true in .env (or the app launcher) and restart, then test again.',
     auth: 'The provider rejected the key. Re-copy it, or create a new token with the right permissions.',
-    model_unavailable: 'This model is not served on this account. Pick a different Meta vision model above.',
+    model_unavailable: 'This model is not served on this account. Pick a different vision model above.',
     not_vision: 'That model is text-only; choose a vision model.',
-    not_meta: 'Only Meta-published models are allowed.',
     not_configured: 'No usable key is saved for this provider yet.',
-    timeout: 'The provider did not answer in time. Muse Glimmer can take 80-120s on a first request.',
+    timeout: 'The provider did not answer in time. A reasoning model can take 80–120 s on a first request.',
     rate_limit: 'Provider rate limit. Wait a minute and retry.',
     provider_outage: 'Provider outage. Try again later or pick another provider.',
+    budget: 'The configured daily/monthly or per-request budget would be exceeded. Raise it in Budget settings or pick a cheaper model.',
   }[data?.category];
   return `${category}${data?.httpStatus ? ` (HTTP ${data.httpStatus})` : ''}${detail}${hint ? ` ${hint}` : ''}`;
 }
@@ -380,6 +452,16 @@ state.looseFlowPoints = null;
 state.looseFlowTracker = null;
 state.opencvReady = false;
 state.looseLastRun = 0;
+// Perception diagnostics. These never gate a request on their own; they explain
+// what the local pipeline saw and whether the outgoing still was adjusted.
+state.lightingReport = null;
+state.lastPreprocess = null;
+state.lastLightingAt = 0;
+state.hingeModeEnabled = false;
+state.hingeTracker = new HingeTracker({ smoothing: 0.3, lostAfterMs: 1200 });
+state.hingeReport = null;
+state.pcbConfidence = null;
+state.pcbBoardQuality = null;
 
 // Heavy perception code is loaded only when it is actually needed. Startup and
 // camera preview stay light; OpenCV (11 MB) and the reference index never block
@@ -616,6 +698,7 @@ function openMenu() {
   $('menuPanel').hidden = false;
   $('menuBackdrop').hidden = false;
   renderMenu();
+  if (syncState.code) refreshSyncItems();
 }
 
 function closeMenu() {
@@ -642,6 +725,7 @@ function renderMenu() {
 
   // 1. Vision provider & model
   renderProviderStatus();
+  renderSyncPanel();
 
   // 2. Tracking
   const menuTarget = $('menuTarget'), menuTrackState = $('menuTrackState');
@@ -1316,6 +1400,24 @@ async function loop() {
         trackedPill.hidden = true;
       }
 
+      // Lighting and hinge diagnostics run at ~1 Hz on a small copy. They are
+      // advisory: a black or backlit frame is reported, never "corrected" into
+      // a false confidence.
+      const nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      if (nowMs - state.lastLightingAt > 1000) {
+        state.lastLightingAt = nowMs;
+        try {
+          lightingCtx.drawImage(camera.video, 0, 0, lightingCanvas.width, lightingCanvas.height);
+          const lightImg = lightingCtx.getImageData(0, 0, lightingCanvas.width, lightingCanvas.height);
+          state.lightingReport = analyzeLighting(lightImg);
+          if (state.hingeModeEnabled) {
+            state.hingeReport = state.hingeTracker.update({ image: lightImg, timestamp: Date.now() });
+          }
+        } catch {
+          // A measurement failure must never stop the camera preview.
+        }
+      }
+
       // PCB tracking via homography (only when board registered and alignment valid).
       if (state.pcbBoard && state.pcbRegistrar) {
         try {
@@ -1332,12 +1434,35 @@ async function loop() {
             });
             state.pcbAlignmentOk = true;
             state.pcbMatchCount = res.matches;
+            // Explainable per-component confidence, plus a sanity check on the
+            // four projected board corners. A bow-tie homography is rejected
+            // before it is presented as a registered board.
+            const presenceFor = (s) => ({
+              visible: 1, reacquired: 0.95, uncertain: 0.55, occluded: 0.25, possibly_absent: 0.1,
+            }[s] ?? 0.4);
+            state.pcbConfidence = aggregateConfidence(state.pcbProjected.map((c) => componentConfidence({
+              similarity: c.verification?.similarity ?? 0,
+              sharpness: c.verification?.quality?.sharpness ?? 0,
+              presence: presenceFor(c.verification?.state),
+            }).score));
+            const quad = [[0, 0], [1, 0], [1, 1], [0, 1]]
+              .map(([u, v]) => state.pcbRegistrar.projectPoint(res.H, u, v))
+              .filter(Boolean)
+              .map((p) => ({ x: p.x / W, y: p.y / H }));
+            state.pcbBoardQuality = boardQuadQuality(quad);
           } else {
             state.pcbAlignmentOk = false;
             state.pcbMatchCount = res.matches || 0;
             state.pcbProjected = null;
+            state.pcbConfidence = null;
+            state.pcbBoardQuality = null;
           }
-        } catch (e) { state.pcbAlignmentOk = false; state.pcbProjected = null; }
+        } catch (e) {
+          state.pcbAlignmentOk = false;
+          state.pcbProjected = null;
+          state.pcbConfidence = null;
+          state.pcbBoardQuality = null;
+        }
       }
 
       // Loose-object tracking is independent of PCB registration.
@@ -1345,8 +1470,19 @@ async function loop() {
 
       // Diagnostics overlay.
      if (state.diagOverlayEnabled && $('diagOverlay')) {
-       const pp = state.perceptionProfile;
-       if (pp) $('diagOverlay').textContent = `Profile: ${pp.name}`;
+       const parts = [];
+       if (state.perceptionProfile) parts.push(`Profile: ${state.perceptionProfile.name}`);
+       const light = state.lightingReport;
+       if (light) parts.push(`Light: ${light.state} ${Math.round(light.score * 100)}%`);
+       if (state.hingeModeEnabled) {
+         const h = state.hingeReport;
+         parts.push(h?.angleDeg != null
+           ? `Hinge: ${h.angleDeg.toFixed(0)}° ${classifyHinge(h.angleDeg)} (conf ${Math.round((h.confidence || 0) * 100)}%)`
+           : 'Hinge: searching');
+       }
+       if (state.pcbBoardQuality) parts.push(`Board: ${Math.round(state.pcbBoardQuality.score * 100)}%`);
+       if (state.pcbConfidence?.mean != null) parts.push(`Parts: ${Math.round(state.pcbConfidence.mean * 100)}%`);
+       $('diagOverlay').textContent = parts.join(' · ');
      }
 
      if (isVisionActive) {
@@ -1448,16 +1584,7 @@ fileIn.addEventListener('change', async () => {
   if (!f) return;
   try {
     const bmp = await createImageBitmap(f);
-    live = false;                    // freeze: the photo is now the frame
-    state.mainMarker = null;
-    state.assistant.photoLoaded = true;
-    state.assistant.aligned = false;
-    renderWorkspace();
-    drawContain(bmp, bmp.width, bmp.height);
-    drawLive();
-    liveBtn.disabled = camera.getStatus().state !== 'ready';
-    setStatus('Photo loaded', 'done');
-    setAnswer('Photo loaded. Type a command and press Find it. The marker will be drawn over this photo.');
+    showBitmapAsFrame(bmp);
   } catch (err) {
     setAnswer(`That file could not be read as an image (${err.message}).`, 'error');
   }
@@ -1630,8 +1757,45 @@ snapBox.addEventListener('click', (e) => {
 // ---------------------------------------------------------------------------
 // Capture + submit
 // ---------------------------------------------------------------------------
+/**
+ * Repair a still in place when the measurement says it needs it. This runs on
+ * the capture path only (once per request), never per preview frame.
+ */
+function preprocessStill(ctx, width, height) {
+  try {
+    const frame = ctx.getImageData(0, 0, width, height);
+    const repaired = adaptivePreprocess(frame, { mode: 'auto' });
+    const report = {
+      before: {
+        state: repaired.before.state,
+        score: repaired.before.score,
+        mean: repaired.before.mean,
+        uniformity: repaired.before.uniformity,
+      },
+      after: {
+        state: repaired.after.state,
+        score: repaired.after.score,
+        mean: repaired.after.mean,
+        uniformity: repaired.after.uniformity,
+      },
+      steps: repaired.steps,
+      changed: repaired.changed,
+      improved: repaired.improved,
+    };
+    state.lightingReport = repaired.after;
+    state.lastPreprocess = report;
+    if (repaired.changed && repaired.improved) ctx.putImageData(repaired.image, 0, 0);
+    return report;
+  } catch {
+    // Enhancement is best-effort; a capture must still work if it fails.
+    return null;
+  }
+}
+
 function captureFrame() {
-  snap.getContext('2d').drawImage(canvas, 0, 0);
+  const ctx = snap.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(canvas, 0, 0);
+  const lighting = preprocessStill(ctx, snap.width, snap.height);
   snapBox.hidden = false;
   state.frameCount += 1;
   const frameId = `frame_${String(state.frameCount).padStart(3, '0')}`;
@@ -1642,6 +1806,7 @@ function captureFrame() {
     width: W,
     height: H,
     capturedAt: new Date().toISOString(),
+    lighting,
   };
 }
 
@@ -2072,9 +2237,10 @@ function makeCleanCapture() {
   const clean = document.createElement('canvas');
   clean.width = W;
   clean.height = H;
-  const ctx = clean.getContext('2d');
+  const ctx = clean.getContext('2d', { willReadFrequently: true });
   ctx.drawImage(canvas, 0, 0, W, H);
-  return { clean, ctx };
+  const lighting = preprocessStill(ctx, W, H);
+  return { clean, ctx, lighting };
 }
 
 function makeOverlayCapture(clean, gridSize) {
@@ -2614,14 +2780,14 @@ async function postAnalyze(payload, signal) {
 }
 
 const FRIENDLY = {
-  LOCAL_MODEL_NOT_INSTALLED: 'No Meta vision provider is configured. Open ☰ → Vision Provider & Model → Configure provider. Local camera, grid and tracking still work without one.',
+  LOCAL_MODEL_NOT_INSTALLED: 'No vision provider is configured. Open ☰ → Vision Provider & Model → Configure provider. Local camera, grid and tracking still work without one.',
   LOCAL_MODEL_LOAD_FAILED: 'The provider failed to connect. Check the key and model in ☰ → Vision Provider & Model.',
   LOCAL_MODEL_TIMEOUT: 'The vision model took too long to answer. Press Find it to retry.',
   LOCAL_MODEL_BAD_RESPONSE: 'The vision model returned an unreadable format. Press Find it to retry.',
   LOCAL_MODEL_UPSTREAM_ERROR: 'The cloud AI provider returned an error. Check ☰ → Logs.',
   MODEL_AUTH_FAILED: 'API authentication failed. Verify the key in ☰ → Vision Provider & Model → Configure provider.',
-  MODEL_NOT_META: 'That model is not an approved Meta vision model. Only Meta-published vision models are used.',
-  MODEL_QUOTA_EXHAUSTED: 'The provider quota is exhausted. Failover will try the next configured Meta provider.',
+  MODEL_NOT_VISION: 'That model cannot read images. Choose a vision-capable model.',
+  MODEL_QUOTA_EXHAUSTED: 'The provider quota is exhausted. Failover will try the next configured provider.',
   NETWORK_DISABLED: 'Outbound network is disabled in .env (ALLOW_OUTBOUND_NETWORK=false). Local camera, grid, tracking and k-NN still work.',
   IMAGE_TOO_LARGE: 'That frame was too large to send. Try again.',
   NETWORK: 'Cannot reach the backend server. Start it with start.cmd and reload.',
@@ -3009,6 +3175,156 @@ if ($('looseModeToggle')) {
 // ---------------------------------------------------------------------------
 // Menu & UI controls
 // ---------------------------------------------------------------------------
+/** Put a decoded bitmap on the frame, freezing live video like an upload. */
+function showBitmapAsFrame(bmp, label = 'Photo loaded') {
+  live = false;                    // freeze: the photo is now the frame
+  state.mainMarker = null;
+  state.assistant.photoLoaded = true;
+  state.assistant.aligned = false;
+  renderWorkspace();
+  drawContain(bmp, bmp.width, bmp.height);
+  drawLive();
+  liveBtn.disabled = camera.getStatus().state !== 'ready';
+  setStatus(label, 'done');
+  setAnswer(`${label}. Type a command and press Find it. The marker will be drawn over this photo.`);
+}
+
+// ---------------------------------------------------------------------------
+// Phone transfer (LAN): one-time code + desktop-served upload page.
+// ---------------------------------------------------------------------------
+const syncState = { code: null, urls: [], expiresAt: 0, items: [], busy: false };
+
+function renderSyncPanel() {
+  const codeEl = $('syncCodeValue');
+  const urlEl = $('syncUrlValue');
+  const expiryEl = $('syncExpiry');
+  const listEl = $('syncItems');
+  if (codeEl) codeEl.textContent = syncState.code || '—';
+  if (urlEl) {
+    urlEl.replaceChildren();
+    if (syncState.code && syncState.urls.length) {
+      const first = syncState.urls[0];
+      const link = document.createElement('a');
+      link.href = `${first.url}?code=${syncState.code}`;
+      link.textContent = `${first.url}?code=${syncState.code}`;
+      link.target = '_blank';
+      link.rel = 'noopener';
+      link.className = 'menuLink';
+      urlEl.append(link);
+      if (syncState.urls.length > 1) {
+        const more = document.createElement('span');
+        more.textContent = ` · also ${syncState.urls.slice(1).map((u) => u.url).join(', ')}`;
+        urlEl.append(more);
+      }
+    } else {
+      urlEl.textContent = 'Create a code to show a phone upload link.';
+    }
+  }
+  if (expiryEl) {
+    if (!syncState.expiresAt) {
+      expiryEl.textContent = '';
+    } else {
+      const left = Math.max(0, Math.round((syncState.expiresAt - Date.now()) / 1000));
+      expiryEl.textContent = left > 0
+        ? `Code expires in ${Math.floor(left / 60)}m ${String(left % 60).padStart(2, '0')}s.`
+        : 'Code expired. Create a new one.';
+    }
+  }
+  if (!listEl) return;
+  listEl.replaceChildren();
+  if (!syncState.items.length) {
+    const li = document.createElement('li');
+    li.style.color = 'var(--muted)';
+    li.textContent = syncState.code ? 'No items received yet.' : 'Nothing received.';
+    listEl.append(li);
+    return;
+  }
+  for (const item of syncState.items) {
+    const li = document.createElement('li');
+    li.style.cssText = 'display:flex;gap:6px;align-items:center;padding:4px 0;border-bottom:1px solid var(--line);';
+    const name = document.createElement('span');
+    name.style.cssText = 'flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+    name.textContent = `${item.name} (${Math.max(1, Math.round(item.bytes / 1024))} KB)`;
+    const action = document.createElement('button');
+    action.type = 'button';
+    action.className = 'small';
+    action.textContent = item.type === 'photo' ? 'Load photo' : 'Show';
+    action.addEventListener('click', () => loadSyncItem(item));
+    li.append(name, action);
+    listEl.append(li);
+  }
+}
+
+async function createSyncCode() {
+  if (syncState.busy) return;
+  syncState.busy = true;
+  const btn = $('syncCreateBtn');
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch('/api/sync/code', { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error?.message || `HTTP ${res.status}`);
+    syncState.code = data.code;
+    syncState.urls = Array.isArray(data.urls) ? data.urls : [];
+    syncState.expiresAt = data.expiresAt;
+    syncState.items = [];
+    renderSyncPanel();
+    if (syncState.timer) clearInterval(syncState.timer);
+    syncState.timer = setInterval(() => {
+      renderSyncPanel();
+      if (!syncState.expiresAt || Date.now() >= syncState.expiresAt) {
+        clearInterval(syncState.timer);
+        syncState.timer = null;
+      }
+    }, 1000);
+    if (state.menuOpen) renderMenu();
+  } catch (err) {
+    setAnswer(`Could not create an upload code: ${err.message}`, 'error');
+  } finally {
+    syncState.busy = false;
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function refreshSyncItems() {
+  if (!syncState.code) return;
+  try {
+    const res = await fetch(`/api/sync/items?code=${encodeURIComponent(syncState.code)}`);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error?.message || `HTTP ${res.status}`);
+    syncState.items = Array.isArray(data.items) ? data.items : [];
+    syncState.expiresAt = data.expiresAt || syncState.expiresAt;
+    renderSyncPanel();
+  } catch (err) {
+    const listEl = $('syncItems');
+    if (listEl) {
+      listEl.replaceChildren();
+      const li = document.createElement('li');
+      li.style.color = 'var(--warn)';
+      li.textContent = err.message;
+      listEl.append(li);
+    }
+  }
+}
+
+async function loadSyncItem(item) {
+  try {
+    const res = await fetch(`/api/sync/items/${encodeURIComponent(syncState.code)}/${encodeURIComponent(item.id)}`);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error?.message || `HTTP ${res.status}`);
+    if (data.type === 'note') {
+      setAnswer(`Phone note: ${String(data.payload || '').slice(0, 600)}`, 'ready');
+      return;
+    }
+    const blob = await (await fetch(data.payload)).blob();
+    const bmp = await createImageBitmap(blob);
+    showBitmapAsFrame(bmp, 'Phone photo loaded');
+    if (state.menuOpen) closeMenu();
+  } catch (err) {
+    setAnswer(`Could not load that phone item: ${err.message}`, 'error');
+  }
+}
+
 function initMenuAndControls() {
   // Hamburger menu open/close
   if ($('menu')) $('menu').addEventListener('click', openMenu);
@@ -3022,6 +3338,10 @@ function initMenuAndControls() {
       showSetupPopup(true);
     });
   }
+
+  // Phone transfer controls
+  if ($('syncCreateBtn')) $('syncCreateBtn').addEventListener('click', createSyncCode);
+  if ($('syncRefreshBtn')) $('syncRefreshBtn').addEventListener('click', refreshSyncItems);
 
   // Accordion headings
   document.querySelectorAll('.menuHeading').forEach((heading) => {
@@ -3268,6 +3588,20 @@ function initMenuAndControls() {
   if ($('diagOverlayToggle')) {
     $('diagOverlayToggle').addEventListener('change', (e) => { state.diagOverlayEnabled = e.target.checked; });
   }
+  if ($('hingeModeToggle')) {
+    const HINGE_KEY = 'intentlens.hingeMode';
+    const saved = localStorage.getItem(HINGE_KEY) === '1';
+    state.hingeModeEnabled = saved;
+    $('hingeModeToggle').checked = saved;
+    $('hingeModeToggle').addEventListener('change', (e) => {
+      state.hingeModeEnabled = e.target.checked;
+      localStorage.setItem(HINGE_KEY, e.target.checked ? '1' : '0');
+      // A mode switch invalidates the tracked angle: start clean rather than
+      // blending a stale observation into the first new frame.
+      state.hingeTracker?.reset();
+      state.hingeReport = null;
+    });
+  }
 
   // k-NN Training controls
   if ($('trainCapture')) {
@@ -3343,13 +3677,43 @@ function setSetupMsg(text, tone = '') {
 }
 
 function selectedSetupProvider() {
-  return $('setupProv')?.value || 'nvidia-nim';
+  return $('setupProv')?.value || 'openrouter';
 }
 
 const SETUP_TIER_RANK = { free: 0, preview: 1, paid: 2, enterprise: 2 };
 
 function selectedSetupTier() {
   return $('setupAccessTier')?.value || localModelStatus?.accessTier || 'paid';
+}
+
+/** Build the provider list from the shared catalogue, not hardcoded options. */
+function renderSetupProviderOptions() {
+  const select = $('setupProv');
+  if (!select) return;
+  const ids = localModelStatus?.priority || Object.keys(localModelStatus?.catalog || {});
+  if (!ids.length) return;
+  const current = select.value;
+  const options = ids.map((id) => {
+    const row = localModelStatus?.providers?.find((p) => p.id === id);
+    const models = localModelStatus?.catalog?.[id]?.models || {};
+    const vision = Object.values(models).filter((m) => m.modality === 'vision').length;
+    const label = row?.label || PROVIDER_NAMES[id] || id;
+    return {
+      id,
+      text: `${label}${vision ? ` — ${vision} vision model${vision === 1 ? '' : 's'}` : ' — no vision model'}`,
+    };
+  });
+  const signature = options.map((o) => `${o.id}:${o.text}`).join('|');
+  if (select.dataset.signature === signature) return;
+  select.replaceChildren();
+  for (const option of options) {
+    const el = document.createElement('option');
+    el.value = option.id;
+    el.textContent = option.text;
+    select.append(el);
+  }
+  select.dataset.signature = signature;
+  if (ids.includes(current)) select.value = current;
 }
 
 function setupVisionModels(provider) {
@@ -3369,6 +3733,7 @@ function setupVisionModels(provider) {
 
 /** Fill provider-dependent fields without touching what the user already typed. */
 function updateSetupForm({ keepModel = false, preferredProvider = null, preferredModel = null } = {}) {
+  renderSetupProviderOptions();
   const provider = preferredProvider || selectedSetupProvider();
   const select = $('setupProv');
   if (select && preferredProvider) select.value = preferredProvider;
@@ -3398,37 +3763,51 @@ function updateSetupForm({ keepModel = false, preferredProvider = null, preferre
   const keyLabel = $('setupKeyLabel');
   const keyInput = $('setupKey');
   if (accountRow) accountRow.hidden = provider !== 'cloudflare-workers-ai';
-  if (baseUrlRow) baseUrlRow.hidden = !['nvidia-nim', 'modal'].includes(provider);
-  // Reset the URL only when the provider changes, so editing a Modal endpoint
-  // is not wiped by a model-selection change.
+  if (baseUrlRow) baseUrlRow.hidden = !['nvidia-nim', 'custom', 'ollama'].includes(provider);
+  // Reset the URL only when the provider changes, so editing a custom relay
+  // endpoint is not wiped by a model-selection change.
   if (baseUrlInput && baseUrlInput.dataset.provider !== provider) {
-    baseUrlInput.value = provider === 'nvidia-nim' ? 'https://integrate.api.nvidia.com' : '';
+    baseUrlInput.value = provider === 'nvidia-nim'
+      ? 'https://integrate.api.nvidia.com'
+      : (provider === 'ollama' ? 'http://localhost:11434' : '');
     baseUrlInput.dataset.provider = provider;
   }
+
+  const KEY_META = {
+    'nvidia-nim': { label: 'NVIDIA API key (nvapi-…)', placeholder: 'nvapi-...' },
+    'cloudflare-workers-ai': { label: 'Cloudflare API token', placeholder: 'Paste your Workers AI token' },
+    openrouter: { label: 'OpenRouter API key (sk-or-v1-…)', placeholder: 'sk-or-v1-...' },
+    groq: { label: 'Groq API key (gsk_…)', placeholder: 'gsk_...' },
+    'google-ai-studio': { label: 'Google AI Studio API key', placeholder: 'AIza...' },
+    mistral: { label: 'Mistral API key', placeholder: 'Paste your Mistral key' },
+    cerebras: { label: 'Cerebras API key', placeholder: 'csk-...' },
+    together: { label: 'Together AI API key', placeholder: 'Paste your Together key' },
+    huggingface: { label: 'Hugging Face access token', placeholder: 'hf_...' },
+    deepinfra: { label: 'DeepInfra API key', placeholder: 'Paste your DeepInfra key' },
+    openai: { label: 'OpenAI API key (sk-…)', placeholder: 'sk-...' },
+    anthropic: { label: 'Anthropic API key (sk-ant-…)', placeholder: 'sk-ant-...' },
+    ollama: { label: 'Local Ollama needs no key', placeholder: 'Leave blank' },
+    custom: { label: 'Relay API key (optional)', placeholder: 'Leave blank if the relay needs none' },
+  };
+  const keyMeta = KEY_META[provider] || { label: 'API key', placeholder: 'Paste your key' };
+  if (keyLabel) keyLabel.textContent = keyMeta.label;
+  if (keyInput) keyInput.placeholder = keyMeta.placeholder;
+
   if (provider === 'nvidia-nim') {
-    if (keyLabel) keyLabel.textContent = 'NVIDIA API key (nvapi-…)';
-    if (keyInput) keyInput.placeholder = 'nvapi-...';
     if (baseUrlLabel) baseUrlLabel.textContent = 'Inference base URL (leave unchanged)';
     if (baseUrlHint) baseUrlHint.textContent = "Pre-filled with NVIDIA's inference host. build.nvidia.com is a dashboard page, not an endpoint.";
     if (baseUrlInput) baseUrlInput.placeholder = 'https://integrate.api.nvidia.com';
-  } else if (provider === 'cloudflare-workers-ai') {
-    if (keyLabel) keyLabel.textContent = 'Cloudflare API token';
-    if (keyInput) keyInput.placeholder = 'Paste your Workers AI token';
-  } else if (provider === 'openrouter') {
-    if (keyLabel) keyLabel.textContent = 'OpenRouter API key (sk-or-v1-…)';
-    if (keyInput) keyInput.placeholder = 'sk-or-v1-...';
-  } else if (provider === 'blockrun') {
-    if (keyLabel) keyLabel.textContent = 'BlockRun API key (paid marketplace)';
-    if (keyInput) keyInput.placeholder = 'Paste your BlockRun key';
-  } else if (provider === 'modal') {
-    if (keyLabel) keyLabel.textContent = 'Modal API key / token (paid, untested)';
-    if (keyInput) keyInput.placeholder = 'Paste your Modal token';
-    if (baseUrlLabel) baseUrlLabel.textContent = 'Your deployed Modal endpoint URL';
-    if (baseUrlHint) baseUrlHint.textContent = 'Paste the HTTPS URL of your OpenAI-compatible deployment, e.g. https://your-workspace--your-app.modal.run. This path was not tested in the audit; it bills your Modal account.';
-    if (baseUrlInput) baseUrlInput.placeholder = 'https://your-workspace--your-app.modal.run';
+  } else if (provider === 'custom') {
+    if (baseUrlLabel) baseUrlLabel.textContent = 'HTTPS relay base URL';
+    if (baseUrlHint) baseUrlHint.textContent = 'An OpenAI-compatible relay you control. HTTPS is required; plain HTTP is allowed only for localhost.';
+    if (baseUrlInput) baseUrlInput.placeholder = 'https://your-relay.example.workers.dev';
+  } else if (provider === 'ollama') {
+    if (baseUrlLabel) baseUrlLabel.textContent = 'Local Ollama base URL';
+    if (baseUrlHint) baseUrlHint.textContent = 'Loopback only. The server contacts this address directly; no key or cloud request is involved.';
+    if (baseUrlInput) baseUrlInput.placeholder = 'http://localhost:11434';
   } else {
-    if (keyLabel) keyLabel.textContent = 'Groq API key (gsk_…)';
-    if (keyInput) keyInput.placeholder = 'gsk_...';
+    if (baseUrlLabel) baseUrlLabel.textContent = 'Base URL';
+    if (baseUrlHint) baseUrlHint.textContent = '';
   }
 
   const note = $('setupModelNote');
@@ -3438,14 +3817,14 @@ function updateSetupForm({ keepModel = false, preferredProvider = null, preferre
     if (!models.length) {
       const tier = selectedSetupTier();
       parts.push(tier === 'free'
-        ? 'No free Meta vision model is available on this provider. Enable paid access only if you already have that account.'
-        : 'This provider has no vision-capable Meta model at this access level.');
-      parts.push('Text-only and classifier Meta models are never sent images.');
+        ? 'No free vision model is available on this provider. Enable paid access only if you already have that account.'
+        : 'This provider has no vision-capable model at this access level.');
+      parts.push('Text-only and classifier models are never sent images.');
     } else {
       if (chosen?.verified) parts.push('Verified with a real image on this account.');
       else if (chosen) parts.push('Not verified with a real image yet — use Test connection.');
       if (chosen?.note) parts.push(chosen.note);
-      parts.push(`Only the ${models.length} Meta vision model${models.length === 1 ? '' : 's'} listed here are used; text-only Meta models are never sent images.`);
+      parts.push(`Only the ${models.length} vision model${models.length === 1 ? '' : 's'} listed here are used; text-only models are never sent images.`);
     }
     note.textContent = parts.join(' ');
   }
@@ -3457,11 +3836,15 @@ function updateSetupForm({ keepModel = false, preferredProvider = null, preferre
   if (accessNote) {
     const tier = selectedSetupTier();
     accessNote.textContent = tier === 'paid'
-      ? 'Paid Meta models are visible and may bill your account. Select one only if you have billing set up.'
+      ? 'Paid models are visible and may bill your provider account. Select one only if you have billing set up.'
       : tier === 'preview'
         ? 'Free and limited-preview models are visible. Preview models may need account approval and are not verified.'
         : 'Free models only. Paid model names stay hidden until you enable paid access.';
   }
+}
+
+function setupProviderNeedsKey(provider) {
+  return provider !== 'ollama' && provider !== 'custom';
 }
 
 function setupPayload({ includeKey = true } = {}) {
@@ -3469,13 +3852,15 @@ function setupPayload({ includeKey = true } = {}) {
   const payload = { provider, accessTier: selectedSetupTier() };
   const key = $('setupKey')?.value?.trim() || '';
   if (includeKey && key) payload.apiKey = key;
+  // Reuse the saved key for a model/tier/base-URL edit instead of clearing it.
+  payload.keepKey = !key;
   const modelId = $('setupModel')?.value || '';
   if (modelId) payload.modelId = modelId;
   if (provider === 'cloudflare-workers-ai') {
     const accountId = $('setupAccount')?.value?.trim();
     if (accountId) payload.accountId = accountId;
   }
-  if (provider === 'nvidia-nim' || provider === 'modal') {
+  if (provider === 'nvidia-nim' || provider === 'custom' || provider === 'ollama') {
     const baseUrl = $('setupBaseUrl')?.value?.trim();
     if (baseUrl) payload.baseUrl = baseUrl;
   }
@@ -3494,7 +3879,7 @@ async function testSetupProvider() {
   if (setupBusy) return null;
   const provider = selectedSetupProvider();
   const payload = setupPayload();
-  if (!payload.apiKey) {
+  if (!payload.apiKey && setupProviderNeedsKey(provider)) {
     // Fall back to the saved key: the server never sends it back to the page.
     const saved = localModelStatus?.providers?.find((p) => p.id === provider);
     if (!saved?.hasKey) {
@@ -3528,30 +3913,33 @@ async function saveSetupProvider() {
   if (setupBusy) return;
   const provider = selectedSetupProvider();
   const payload = setupPayload();
-  if (!payload.apiKey) {
-    // No new key: still let the user change the access level for already-saved
-    // credentials, without pretending a key was saved or tested.
-    setSetupBusy(true);
-    try {
-      const res = await fetch('/api/providers', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ accessTier: payload.accessTier }),
-      });
-      const data = await res.json();
-      if (!res.ok || data.error) {
-        setSetupMsg(data.error?.message || `Access level could not be saved (HTTP ${res.status}).`, 'error');
-        return;
+  if (!payload.apiKey && setupProviderNeedsKey(provider)) {
+    const saved = localModelStatus?.providers?.find((p) => p.id === provider);
+    if (!saved?.hasKey) {
+      // No new key and none saved: still let the user change the access level,
+      // without pretending a key was saved or tested.
+      setSetupBusy(true);
+      try {
+        const res = await fetch('/api/providers', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ accessTier: payload.accessTier }),
+        });
+        const data = await res.json();
+        if (!res.ok || data.error) {
+          setSetupMsg(data.error?.message || `Access level could not be saved (HTTP ${res.status}).`, 'error');
+          return;
+        }
+        await loadLocalModelStatus();
+        updateSetupForm({ keepModel: false });
+        setSetupMsg(`Access level set to ${payload.accessTier}. Enter a key to save and test a provider.`, 'ok');
+      } catch (err) {
+        setSetupMsg(`Access level could not be saved: ${err.message}`, 'error');
+      } finally {
+        setSetupBusy(false);
       }
-      await loadLocalModelStatus();
-      updateSetupForm({ keepModel: false });
-      setSetupMsg(`Access level set to ${payload.accessTier}. Enter a key to save and test a provider.`, 'ok');
-    } catch (err) {
-      setSetupMsg(`Access level could not be saved: ${err.message}`, 'error');
-    } finally {
-      setSetupBusy(false);
+      return;
     }
-    return;
   }
   setSetupBusy(true);
   setSetupMsg('Saving encrypted credentials and testing…', 'busy');
@@ -3628,6 +4016,78 @@ async function primeSetupForm() {
   }
 }
 
+function setupBudgetField(id) {
+  const el = $(id);
+  if (!el) return null;
+  const value = Number(el.value);
+  if (!Number.isFinite(value) || value < 0) return null;
+  return value;
+}
+
+/** Save the hard budget caps. A blank field keeps its current value. */
+async function saveSetupBudget() {
+  const budget = {};
+  const daily = setupBudgetField('setupBudgetDaily');
+  const monthly = setupBudgetField('setupBudgetMonthly');
+  const perRequest = setupBudgetField('setupBudgetRequest');
+  if (daily != null) budget.dailyUsd = daily;
+  if (monthly != null) budget.monthlyUsd = monthly;
+  if (perRequest != null) budget.maxRequestUsd = perRequest;
+  if (!Object.keys(budget).length) {
+    setSetupMsg('Enter at least one budget value (0 is allowed and blocks requests).', 'error');
+    return;
+  }
+  const btn = $('setupBudgetSave');
+  if (btn) btn.disabled = true;
+  setSetupMsg('Saving budget…', 'busy');
+  try {
+    const res = await fetch('/api/budget', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ budget }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.error) {
+      setSetupMsg(data.error?.message || `Budget could not be saved (HTTP ${res.status}).`, 'error');
+      return;
+    }
+    await loadLocalModelStatus();
+    renderBudgetUi({ force: true });
+    setSetupMsg('Budget saved. Requests that would exceed it are refused before they are sent.', 'ok');
+  } catch (err) {
+    setSetupMsg(`Budget could not be saved: ${err.message}`, 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+/** Clear recorded usage without changing the caps. */
+async function resetSetupBudget() {
+  if (!confirm('Clear the recorded token/cost ledger? The budget caps are kept. This does not refund anything with the provider.')) return;
+  const btn = $('setupBudgetReset');
+  if (btn) btn.disabled = true;
+  setSetupMsg('Clearing ledger…', 'busy');
+  try {
+    const res = await fetch('/api/budget/reset', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ reset: true, entriesOnly: true }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.error) {
+      setSetupMsg(data.error?.message || `Ledger could not be cleared (HTTP ${res.status}).`, 'error');
+      return;
+    }
+    await loadLocalModelStatus();
+    renderBudgetUi({ force: true });
+    setSetupMsg('Recorded usage cleared. Future requests start from zero for the day and month.', 'ok');
+  } catch (err) {
+    setSetupMsg(`Ledger could not be cleared: ${err.message}`, 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 function initSetupPopupListeners() {
   if ($('setupClose')) $('setupClose').addEventListener('click', () => showSetupPopup(false));
   if ($('setupBackdrop')) $('setupBackdrop').addEventListener('click', () => showSetupPopup(false));
@@ -3646,6 +4106,8 @@ function initSetupPopupListeners() {
   if ($('setupModel')) {
     $('setupModel').addEventListener('change', () => updateSetupForm({ keepModel: true }));
   }
+  if ($('setupBudgetSave')) $('setupBudgetSave').addEventListener('click', saveSetupBudget);
+  if ($('setupBudgetReset')) $('setupBudgetReset').addEventListener('click', resetSetupBudget);
 
   const helpToggle = $('helpGuideToggle');
   const helpContent = $('helpGuideContent');
@@ -3663,7 +4125,7 @@ function initSetupPopupListeners() {
   if ($('setupRemove')) $('setupRemove').addEventListener('click', removeSetupProvider);
   if ($('setupAllowOutbound')) {
     $('setupAllowOutbound').addEventListener('click', async () => {
-      if (!confirm('Allow IntentLens to send captured images and project context to your chosen Meta model provider for this session?')) return;
+      if (!confirm('Allow IntentLens to send captured images and project context to your chosen AI provider for this session?')) return;
       setSetupMsg('Enabling cloud requests for this session…', 'busy');
       try {
         const res = await fetch('/api/providers/network', {
@@ -3747,6 +4209,7 @@ function showSetupPopup(show) {
     backdrop.hidden = false;
     // Populate provider/model lists without clearing anything already typed.
     primeSetupForm().catch((err) => console.warn('Setup form prime failed:', err));
+    renderBudgetUi();
   } else {
     // Closing never clears the form: typed keys, account IDs and model choices
     // stay available if the user reopens the popup.
@@ -3766,19 +4229,19 @@ async function checkHealth() {
     if (data.model.configured && !outboundAllowed) {
       modeEl.textContent = 'NETWORK DISABLED';
       modeEl.dataset.mode = 'offline';
-      modeEl.title = 'A Meta vision provider is configured, but ALLOW_OUTBOUND_NETWORK=false. Local camera, grid, tracking and k-NN still work.';
+      modeEl.title = 'A vision provider is configured, but ALLOW_OUTBOUND_NETWORK=false. Local camera, grid, tracking and k-NN still work.';
       setStatus('Cloud off', 'warn');
       setAnswer('A provider is configured, but outbound network is disabled. Set ALLOW_OUTBOUND_NETWORK=true in .env and restart to use cloud analysis. Local camera, grid, tap-to-track and the k-NN index still work.', 'warn');
     } else if (data.model.configured) {
-      modeEl.textContent = data.model.id || 'Meta Llama Vision';
+      modeEl.textContent = data.model.id || 'Cloud vision model';
       modeEl.dataset.mode = 'ready';
       modeEl.title = `Model connected: ${data.model.id} (${data.model.mode})`;
       setStatus('Ready', 'ready');
     } else {
       modeEl.textContent = 'NO CLOUD AI KEY';
       modeEl.dataset.mode = 'offline';
-      modeEl.title = 'Local camera, grid, tracking and k-NN work without a key. Cloud image analysis needs a Meta vision provider.';
-      setAnswer('Cloud AI is not configured. Local camera, grid, tap-to-track and the k-NN index still work. Open ☰ → Vision Provider & Model → Configure provider to add a Meta-only NVIDIA, Cloudflare or Groq key.', 'warn');
+      modeEl.title = 'Local camera, grid, tracking and k-NN work without a key. Cloud image analysis needs a configured vision provider.';
+      setAnswer('Cloud AI is not configured. Local camera, grid, tap-to-track and the k-NN index still work. Open ☰ → Vision Provider & Model → Configure provider to add any free or paid vision provider with your own key.', 'warn');
     }
     if (state.menuOpen) renderMenu();
   } catch {

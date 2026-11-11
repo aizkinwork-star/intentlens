@@ -1,13 +1,11 @@
-// server/services/localModelClient.js — v7 Strictly Local Meta-Only.
+// server/services/localModelClient.js — legacy loopback-only local model client.
 //
-// Calls the local Meta Llama Vision runtime (e.g. Ollama at 127.0.0.1)
-// over loopback. No remote hosts, no API keys, no hosted inference.
+// DEPRECATED: the active local path is Ollama through
+// openaiCompatibleProvider.js, selected via modelRegistry.js. This file is kept
+// for reference and is only imported by the deprecated metaProvider.js.
 //
-// v7 non-negotiables:
-//   - baseUrl must be 127.0.0.1 (loopback only).
-//   - No web search, no hosted inference, no external model endpoints.
-//   - Meta Llama Vision models only.
-//   - No API keys accepted or stored.
+// Original scope: call a local vision runtime (e.g. Ollama at 127.0.0.1) over
+// loopback only, with no remote hosts, no hosted inference and no API keys.
 
 import { appError } from '../lib/errors.js';
 import { GROUNDING_SCHEMA } from './groundingSchema.js';

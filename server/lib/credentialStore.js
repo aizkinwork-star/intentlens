@@ -13,29 +13,22 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { normalizeNimBaseUrl, normalizeTier } from '../config.js';
+import { normalizeNimBaseUrl, normalizeTier, buildRuntimeState } from '../config.js';
+import { ALL_SECRET_ENV_KEYS } from '../../modelRegistry.js';
 
-const SECRET_KEYS = [
-  'NIM_API_KEY',
-  'NIM_BASE_URL',
-  'NIM_ENABLED',
-  'NIM_MODEL_ID',
-  'CLOUDFLARE_ACCOUNT_ID',
-  'CLOUDFLARE_API_TOKEN',
-  'CLOUDFLARE_MODEL_ID',
-  'GROQ_API_KEY',
-  'GROQ_TEXT_MODEL',
-  'GROQ_VISION_MODEL',
-  'OPENROUTER_API_KEY',
-  'OPENROUTER_MODEL_ID',
-  'BLOCKRUN_API_KEY',
-  'BLOCKRUN_MODEL_ID',
-  'MODAL_API_KEY',
-  'MODAL_BASE_URL',
-  'MODAL_MODEL_ID',
-  'PROVIDER_PRIORITY',
-  'MODEL_ACCESS_TIER',
-];
+// Every provider key/model/base-url variable is allowed to be persisted. The
+// registry is the source of truth so adding a provider cannot silently drop a
+// credential on the next save.
+const SECRET_KEYS = [...new Set([
+  ...ALL_SECRET_ENV_KEYS,
+  'NIM_API_KEY', 'NIM_BASE_URL', 'NIM_ENABLED', 'NIM_MODEL_ID',
+  'CLOUDFLARE_ACCOUNT_ID', 'CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_MODEL_ID',
+  'GROQ_API_KEY', 'GROQ_TEXT_MODEL', 'GROQ_VISION_MODEL', 'GROQ_MODEL_ID',
+  'OPENROUTER_API_KEY', 'OPENROUTER_MODEL_ID',
+  'BLOCKRUN_API_KEY', 'BLOCKRUN_MODEL_ID',
+  'MODAL_API_KEY', 'MODAL_BASE_URL', 'MODAL_MODEL_ID',
+  'PROVIDER_PRIORITY', 'MODEL_ACCESS_TIER',
+])];
 
 let cachedCredentials = null;
 let cachedSource = 'none';
@@ -243,6 +236,14 @@ export function applyCredentialsToEnv(credentials) {
 export async function applyCredentialsToConfig(config) {
   if (!config) return;
   const env = process.env;
+  const next = buildRuntimeState();
+
+  // Generic runtime state is authoritative for the router and provider routes.
+  config.providers = next.providers;
+  config.providerPriority = next.priority;
+  config.accessTier = normalizeTier(env.MODEL_ACCESS_TIER || config.accessTier);
+
+  // Keep legacy flattened fields in sync for older modules/tests.
   config.cloudflareAccountId = (env.CLOUDFLARE_ACCOUNT_ID || '').trim();
   config.cloudflareApiToken = (env.CLOUDFLARE_API_TOKEN || '').trim();
   config.cloudflareModelId = (env.CLOUDFLARE_MODEL_ID || config.cloudflareModelId || '@cf/meta/llama-3.2-11b-vision-instruct').trim();
@@ -254,17 +255,14 @@ export async function applyCredentialsToConfig(config) {
     : String(env.NIM_ENABLED).toLowerCase() === 'true' || String(env.NIM_ENABLED) === '1';
   config.groqApiKey = (env.GROQ_API_KEY || '').trim();
   config.groqTextModel = (env.GROQ_TEXT_MODEL || config.groqTextModel || '').trim();
-  config.groqVisionModel = (env.GROQ_VISION_MODEL || '').trim();
+  config.groqVisionModel = (env.GROQ_VISION_MODEL || env.GROQ_MODEL_ID || '').trim();
   config.openrouterApiKey = (env.OPENROUTER_API_KEY || '').trim();
   config.openrouterModelId = (env.OPENROUTER_MODEL_ID || config.openrouterModelId || 'meta-llama/llama-4-maverick').trim();
   config.blockrunApiKey = (env.BLOCKRUN_API_KEY || '').trim();
-  config.blockrunModelId = (env.BLOCKRUN_MODEL_ID || config.blockrunModelId || 'meta-llama/llama-4-maverick').trim();
+  config.blockrunModelId = (env.BLOCKRUN_MODEL_ID || config.blockrunModelId || '').trim();
   config.modalApiKey = (env.MODAL_API_KEY || '').trim();
   config.modalBaseUrl = (env.MODAL_BASE_URL || config.modalBaseUrl || '').trim();
-  config.modalModelId = (env.MODAL_MODEL_ID || config.modalModelId || 'meta-llama/Llama-4-Maverick-17B-128E-Instruct').trim();
-  config.providerPriority = (env.PROVIDER_PRIORITY || config.providerPriority?.join(',') || 'openrouter,cloudflare-workers-ai,nvidia-nim,blockrun,modal,groq')
-    .split(',').map((s) => s.trim()).filter(Boolean);
-  config.accessTier = normalizeTier(env.MODEL_ACCESS_TIER || config.accessTier);
+  config.modalModelId = (env.MODAL_MODEL_ID || config.modalModelId || '').trim();
 }
 
 export const SECRET_ENV_KEYS = SECRET_KEYS;

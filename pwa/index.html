@@ -3,9 +3,9 @@
 <head>
   <!-- connect-src allows any HTTPS origin only because Modal deployments and the
        optional "Custom relay" provider must point at a user-owned URL. Fixed
-       providers are OpenRouter, Groq (text only), NVIDIA NIM, Cloudflare Workers AI and
-       BlockRun, all restricted to Meta models. GitHub Pages cannot set response headers, so this CSP is
-       delivered as a meta tag only. -->
+       providers are OpenRouter, Groq, Google AI Studio, NVIDIA NIM, Cloudflare Workers AI,
+       Mistral, Cerebras, Together, Hugging Face, DeepInfra, OpenAI and Anthropic.
+       GitHub Pages cannot set response headers, so this CSP is delivered as a meta tag only. -->
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0b1118">
@@ -133,7 +133,9 @@
 
       <label>Model access
         <select id="accessTier">
-          <option value="paid" selected>All Meta models (paid per token)</option>
+          <option value="free">Free-tier models only</option>
+          <option value="preview">Free + preview models</option>
+          <option value="paid" selected>All models (paid may bill)</option>
         </select>
       </label>
       <p id="accessNote" class="meta"></p>
@@ -152,9 +154,31 @@
         Sent directly from this browser. Not stored; anyone using this unlocked device can read it while the tab is open.
       </p>
 
-      <label id="baseUrlRow" hidden>Base URL (Modal deployment or custom relay only)
-        <input id="baseUrlInput" type="url" placeholder="https://your-workspace--your-app.modal.run" autocomplete="off" spellcheck="false">
+      <label id="accountIdRow" hidden>Cloudflare Account ID
+        <input id="accountIdInput" type="text" autocomplete="off" spellcheck="false"
+               placeholder="32-character account id">
       </label>
+
+      <label id="baseUrlRow" hidden>Base URL (custom relay or local Ollama only)
+        <input id="baseUrlInput" type="url" placeholder="https://your-relay.example.workers.dev" autocomplete="off" spellcheck="false">
+      </label>
+
+      <fieldset class="budgetBox">
+        <legend>Hard cost budget (this device)</legend>
+        <div class="twoCol">
+          <label>Daily USD
+            <input id="budgetDaily" type="number" min="0" step="0.01" value="1">
+          </label>
+          <label>Monthly USD
+            <input id="budgetMonthly" type="number" min="0" step="0.01" value="10">
+          </label>
+        </div>
+        <label>Max USD per request
+          <input id="budgetRequest" type="number" min="0" step="0.01" value="0.25">
+        </label>
+        <p id="budgetStatus" class="meta"></p>
+        <button id="clearBudgetBtn" class="ghost smallBtn" type="button">Clear local ledger</button>
+      </fieldset>
 
       <div class="twoCol">
         <label>Grid

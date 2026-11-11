@@ -1,15 +1,15 @@
-// IntentLens backend — v8 local-first, strict Meta-only cloud providers.
+// IntentLens backend — v9 multi-provider, local-first.
 //
 // Serves the static app and the API routes on one origin, so the browser never
 // needs to know about the model provider or any API key.
 //
-// v7 non-negotiables:
-//   - Meta AI models only, hosted via cloud providers (NVIDIA NIM primary,
-//     Cloudflare Workers AI next, Groq only with a Meta vision model).
-//   - No hosted inference from non-Meta models.
-//   - No API keys in browser code; keys live in backend .env.
-//   - Outbound network restricted to allowlisted inference hosts.
-//   - Fail closed when all providers unavailable.
+// Non-negotiables:
+//   - Many providers (free and paid) via user-supplied keys; modelRegistry.js
+//     is the single catalogue.
+//   - No API keys in browser code; keys live in the backend encrypted store.
+//   - Every request passes a hard token/cost preflight before it is sent.
+//   - Outbound inference hosts are known providers plus explicit HTTPS relays.
+//   - Fail closed, with a clear reason, when no provider is usable.
 
 import { createServer } from 'node:http';
 import { networkInterfaces } from 'node:os';
@@ -19,7 +19,19 @@ import { fileURLToPath } from 'node:url';
 import { markPhase, getStartupReport } from './lib/startup.js';
 markPhase('server module evaluation started');
 
-import { config, modelMode, localModelConfig, localModelAvailable, outboundNetworkAllowed, isAllowedOutboundHost, providerConfigured, perceptionStatus, META_MODEL_CATALOG } from './config.js';
+import {
+  config,
+  modelMode,
+  localModelConfig,
+  localModelAvailable,
+  outboundNetworkAllowed,
+  isAllowedOutboundHost,
+  providerConfigured,
+  providerRuntime,
+  perceptionStatus,
+  MODEL_CATALOG,
+  getProvider,
+} from './config.js';
 import { analyzeHandler } from './routes/analyze.js';
 import {
   projectCreateHandler,
@@ -40,8 +52,18 @@ import {
   handleDeleteCloudProvider,
   handleTestCloudProvider,
   handleSetOutboundNetwork,
+  handleGetBudget,
+  handleSetBudget,
   loadCloudProviderEnv,
 } from './routes/providers.js';
+import {
+  handleCreateSyncCode,
+  handleReceiveSyncItem,
+  handleListSyncItems,
+  handleGetSyncItem,
+  handleDeleteSyncCode,
+} from './routes/sync.js';
+import { syncStore } from './services/syncStore.js';
 import { json, logRequest, logError, getServerLogs, clearServerLogs } from './lib/http.js';
 import { serveStatic } from './lib/static.js';
 import { handleGetScaler } from './routes/scaler.js';
@@ -60,6 +82,12 @@ markPhase('provider credentials loaded', { source: credentialSource });
 initSessionToken(config.dataDir);
 markPhase('session token ready');
 
+// Expired LAN upload folders are not useful after a crash or a long pause.
+try {
+  const removed = syncStore.sweepOrphans({ maxAgeMs: 24 * 60 * 60 * 1000 });
+  if (removed) console.log(`  sync      removed ${removed} stale upload folder(s)`);
+} catch { /* cleanup is best-effort */ }
+
 // User-owned data store (SQLite + image files). Kept out of the public frontend.
 const store = new Store({ dataDir: config.dataDir });
 
@@ -67,17 +95,20 @@ function health(res) {
   const mode = modelMode();
   const configured = localModelAvailable();
   const active = configured ? config.providerPriority.find((id) => providerConfigured(id)) : null;
+  const activeRuntime = active ? providerRuntime(active) : null;
   json(res, 200, {
     ok: true,
     service: 'intentlens',
     version: config.version,
-    // v8: never include key values. Distinguish local perception from cloud AI.
+    // Never include key values. Distinguish local perception from cloud AI.
     model: {
       mode,
-      id: active ? (active === 'nvidia-nim' ? config.nimModelId : active === 'cloudflare-workers-ai' ? config.cloudflareModelId : config.groqVisionModel) : 'offline',
+      id: activeRuntime?.modelId || 'offline',
       configured,
       provider: active,
-      localLlm: false,
+      providerLabel: activeRuntime?.label || null,
+      modality: activeRuntime?.model?.modality || null,
+      localLlm: providerConfigured('ollama'),
       localPerception: true,
       mockFallback: false,
       webSearchAvailable: false,
@@ -85,11 +116,18 @@ function health(res) {
     providers: config.providerPriority.map((id) => ({
       id,
       configured: providerConfigured(id),
-      label: META_MODEL_CATALOG[id]?.label || id,
+      label: getProvider(id)?.label || MODEL_CATALOG[id]?.label || id,
+      modelId: providerRuntime(id)?.modelId || null,
+      browserCors: getProvider(id)?.browserCors || null,
     })),
     providerHealth: providerHealthSnapshot(),
     network: { allowOutboundNetwork: outboundNetworkAllowed() },
-    limits: { maxImageBytes: config.maxImageBytes },
+    limits: {
+      maxImageBytes: config.maxImageBytes,
+      maxInputTokens: config.maxInputTokens,
+      maxOutputTokens: config.maxOutputTokens,
+      maxRequestUsd: config.maxRequestUsd,
+    },
     startup: getStartupReport(),
     time: new Date().toISOString(),
   });
@@ -193,6 +231,20 @@ const server = createServer(async (req, res) => {
       } else {
         json(res, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'Use POST.', retryable: false } });
       }
+    } else if (path === '/api/budget') {
+      if (req.method === 'GET') {
+        await handleGetBudget(req, res);
+      } else if (req.method === 'POST' || req.method === 'PUT') {
+        await handleSetBudget(req, res);
+      } else {
+        json(res, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'Use GET or POST.', retryable: false } });
+      }
+    } else if (path === '/api/budget/reset') {
+      if (req.method === 'POST') {
+        await handleSetBudget(req, res);
+      } else {
+        json(res, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'Use POST.', retryable: false } });
+      }
     } else if (path === '/api/providers/test') {
       if (req.method === 'GET' || req.method === 'POST') {
         await handleTestCloudProvider(req, res);
@@ -202,6 +254,29 @@ const server = createServer(async (req, res) => {
     } else if (path.startsWith('/api/providers/') && req.method === 'DELETE') {
       const id = decodeURIComponent(path.slice('/api/providers/'.length));
       await handleDeleteCloudProvider(req, res, id);
+    } else if (path === '/api/sync/code') {
+      if (req.method === 'POST') {
+        await handleCreateSyncCode(req, res);
+      } else {
+        json(res, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'Use POST.', retryable: false } });
+      }
+    } else if (path === '/api/sync/items') {
+      if (req.method === 'GET') {
+        await handleListSyncItems(req, res);
+      } else {
+        json(res, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'Use GET.', retryable: false } });
+      }
+    } else if (path === '/api/sync/receive') {
+      if (req.method === 'POST') {
+        await handleReceiveSyncItem(req, res);
+      } else {
+        json(res, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'Use POST.', retryable: false } });
+      }
+    } else if (path.match(/^\/api\/sync\/items\/(\d{6})\/([^/]+)$/) && req.method === 'GET') {
+      const match = path.match(/^\/api\/sync\/items\/(\d{6})\/([^/]+)$/);
+      await handleGetSyncItem(req, res, match[1], decodeURIComponent(match[2]));
+    } else if (path.match(/^\/api\/sync\/code\/(\d{6})$/) && req.method === 'DELETE') {
+      await handleDeleteSyncCode(req, res, path.match(/^\/api\/sync\/code\/(\d{6})$/)[1]);
     } else if (path === '/api/startup') {
       json(res, 200, getStartupReport());
     } else if (path === '/api/logs') {
@@ -414,13 +489,15 @@ server.listen(config.port, config.host || '127.0.0.1', () => {
   console.log(`  local     http://localhost:${config.port}`);
   for (const ip of lanAddresses()) console.log(`  network   http://${ip}:${config.port}`);
   console.log(`  data      ${config.dataDir}`);
+  const activeProvider = config.providerPriority.find((id) => providerConfigured(id));
+  const activeLabel = activeProvider ? (getProvider(activeProvider)?.label || activeProvider) : '';
   console.log(
-    `  model     ${mode === 'meta-cloud' ? `cloud generative (Meta only)` : 'offline (local perception only)'}`,
+    `  model     ${mode === 'cloud-generative' ? `cloud generative (${activeLabel})` : 'offline (local perception only)'}`,
   );
   console.log(`  priority  ${config.providerPriority.join(' -> ')}`);
   console.log(`  secrets   ${credentialSource}`);
   if (!localModelAvailable()) {
-    console.log('  note      no Meta vision provider configured. Open Provider Setup in the app.');
+    console.log('  note      no vision provider configured. Open Provider Setup in the app.');
   }
   console.log('  camera    needs https:// or localhost; use Upload photo over plain http');
   console.log('');

@@ -9,7 +9,6 @@ const TABLE = {
   MODEL_AUTH_FAILED: [502, 'The provider rejected the saved key. Replace it in Provider Setup.'],
   MODEL_RATE_LIMITED: [429, 'The model is rate limited right now. Wait a moment and retry.'],
   MODEL_QUOTA_EXHAUSTED: [429, 'This provider quota is exhausted. Add credit or choose another provider.'],
-  MODEL_NOT_META: [400, 'Only Meta-published generative models are permitted.'],
   MODEL_TIMEOUT: [504, 'The model did not answer in time. Retry, or use a smaller image.'],
   MODEL_BAD_RESPONSE: [502, 'The model returned something that could not be read.'],
   MODEL_UPSTREAM_ERROR: [502, 'The model API returned an error.'],
@@ -20,6 +19,9 @@ const TABLE = {
   INTERNAL_ERROR: [500, 'Something went wrong on the server.'],
   AI_NOT_CONFIGURED: [503, 'No vision model is configured. Connect a provider first.'],
   NETWORK_DISABLED: [503, 'Outbound network is disabled. Set ALLOW_OUTBOUND_NETWORK=true to use a cloud provider.'],
+  INPUT_TOKEN_LIMIT: [413, 'This request is larger than the configured input token cap.'],
+  REQUEST_COST_LIMIT: [402, 'This request would exceed the per-request cost cap.'],
+  BUDGET_EXCEEDED: [402, 'The daily or monthly cost budget is exhausted.'],
 };
 
 const RETRYABLE = new Set([

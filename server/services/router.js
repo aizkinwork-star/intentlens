@@ -1,81 +1,80 @@
-// server/services/router.js — Meta-model provider failover in user priority order.
+// server/services/router.js — multi-provider failover in user priority order.
 //
-// Default: OpenRouter → NVIDIA NIM → Cloudflare Workers AI → BlockRun → Modal → Groq.
-// Only providers with a configured, vision-capable Meta model are eligible.
-// Groq is only eligible when the account exposes a Meta vision model; the
-// supplied restricted account does not, so it is skipped.
+// Every configured provider is built from modelRegistry.js. The router performs
+// a hard cost preflight before each attempt and records real token usage after
+// a success. Auth, quota, rate-limit and outage errors move to the next
+// provider; schema/input errors do not.
 
 import { ProviderRouter } from './provider.js';
 import { buildCloudflareProvider } from './cloudflareProvider.js';
-import { buildNimProvider } from './nimProvider.js';
-import { buildGroqProvider } from './groqProvider.js';
 import { buildOpenAICompatibleProvider, chatCompletionsUrl } from './openaiCompatibleProvider.js';
-import { isAllowedOutboundHost, providerConfigured } from '../config.js';
+import { buildAnthropicProvider } from './anthropicProvider.js';
+import { config, providerRuntime, providerConfigured } from '../config.js';
+import { costManager } from './costManager.js';
 
-export function buildRouter(config) {
+function timeoutFor(providerId, model) {
+  if (providerId === 'ollama') return 300000;
+  if (model?.reasoning) return 180000;
+  if (model?.vision) return 120000;
+  return 60000;
+}
+
+function maxTokensFor(model) {
+  return Math.min(8192, Math.max(512, Number(model?.maxOutput) || 3072));
+}
+
+function buildOne(id) {
+  const runtime = providerRuntime(id);
+  if (!runtime) return null;
+  const { modelId, model, endpoint, apiKey, accountId, baseUrl } = runtime;
+
+  if (runtime.kind === 'cloudflare') {
+    return buildCloudflareProvider({
+      accountId,
+      apiToken: apiKey,
+      modelId,
+      timeoutMs: timeoutFor(id, model),
+    });
+  }
+  if (runtime.kind === 'anthropic') {
+    return buildAnthropicProvider({
+      apiKey,
+      modelId,
+      baseUrl,
+      timeoutMs: timeoutFor(id, model),
+      maxTokens: maxTokensFor(model),
+    });
+  }
+  if (!endpoint) throw new Error(`${runtime.label} has no endpoint`);
+  return buildOpenAICompatibleProvider({
+    id,
+    name: runtime.label,
+    endpoint,
+    host: (() => { try { return new URL(endpoint).hostname; } catch { return ''; } })(),
+    apiKey,
+    modelId,
+    timeoutMs: timeoutFor(id, model),
+    maxTokens: maxTokensFor(model),
+    allowUnknownModel: id === 'custom',
+  });
+}
+
+export function buildRouter(cfg = config) {
   const router = new ProviderRouter();
-  const order = (config.providerPriority || ['openrouter', 'nvidia-nim', 'cloudflare-workers-ai', 'blockrun', 'modal', 'groq'])
+  const order = (cfg.providerPriority || [])
+    .map((id) => String(id || '').trim())
+    .filter((id, i, all) => id && all.indexOf(id) === i)
     .filter((id) => providerConfigured(id));
 
   for (const id of order) {
     try {
-      if (id === 'openrouter') {
-        router.use(buildOpenAICompatibleProvider({
-          id,
-          name: 'OpenRouter',
-          endpoint: 'https://openrouter.ai/api/v1/chat/completions',
-          host: 'openrouter.ai',
-          apiKey: config.openrouterApiKey,
-          modelId: config.openrouterModelId,
-          timeoutMs: 120000,
-        }));
-      } else if (id === 'nvidia-nim') {
-        router.use(buildNimProvider({
-          baseUrl: config.nimBaseUrl,
-          apiKey: config.nimApiKey,
-          modelId: config.nimModelId,
-          timeoutMs: 120000,
-        }));
-      } else if (id === 'cloudflare-workers-ai') {
-        router.use(buildCloudflareProvider({
-          accountId: config.cloudflareAccountId,
-          apiToken: config.cloudflareApiToken,
-          modelId: config.cloudflareModelId,
-          timeoutMs: 120000,
-        }));
-      } else if (id === 'blockrun') {
-        router.use(buildOpenAICompatibleProvider({
-          id,
-          name: 'BlockRun',
-          endpoint: 'https://api.blockrun.ai/v1/chat/completions',
-          host: 'api.blockrun.ai',
-          apiKey: config.blockrunApiKey,
-          modelId: config.blockrunModelId,
-          timeoutMs: 120000,
-        }));
-      } else if (id === 'modal') {
-        const endpoint = chatCompletionsUrl(config.modalBaseUrl);
-        if (!endpoint || !isAllowedOutboundHost(endpoint)) throw new Error('Modal base URL is missing or not a *.modal.run endpoint');
-        router.use(buildOpenAICompatibleProvider({
-          id,
-          name: 'Modal',
-          endpoint,
-          host: new URL(endpoint).hostname,
-          apiKey: config.modalApiKey,
-          modelId: config.modalModelId,
-          timeoutMs: 180000,
-        }));
-      } else if (id === 'groq') {
-        router.use(buildGroqProvider({
-          apiKey: config.groqApiKey,
-          modelId: config.groqVisionModel,
-          timeoutMs: 60000,
-        }));
-      }
+      const provider = buildOne(id);
+      if (provider) router.use(provider);
     } catch {
       // Misconfigured provider is skipped; provider setup shows the reason.
     }
   }
 
+  router.costManager = costManager;
   return router;
 }
