@@ -27,6 +27,8 @@ const SECRET_KEYS = [...new Set([
   'OPENROUTER_API_KEY', 'OPENROUTER_MODEL_ID',
   'BLOCKRUN_API_KEY', 'BLOCKRUN_MODEL_ID',
   'MODAL_API_KEY', 'MODAL_BASE_URL', 'MODAL_MODEL_ID',
+  'REPLICATE_API_TOKEN', 'REPLICATE_SAM_MODEL', 'REPLICATE_SAM_VERSION',
+  'SAM2_ENABLED', 'SAM2_INPUT_STYLE',
   'PROVIDER_PRIORITY', 'MODEL_ACCESS_TIER',
 ])];
 
@@ -263,6 +265,19 @@ export async function applyCredentialsToConfig(config) {
   config.modalApiKey = (env.MODAL_API_KEY || '').trim();
   config.modalBaseUrl = (env.MODAL_BASE_URL || config.modalBaseUrl || '').trim();
   config.modalModelId = (env.MODAL_MODEL_ID || config.modalModelId || '').trim();
+
+  // Hosted segmentation is optional; keep its runtime state in sync when a
+  // token or toggle is saved without requiring a server restart.
+  if (config.sam2) {
+    config.sam2.apiToken = (env.REPLICATE_API_TOKEN || config.sam2.apiToken || '').trim();
+    config.sam2.modelId = (env.REPLICATE_SAM_MODEL || config.sam2.modelId || 'meta/sam-2').trim();
+    config.sam2.version = (env.REPLICATE_SAM_VERSION ?? config.sam2.version ?? '').trim();
+    if (env.SAM2_ENABLED !== undefined) {
+      config.sam2.enabled = String(env.SAM2_ENABLED).toLowerCase() === 'true' || String(env.SAM2_ENABLED) === '1';
+    }
+    config.sam2.inputStyle = (env.SAM2_INPUT_STYLE || config.sam2.inputStyle || 'automatic').trim().toLowerCase();
+    config.sam2Enabled = config.sam2.enabled === true;
+  }
 }
 
 export const SECRET_ENV_KEYS = SECRET_KEYS;

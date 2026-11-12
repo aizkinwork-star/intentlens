@@ -22,6 +22,12 @@ const TABLE = {
   INPUT_TOKEN_LIMIT: [413, 'This request is larger than the configured input token cap.'],
   REQUEST_COST_LIMIT: [402, 'This request would exceed the per-request cost cap.'],
   BUDGET_EXCEEDED: [402, 'The daily or monthly cost budget is exhausted.'],
+  SEGMENTATION_DISABLED: [503, 'Hosted segmentation is disabled. Enable SAM2_ENABLED only if you want mask proposals.'],
+  SEGMENTATION_NOT_CONFIGURED: [503, 'No hosted segmentation key is configured. Add REPLICATE_API_TOKEN on the server.'],
+  SEGMENTATION_PROMPT_UNSUPPORTED: [400, 'This segmentation model cannot honour that prompt type.'],
+  SEGMENTATION_FAILED: [502, 'Hosted segmentation failed.'],
+  SEGMENTATION_MASK_INVALID: [502, 'A segmentation mask was missing, too large or not a valid PNG.'],
+  SEGMENTATION_OUTPUT_TOO_LARGE: [502, 'Hosted segmentation returned too many or too-large masks.'],
 };
 
 const RETRYABLE = new Set([

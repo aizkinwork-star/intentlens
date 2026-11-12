@@ -46,6 +46,17 @@ const bool = (value, fallback) => {
   return String(value).toLowerCase() === 'true' || String(value) === '1';
 };
 
+// Hosted segmentation is opt-in. A low-power machine must never start paying
+// for masks simply because a key is present in the environment.
+const SAM2_ENABLED = bool(process.env.SAM2_ENABLED, false);
+const SAM2_MODEL_ID = (process.env.REPLICATE_SAM_MODEL || 'meta/sam-2').trim();
+const SAM2_VERSION = (process.env.REPLICATE_SAM_VERSION || '').trim();
+const SAM2_INPUT_STYLE_RAW = (process.env.SAM2_INPUT_STYLE || 'automatic').trim().toLowerCase();
+const SAM2_INPUT_STYLE = ['automatic', 'promptable'].includes(SAM2_INPUT_STYLE_RAW)
+  ? SAM2_INPUT_STYLE_RAW
+  : 'automatic';
+const SAM2_COST_PER_RUN = Number(process.env.SAM2_COST_PER_RUN_USD ?? 0.01);
+
 /** Provider catalogue in the legacy shape older modules expect. */
 export const MODEL_CATALOG = Object.fromEntries(
   Object.entries(PROVIDERS).map(([id, provider]) => [
@@ -109,6 +120,8 @@ export const ALLOWED_HOSTS = [...new Set([
   'api.deepinfra.com',
   'api.openai.com',
   'api.anthropic.com',
+  'api.replicate.com',
+  'replicate.delivery',
 ])];
 
 const PRIVATE_IP_RE = /^(?:10\.|127\.|192\.168\.|169\.254\.|172\.(?:1[6-9]|2\d|3[01])\.|0\.|\[?::1\]?$)/i;
@@ -145,6 +158,8 @@ export function isAllowedOutboundHost(url) {
     const host = u.hostname.toLowerCase();
     if (ALLOWED_HOSTS.includes(host)) return true;
     if (host.endsWith('.modal.run')) return true;
+    // Replicate hands out signed mask URLs on subdomains of replicate.delivery.
+    if (host === 'replicate.delivery' || host.endsWith('.replicate.delivery')) return true;
     return false;
   } catch {
     return false;
@@ -360,7 +375,23 @@ export const config = {
 
   allowOutboundNetwork: bool(process.env.ALLOW_OUTBOUND_NETWORK, true),
   localSourceDir: process.env.LOCAL_SOURCE_DIR || './intentlens-data/sources',
-  sam2Enabled: false,
+  sam2Enabled: SAM2_ENABLED,
+  sam2: {
+    enabled: SAM2_ENABLED,
+    provider: 'replicate',
+    modelId: SAM2_MODEL_ID,
+    version: SAM2_VERSION,
+    apiToken: (process.env.REPLICATE_API_TOKEN || '').trim(),
+    inputStyle: SAM2_INPUT_STYLE,
+    timeoutMs: int(process.env.SAM2_TIMEOUT_MS, 180_000),
+    pollIntervalMs: int(process.env.SAM2_POLL_INTERVAL_MS, 1500),
+    maxWaitMs: int(process.env.SAM2_MAX_WAIT_MS, 180_000),
+    maxMasks: Math.min(32, int(process.env.SAM2_MAX_MASKS, 12)),
+    maxMaskBytes: int(process.env.SAM2_MAX_MASK_BYTES, 4 * 1024 * 1024),
+    costPerRunUsd: Number.isFinite(SAM2_COST_PER_RUN) && SAM2_COST_PER_RUN >= 0 ? SAM2_COST_PER_RUN : 0.01,
+    pointsPerSide: Math.min(64, int(process.env.SAM2_POINTS_PER_SIDE, 16)),
+    cacheTtlMs: int(process.env.SAM2_CACHE_TTL_MS, 24 * 60 * 60 * 1000),
+  },
   dinoV2Enabled: false,
   faissEnabled: bool(process.env.FAISS_ENABLED, false),
   version: '0.5.0-multiprovider',
@@ -391,6 +422,40 @@ export function isPlaceholderCredential(value) {
   if (/(your[-_ ]|replace[-_ ]|change[-_ ]?me|placeholder|example[-_ ]|dummy|xxxx|sample[-_ ]?key)/.test(lower)) return true;
   if (/^<.*>$/.test(text)) return true;
   return false;
+}
+
+/** Hosted segmentation has a key and the user explicitly enabled it. */
+export function sam2Configured() {
+  const s = config.sam2 || {};
+  return s.enabled === true && Boolean(s.apiToken) && !isPlaceholderCredential(s.apiToken);
+}
+
+/** Public, key-free status for the desktop UI and the PWA. */
+export function sam2Status() {
+  const s = config.sam2 || {};
+  const keyPresent = Boolean(s.apiToken) && !isPlaceholderCredential(s.apiToken);
+  return {
+    enabled: s.enabled === true,
+    configured: s.enabled === true && keyPresent,
+    keyPresent,
+    provider: s.provider || 'replicate',
+    modelId: s.modelId || '',
+    version: s.version || null,
+    inputStyle: s.inputStyle || 'automatic',
+    networkAllowed: config.allowOutboundNetwork === true,
+    limits: {
+      maxMasks: s.maxMasks,
+      maxMaskBytes: s.maxMaskBytes,
+      maxWaitMs: s.maxWaitMs,
+      maxImageBytes: config.maxImageBytes,
+      cacheTtlMs: s.cacheTtlMs,
+    },
+    pricing: {
+      perRunUsd: s.costPerRunUsd,
+      note: 'Flat planning estimate only. Replicate hardware time is authoritative.',
+    },
+    privacy: 'When enabled, the captured image is sent to the configured Replicate model. Masks are cached locally for the TTL and are not sent to other providers.',
+  };
 }
 
 /** Resolve the effective model for a provider, falling back to its default. */

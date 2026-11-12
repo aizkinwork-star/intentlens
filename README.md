@@ -45,10 +45,11 @@ Both surfaces share the same pure modules for coordinates, result validation and
 - **Any vision provider** — OpenRouter, Groq, Google AI Studio, NVIDIA NIM, Cloudflare Workers AI, Mistral, Together, Hugging Face, DeepInfra, OpenAI, Anthropic, local Ollama, or a custom HTTPS relay. Free, preview and paid tiers are selectable.
 - **Failover** — auth, quota, rate-limit, timeout and outage errors move to the next configured provider.
 - **Hard budgets** — a pessimistic preflight reserves the worst-case cost against daily, monthly and per-request caps before any request is sent.
+- **Optional hosted masks** — SAM 2 via Replicate, with a server-side key, same-origin mask cache, timeouts, mask/byte caps and a flat per-run budget guard. Off by default. It proposes masks; it does not identify components.
 - **Phone transfer** — a one-time code plus a desktop-served upload page for gallery photos over the LAN; project JSON export/import for offline transfer.
 - **CLI** — health, provider list, model list, budget get/set/reset, analysis and sync-code creation.
 
-Not built: live desktop↔phone video sync, an APK, glasses integration, and a trained end-to-end component classifier.
+Not built: live desktop↔phone video sync, an APK, glasses integration, a trained end-to-end component classifier, and a PWA overlay for hosted masks (the server API and mask cache are ready; the phone UI is not wired yet).
 
 ---
 
@@ -199,6 +200,18 @@ The ledger contains token counts, model ids and estimated cost only — never pr
 
 Caveat: a provider can report usage late or differently from its public price list. The ledger is a guardrail and an estimate; the provider invoice is authoritative.
 
+### Optional hosted segmentation (SAM 2)
+
+Hosted segmentation is a separate, opt-in path. It is **not** the component classifier and it is off unless `SAM2_ENABLED=true` and a Replicate token are present.
+
+- `POST /api/segmentation` accepts an inline image or HTTPS image URL plus optional normalized boxes/points. `GET /api/segmentation` returns key-free status.
+- The adapter targets Replicate `meta/sam-2` (SAM 2 large, image-only automatic mask generation). Native box/point prompts are not exposed by that endpoint, so the server ranks automatic proposals against the prompt and labels the strategy `filter`. `SAM2_INPUT_STYLE=promptable` is for deployments that really accept boxes/points.
+- The token stays in the server/encrypted store. Mask PNGs are downloaded, bounds-checked, cached under `intentlens-data/segmentation/` and served same-origin so the overlay avoids CORS and expiring URLs.
+- Every run is bounded by `SAM2_MAX_MASKS`, `SAM2_MAX_MASK_BYTES`, `SAM2_MAX_WAIT_MS`, and a flat `SAM2_COST_PER_RUN_USD` preflight against `MAX_REQUEST_USD` and the remaining budget.
+- A mask is evidence, not an identification. The response carries `promptStrategy`, candidate count, prediction id and cost source so the UI cannot present a filtered proposal as a model-recognized part.
+
+Setup, API shape, limits and evaluation rules: `docs/HOSTED_SAM.md`.
+
 ---
 
 ## Perception pipeline
@@ -324,7 +337,8 @@ Tests run on Node's built-in test runner with no third-party dependency. `node -
 
 - **Keys never reach the browser.** The desktop server stores credentials encrypted (Electron `safeStorage` / Windows DPAPI) and applies them only inside the server process.
 - **Outbound network is opt-in.** `ALLOW_OUTBOUND_NETWORK=false` by default. Local camera, grid, tracking, lighting and k-NN still work.
-- **Host allowlist.** Known provider hosts plus explicit HTTPS relays. A custom relay must be HTTPS; private LAN IP literals are refused. Ollama is the loopback exception.
+- **Hosted segmentation is separately opt-in.** `SAM2_ENABLED=true` plus a server-side Replicate token. When enabled, the captured still is sent to Replicate for masks; when disabled, no frame leaves the machine for segmentation. Masks are cached locally for a bounded TTL and served same-origin.
+- **Host allowlist.** Known provider hosts plus explicit HTTPS relays. A custom relay must be HTTPS; private LAN IP literals are refused. Ollama is the loopback exception. Replicate is allowlisted only for the optional segmentation path.
 - **Only captured frames are sent.** No continuous video stream. Images leave the device only when you press Find it.
 - **No analytics, accounts or telemetry.** Project data stays in `intentlens-data/` (gitignored).
 - **Provider terms still apply.** Your chosen provider processes the frame and prompt under its own policy. A local Ollama model keeps inference on your machine.
@@ -368,8 +382,8 @@ server/
   index.js                       routes + startup
   config.js                      runtime provider state
   store.js                       SQLite + image files
-  routes/                        analyze, providers, sync, captures, ...
-  services/                      adapters, failover, cost ledger, sync store
+  routes/                        analyze, providers, sync, captures, segmentation, ...
+  services/                      adapters, failover, cost ledger, sync store, SAM adapter
 pwa/                             phone PWA (static)
 cli/intentlens.mjs               headless control
 scripts/                         PWA prepare, test runner
@@ -383,6 +397,7 @@ docs/                            architecture, audits, evaluation notes
 
 - `docs/architecture.md` — original architecture; sections written before the multi-provider change are historical. Use `docs/MULTI_PROVIDER_ARCHITECTURE.md` for current provider/budget design.
 - `docs/PERCEPTION_AND_ACCURACY.md` — lighting, hinge, PCB confidence and how to measure accuracy honestly.
+- `docs/HOSTED_SAM.md` — optional SAM 2 via Replicate: setup, API, limits, privacy and evaluation rules.
 - `docs/INSTALL.md`, `docs/SETUP_GUIDE.md` — installation and provider setup.
 - `docs/KNN_EVALUATION.md`, `docs/PHASE6_*` — local reference experiments.
 - `docs/DEVICE_TEST_CHECKLIST.md` — what still needs physical hardware.

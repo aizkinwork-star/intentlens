@@ -29,6 +29,7 @@ import {
   providerConfigured,
   providerRuntime,
   perceptionStatus,
+  sam2Status,
   MODEL_CATALOG,
   getProvider,
 } from './config.js';
@@ -63,7 +64,15 @@ import {
   handleGetSyncItem,
   handleDeleteSyncCode,
 } from './routes/sync.js';
+import {
+  handleSegmentationStatus,
+  handleSegmentationRun,
+  handleSaveSegmentationConfig,
+  handleSegmentationMask,
+  handleDeleteSegmentation,
+} from './routes/segmentation.js';
 import { syncStore } from './services/syncStore.js';
+import { segmentationStore } from './services/segmentationStore.js';
 import { json, logRequest, logError, getServerLogs, clearServerLogs } from './lib/http.js';
 import { serveStatic } from './lib/static.js';
 import { handleGetScaler } from './routes/scaler.js';
@@ -86,6 +95,12 @@ markPhase('session token ready');
 try {
   const removed = syncStore.sweepOrphans({ maxAgeMs: 24 * 60 * 60 * 1000 });
   if (removed) console.log(`  sync      removed ${removed} stale upload folder(s)`);
+} catch { /* cleanup is best-effort */ }
+
+// Hosted SAM masks are short-lived. Drop expired folders on startup.
+try {
+  const removed = segmentationStore.sweep();
+  if (removed) console.log(`  masks     removed ${removed} expired segmentation folder(s)`);
 } catch { /* cleanup is best-effort */ }
 
 // User-owned data store (SQLite + image files). Kept out of the public frontend.
@@ -122,6 +137,7 @@ function health(res) {
     })),
     providerHealth: providerHealthSnapshot(),
     network: { allowOutboundNetwork: outboundNetworkAllowed() },
+    segmentation: sam2Status(),
     limits: {
       maxImageBytes: config.maxImageBytes,
       maxInputTokens: config.maxInputTokens,
@@ -245,6 +261,28 @@ const server = createServer(async (req, res) => {
       } else {
         json(res, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'Use POST.', retryable: false } });
       }
+    } else if (path === '/api/segmentation/config') {
+      if (req.method === 'POST' || req.method === 'PUT') {
+        await handleSaveSegmentationConfig(req, res);
+      } else if (req.method === 'GET') {
+        await handleSegmentationStatus(req, res);
+      } else {
+        json(res, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'Use GET or POST.', retryable: false } });
+      }
+    } else if (path === '/api/segmentation') {
+      if (req.method === 'GET') {
+        await handleSegmentationStatus(req, res);
+      } else if (req.method === 'POST') {
+        await handleSegmentationRun(req, res);
+      } else {
+        json(res, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'Use GET or POST.', retryable: false } });
+      }
+    } else if (path.match(/^\/api\/segmentation\/(seg_[A-Za-z0-9]+)\/mask\/(\d{1,2})$/) && req.method === 'GET') {
+      const match = path.match(/^\/api\/segmentation\/(seg_[A-Za-z0-9]+)\/mask\/(\d{1,2})$/);
+      await handleSegmentationMask(req, res, match[1], Number(match[2]));
+    } else if (path.match(/^\/api\/segmentation\/(seg_[A-Za-z0-9]+)$/) && req.method === 'DELETE') {
+      const match = path.match(/^\/api\/segmentation\/(seg_[A-Za-z0-9]+)$/);
+      await handleDeleteSegmentation(req, res, match[1]);
     } else if (path === '/api/providers/test') {
       if (req.method === 'GET' || req.method === 'POST') {
         await handleTestCloudProvider(req, res);
