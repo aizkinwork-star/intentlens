@@ -24,7 +24,6 @@ const baseRequest = () => ({
     height: 720,
     capturedAt: '2026-10-26T13:00:00.000Z',
   },
-  gridSize: 64,
   userSelectedRegion: null,
   sceneMap: [],
   taskSummary: 'Inspecting an unpowered old phone motherboard',
@@ -65,11 +64,11 @@ test('stale scene entries are labelled stale instead of looking current', () => 
   assert.match(userText, /from_frame=frame_002/);
 });
 
-test('a user-tapped region is described as a hint, with its cell', () => {
+test('a user-tapped region is described as a hint', () => {
   const req = baseRequest();
-  req.userSelectedRegion = { x: 0.68, y: 0.74, cellId: 'R48C44' };
+  req.userSelectedRegion = { x: 0.68, y: 0.74 };
   const { userText } = buildGroundingPrompt(req);
-  assert.match(userText, /R48C44/);
+  assert.match(userText, /point=\(0\.680, 0\.740\)/);
   assert.match(userText, /hint/i);
 });
 
@@ -151,23 +150,15 @@ const rawModelOutput = () => ({
   requestedClarification: null,
 });
 
-test('the adapter converts the 0..1000 model grid to 0..1 and derives the 64-grid cell', () => {
+test('the adapter converts the 0..1000 model grid to 0..1 without a cell address', () => {
   const result = toGroundingResult({ raw: rawModelOutput(), request: baseRequest() });
   assert.equal(result.target.point.x, 0.68);
   assert.equal(result.target.point.y, 0.74);
-  assert.equal(result.target.gridCell, 'R48C44');
+  assert.equal(result.target.gridCell, undefined);
   assert.equal(result.target.freshness, 'current_frame');
   assert.equal(Number(result.target.box.width.toFixed(3)), 0.12);
   assert.equal(result.evidenceKind, 'visual_inference');
   assert.equal(result.evidence.length, 0);
-});
-
-test('the request grid size drives the derived cell, not a hidden default', () => {
-  const request = { ...baseRequest(), gridSize: 32 };
-  const result = toGroundingResult({ raw: rawModelOutput(), request });
-  assert.equal(result.target.gridCell, 'R24C22');
-  assert.equal(validateResult(result, { gridSize: 32 }).ok, true);
-  assert.equal(validateResult(result, { gridSize: 64 }).ok, false);
 });
 
 test('a converted result passes the shared UI validator', () => {
@@ -249,7 +240,7 @@ test('a good request is normalized and defaults are applied', () => {
   const clean = readAnalyzeRequest({ command: 'hi', frame: baseRequest().frame });
   assert.equal(clean.command, 'hi');
   assert.equal(clean.allowWebSearch, false);
-  assert.equal(clean.gridSize, 64);
+  assert.equal(clean.gridSize, undefined);
   assert.equal(clean.frame.frameId, 'frame_004');
   assert.ok(clean.requestId.startsWith('req_'));
 });

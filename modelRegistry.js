@@ -299,13 +299,15 @@ const m = (id, name, opts = {}) => ({
   outputPerM: 0,
   verified: false,
   openWeight: false,
+  recommended: false,
+  fast: false,
   note: '',
   ...opts,
 });
 
 export const PROVIDER_MODELS = {
   openrouter: {
-    'meta-llama/llama-3.2-11b-vision-instruct:free': m('meta-llama/llama-3.2-11b-vision-instruct:free', 'Llama 3.2 11B Vision (free)', { modality: 'vision', vision: true, tier: 'free', inputPerM: 0, outputPerM: 0, contextWindow: 131072, maxOutput: 4096, openWeight: true, note: 'Free variant; availability changes. Good first choice when it is offered.' }),
+    'meta-llama/llama-3.2-11b-vision-instruct:free': m('meta-llama/llama-3.2-11b-vision-instruct:free', 'Llama 3.2 11B Vision (free)', { modality: 'vision', vision: true, tier: 'free', inputPerM: 0, outputPerM: 0, contextWindow: 131072, maxOutput: 4096, openWeight: true, recommended: true, fast: true, note: 'Recommended free default: fast and free. Availability changes.' }),
     'qwen/qwen2.5-vl-72b-instruct:free': m('qwen/qwen2.5-vl-72b-instruct:free', 'Qwen2.5-VL 72B (free)', { modality: 'vision', vision: true, tier: 'free', contextWindow: 32768, maxOutput: 4096, openWeight: true, note: 'Strong open-weight vision model on the free tier.' }),
     'google/gemma-3-27b-it:free': m('google/gemma-3-27b-it:free', 'Gemma 3 27B (free)', { modality: 'vision', vision: true, tier: 'free', contextWindow: 131072, maxOutput: 4096, openWeight: true, note: 'Open-weight multimodal Gemma. Free-tier limits apply.' }),
     'mistralai/mistral-small-3.2-24b-instruct:free': m('mistralai/mistral-small-3.2-24b-instruct:free', 'Mistral Small 3.2 24B (free)', { modality: 'vision', vision: true, tier: 'free', contextWindow: 131072, maxOutput: 4096, openWeight: true, note: 'Open-weight vision model on the free tier.' }),
@@ -313,14 +315,14 @@ export const PROVIDER_MODELS = {
     'meta-llama/llama-4-scout': m('meta-llama/llama-4-scout', 'Llama 4 Scout', { modality: 'vision', vision: true, tier: 'paid', inputPerM: 0.10, outputPerM: 0.30, contextWindow: 1048576, maxOutput: 8192, openWeight: true, note: 'Cheaper Llama 4 vision model; not image-tested here.' }),
     'qwen/qwen2.5-vl-72b-instruct': m('qwen/qwen2.5-vl-72b-instruct', 'Qwen2.5-VL 72B', { modality: 'vision', vision: true, tier: 'paid', inputPerM: 0.25, outputPerM: 0.75, contextWindow: 32768, maxOutput: 8192, openWeight: true, note: 'Paid open-weight vision model with strong OCR/diagram reading.' }),
     'mistralai/pixtral-large-2411': m('mistralai/pixtral-large-2411', 'Pixtral Large', { modality: 'vision', vision: true, tier: 'paid', inputPerM: 2.0, outputPerM: 6.0, contextWindow: 128000, maxOutput: 4096, openWeight: true, note: 'Paid high-quality open-weight vision model.' }),
-    'google/gemini-2.5-flash': m('google/gemini-2.5-flash', 'Gemini 2.5 Flash', { modality: 'vision', vision: true, tier: 'paid', inputPerM: 0.30, outputPerM: 2.50, contextWindow: 1048576, maxOutput: 8192, note: 'Fast paid multimodal model.' }),
+    'google/gemini-2.5-flash': m('google/gemini-2.5-flash', 'Gemini 2.5 Flash', { modality: 'vision', vision: true, tier: 'paid', inputPerM: 0.30, outputPerM: 2.50, contextWindow: 1048576, maxOutput: 8192, recommended: true, fast: true, note: 'Recommended paid default: fast paid multimodal model.' }),
     'openai/gpt-4.1-mini': m('openai/gpt-4.1-mini', 'GPT-4.1 mini', { modality: 'vision', vision: true, tier: 'paid', inputPerM: 0.40, outputPerM: 1.60, contextWindow: 1048576, maxOutput: 8192, note: 'Paid closed-weight vision model.' }),
     'meta-llama/llama-3.3-70b-instruct': m('meta-llama/llama-3.3-70b-instruct', 'Llama 3.3 70B', { tier: 'paid', inputPerM: 0.10, outputPerM: 0.32, contextWindow: 131072, maxOutput: 4096, openWeight: true }),
     'qwen/qwen3-235b-a22b': m('qwen/qwen3-235b-a22b', 'Qwen3 235B A22B', { tier: 'paid', inputPerM: 0.20, outputPerM: 0.60, contextWindow: 131072, maxOutput: 8192, openWeight: true }),
     'deepseek/deepseek-r1': m('deepseek/deepseek-r1', 'DeepSeek R1', { tier: 'paid', inputPerM: 0.55, outputPerM: 2.19, contextWindow: 163840, maxOutput: 8192, openWeight: true }),
   },
   groq: {
-    'meta-llama/llama-4-scout-17b-16e-instruct': m('meta-llama/llama-4-scout-17b-16e-instruct', 'Llama 4 Scout 17B', { modality: 'vision', vision: true, tier: 'free', contextWindow: 131072, maxOutput: 8192, openWeight: true, note: 'Free-tier vision model. Rate limits are tight; a 429 moves to the next provider.' }),
+    'meta-llama/llama-4-scout-17b-16e-instruct': m('meta-llama/llama-4-scout-17b-16e-instruct', 'Llama 4 Scout 17B', { modality: 'vision', vision: true, tier: 'free', contextWindow: 131072, maxOutput: 8192, openWeight: true, recommended: true, fast: true, note: 'Recommended free default on Groq. Rate limits are tight; a 429 moves to the next provider.' }),
     'meta-llama/llama-4-maverick-17b-128e-instruct': m('meta-llama/llama-4-maverick-17b-128e-instruct', 'Llama 4 Maverick 17B', { modality: 'vision', vision: true, tier: 'preview', contextWindow: 131072, maxOutput: 8192, openWeight: true, note: 'Preview access; may not exist on every Groq account.' }),
     'llama-3.3-70b-versatile': m('llama-3.3-70b-versatile', 'Llama 3.3 70B Versatile', { contextWindow: 131072, maxOutput: 8192, openWeight: true, note: 'Free-tier text model.' }),
     'openai/gpt-oss-120b': m('openai/gpt-oss-120b', 'GPT-OSS 120B', { contextWindow: 131072, maxOutput: 8192, openWeight: true, note: 'Open-weight reasoning model on Groq.' }),
@@ -329,7 +331,7 @@ export const PROVIDER_MODELS = {
     'meta-llama/llama-guard-4-12b': m('meta-llama/llama-guard-4-12b', 'Llama Guard 4 12B', { modality: 'classifier', contextWindow: 131072, openWeight: true, note: 'Safety classifier only; never used for chat or vision.' }),
   },
   'google-ai-studio': {
-    'gemini-2.5-flash': m('gemini-2.5-flash', 'Gemini 2.5 Flash', { modality: 'vision', vision: true, tier: 'free', inputPerM: 0, outputPerM: 0, contextWindow: 1048576, maxOutput: 8192, note: 'Free tier with daily limits; paid overage uses the paid price.' }),
+    'gemini-2.5-flash': m('gemini-2.5-flash', 'Gemini 2.5 Flash', { modality: 'vision', vision: true, tier: 'free', inputPerM: 0, outputPerM: 0, contextWindow: 1048576, maxOutput: 8192, recommended: true, fast: true, note: 'Recommended free default. Free tier with daily limits; paid overage uses the paid price.' }),
     'gemini-2.5-flash-lite': m('gemini-2.5-flash-lite', 'Gemini 2.5 Flash-Lite', { modality: 'vision', vision: true, tier: 'free', contextWindow: 1048576, maxOutput: 8192, note: 'Fastest/cheapest Gemini free-tier option.' }),
     'gemini-2.0-flash': m('gemini-2.0-flash', 'Gemini 2.0 Flash', { modality: 'vision', vision: true, tier: 'free', contextWindow: 1048576, maxOutput: 8192 }),
     'gemma-3-27b-it': m('gemma-3-27b-it', 'Gemma 3 27B', { modality: 'vision', vision: true, tier: 'free', contextWindow: 131072, maxOutput: 8192, openWeight: true }),
@@ -341,7 +343,7 @@ export const PROVIDER_MODELS = {
     'meta/muse-glimmer-30b': m('meta/muse-glimmer-30b', 'Muse Glimmer 30B', { modality: 'vision', vision: true, contextWindow: 128000, maxOutput: 8192, openWeight: true, verified: true, note: 'Verified with a real image. Reasoning model: allow 80-120s.' }),
     'qwen/qwen2.5-vl-72b-instruct': m('qwen/qwen2.5-vl-72b-instruct', 'Qwen2.5-VL 72B', { modality: 'vision', vision: true, contextWindow: 32768, maxOutput: 8192, openWeight: true, note: 'Strong OCR and diagram grounding.' }),
     'microsoft/phi-3.5-vision-instruct': m('microsoft/phi-3.5-vision-instruct', 'Phi-3.5 Vision', { modality: 'vision', vision: true, contextWindow: 128000, maxOutput: 4096, openWeight: true }),
-    'nvidia/llama-3.1-nemotron-nano-vl-8b-v1': m('nvidia/llama-3.1-nemotron-nano-vl-8b-v1', 'Nemotron Nano VL 8B', { modality: 'vision', vision: true, contextWindow: 128000, maxOutput: 4096, openWeight: true }),
+    'nvidia/llama-3.1-nemotron-nano-vl-8b-v1': m('nvidia/llama-3.1-nemotron-nano-vl-8b-v1', 'Nemotron Nano VL 8B', { modality: 'vision', vision: true, contextWindow: 128000, maxOutput: 4096, openWeight: true, recommended: true, fast: true, note: 'Recommended fast default on NVIDIA when available.' }),
     'meta/llama-3.3-70b-instruct': m('meta/llama-3.3-70b-instruct', 'Llama 3.3 70B', { contextWindow: 128000, maxOutput: 4096, openWeight: true }),
     'qwen/qwen2.5-72b-instruct': m('qwen/qwen2.5-72b-instruct', 'Qwen2.5 72B', { contextWindow: 32768, maxOutput: 4096, openWeight: true }),
     'deepseek-ai/deepseek-r1': m('deepseek-ai/deepseek-r1', 'DeepSeek R1', { contextWindow: 128000, maxOutput: 8192, openWeight: true }),
@@ -349,13 +351,13 @@ export const PROVIDER_MODELS = {
   'cloudflare-workers-ai': {
     '@cf/meta/llama-3.2-11b-vision-instruct': m('@cf/meta/llama-3.2-11b-vision-instruct', 'Llama 3.2 11B Vision', { modality: 'vision', vision: true, contextWindow: 128000, maxOutput: 4096, openWeight: true, verified: true, note: 'Verified with a real image after accepting the model licence.' }),
     '@cf/meta/llama-4-scout-17b-16e-instruct': m('@cf/meta/llama-4-scout-17b-16e-instruct', 'Llama 4 Scout 17B', { modality: 'vision', vision: true, contextWindow: 131072, maxOutput: 8192, openWeight: true }),
-    '@cf/qwen/qwen2.5-vl-7b-instruct': m('@cf/qwen/qwen2.5-vl-7b-instruct', 'Qwen2.5-VL 7B', { modality: 'vision', vision: true, contextWindow: 32768, maxOutput: 4096, openWeight: true, note: 'Small, fast open-weight vision model.' }),
+    '@cf/qwen/qwen2.5-vl-7b-instruct': m('@cf/qwen/qwen2.5-vl-7b-instruct', 'Qwen2.5-VL 7B', { modality: 'vision', vision: true, contextWindow: 32768, maxOutput: 4096, openWeight: true, recommended: true, fast: true, note: 'Recommended small, fast open-weight vision model.' }),
     '@cf/meta/llama-3.3-70b-instruct-fp8-fast': m('@cf/meta/llama-3.3-70b-instruct-fp8-fast', 'Llama 3.3 70B FP8 Fast', { contextWindow: 131072, maxOutput: 4096, openWeight: true }),
     '@cf/qwen/qwen2.5-coder-32b-instruct': m('@cf/qwen/qwen2.5-coder-32b-instruct', 'Qwen2.5 Coder 32B', { contextWindow: 32768, maxOutput: 4096, openWeight: true }),
     '@cf/openai/gpt-oss-120b': m('@cf/openai/gpt-oss-120b', 'GPT-OSS 120B', { contextWindow: 131072, maxOutput: 4096, openWeight: true }),
   },
   mistral: {
-    'pixtral-12b-2409': m('pixtral-12b-2409', 'Pixtral 12B', { modality: 'vision', vision: true, contextWindow: 128000, maxOutput: 4096, openWeight: true, note: 'Open-weight vision model available on the free experimentation tier.' }),
+    'pixtral-12b-2409': m('pixtral-12b-2409', 'Pixtral 12B', { modality: 'vision', vision: true, contextWindow: 128000, maxOutput: 4096, openWeight: true, recommended: true, fast: true, note: 'Recommended open-weight vision model on the free experimentation tier.' }),
     'mistral-small-latest': m('mistral-small-latest', 'Mistral Small (latest)', { modality: 'vision', vision: true, contextWindow: 128000, maxOutput: 4096, openWeight: true, note: 'Multimodal and cheap; free-tier limits apply.' }),
     'open-mistral-nemo': m('open-mistral-nemo', 'Mistral Nemo 12B', { contextWindow: 128000, maxOutput: 4096, openWeight: true }),
     'pixtral-large-latest': m('pixtral-large-latest', 'Pixtral Large', { modality: 'vision', vision: true, tier: 'paid', inputPerM: 2.0, outputPerM: 6.0, contextWindow: 128000, maxOutput: 4096, openWeight: true }),
@@ -367,7 +369,7 @@ export const PROVIDER_MODELS = {
     'gpt-oss-120b': m('gpt-oss-120b', 'GPT-OSS 120B', { contextWindow: 131072, maxOutput: 8192, openWeight: true }),
   },
   together: {
-    'meta-llama/Llama-Vision-Free': m('meta-llama/Llama-Vision-Free', 'Llama Vision Free', { modality: 'vision', vision: true, contextWindow: 131072, maxOutput: 4096, openWeight: true, note: 'Free vision endpoint on Together.' }),
+    'meta-llama/Llama-Vision-Free': m('meta-llama/Llama-Vision-Free', 'Llama Vision Free', { modality: 'vision', vision: true, contextWindow: 131072, maxOutput: 4096, openWeight: true, recommended: true, fast: true, note: 'Recommended free vision endpoint on Together.' }),
     'meta-llama/Llama-4-Scout-17B-16E-Instruct': m('meta-llama/Llama-4-Scout-17B-16E-Instruct', 'Llama 4 Scout 17B', { modality: 'vision', vision: true, tier: 'paid', inputPerM: 0.18, outputPerM: 0.59, contextWindow: 1048576, maxOutput: 8192, openWeight: true }),
     'Qwen/Qwen2.5-VL-72B-Instruct': m('Qwen/Qwen2.5-VL-72B-Instruct', 'Qwen2.5-VL 72B', { modality: 'vision', vision: true, tier: 'paid', inputPerM: 0.25, outputPerM: 0.75, contextWindow: 32768, maxOutput: 8192, openWeight: true }),
     'google/gemma-3-27b-it': m('google/gemma-3-27b-it', 'Gemma 3 27B', { modality: 'vision', vision: true, tier: 'paid', inputPerM: 0.20, outputPerM: 0.60, contextWindow: 131072, maxOutput: 8192, openWeight: true }),
@@ -384,17 +386,17 @@ export const PROVIDER_MODELS = {
     'mistralai/Mistral-Small-3.1-24B-Instruct-2503': m('mistralai/Mistral-Small-3.1-24B-Instruct-2503', 'Mistral Small 3.1 24B', { modality: 'vision', vision: true, tier: 'paid', inputPerM: 0.06, outputPerM: 0.18, contextWindow: 128000, maxOutput: 4096, openWeight: true }),
   },
   openai: {
-    'gpt-4.1-mini': m('gpt-4.1-mini', 'GPT-4.1 mini', { modality: 'vision', vision: true, tier: 'paid', inputPerM: 0.40, outputPerM: 1.60, contextWindow: 1048576, maxOutput: 8192 }),
+    'gpt-4.1-mini': m('gpt-4.1-mini', 'GPT-4.1 mini', { modality: 'vision', vision: true, tier: 'paid', inputPerM: 0.40, outputPerM: 1.60, contextWindow: 1048576, maxOutput: 8192, recommended: true, fast: true }),
     'gpt-4.1': m('gpt-4.1', 'GPT-4.1', { modality: 'vision', vision: true, tier: 'paid', inputPerM: 2.00, outputPerM: 8.00, contextWindow: 1048576, maxOutput: 8192 }),
     'gpt-4o-mini': m('gpt-4o-mini', 'GPT-4o mini', { modality: 'vision', vision: true, tier: 'paid', inputPerM: 0.15, outputPerM: 0.60, contextWindow: 128000, maxOutput: 4096 }),
     'gpt-4o': m('gpt-4o', 'GPT-4o', { modality: 'vision', vision: true, tier: 'paid', inputPerM: 2.50, outputPerM: 10.0, contextWindow: 128000, maxOutput: 4096 }),
   },
   anthropic: {
     'claude-sonnet-4-20250514': m('claude-sonnet-4-20250514', 'Claude Sonnet 4', { modality: 'vision', vision: true, tier: 'paid', inputPerM: 3.0, outputPerM: 15.0, contextWindow: 200000, maxOutput: 8192 }),
-    'claude-3-5-haiku-20241022': m('claude-3-5-haiku-20241022', 'Claude 3.5 Haiku', { modality: 'vision', vision: true, tier: 'paid', inputPerM: 0.80, outputPerM: 4.0, contextWindow: 200000, maxOutput: 4096 }),
+    'claude-3-5-haiku-20241022': m('claude-3-5-haiku-20241022', 'Claude 3.5 Haiku', { modality: 'vision', vision: true, tier: 'paid', inputPerM: 0.80, outputPerM: 4.0, contextWindow: 200000, maxOutput: 4096, fast: true }),
   },
   ollama: {
-    'qwen2.5vl:7b': m('qwen2.5vl:7b', 'Qwen2.5-VL 7B (local)', { modality: 'vision', vision: true, contextWindow: 32768, maxOutput: 4096, openWeight: true, note: 'Local weights; needs ~6 GB RAM/VRAM. No cloud cost.' }),
+    'qwen2.5vl:7b': m('qwen2.5vl:7b', 'Qwen2.5-VL 7B (local)', { modality: 'vision', vision: true, contextWindow: 32768, maxOutput: 4096, openWeight: true, recommended: true, fast: true, note: 'Recommended local default: needs ~6 GB RAM/VRAM. No cloud cost.' }),
     'llama3.2-vision:11b': m('llama3.2-vision:11b', 'Llama 3.2 Vision 11B (local)', { modality: 'vision', vision: true, contextWindow: 128000, maxOutput: 4096, openWeight: true, note: 'Local weights; needs ~8-10 GB RAM/VRAM.' }),
     'llava:7b': m('llava:7b', 'LLaVA 7B (local)', { modality: 'vision', vision: true, contextWindow: 4096, maxOutput: 2048, openWeight: true, note: 'Older local vision model; lower accuracy.' }),
     'gemma3:4b': m('gemma3:4b', 'Gemma 3 4B (local)', { modality: 'vision', vision: true, contextWindow: 131072, maxOutput: 4096, openWeight: true, note: 'Smallest local multimodal option; potato-PC friendly.' }),
@@ -479,12 +481,37 @@ export function modelsFor(providerId, { tier = 'paid', visionOnly = false, inclu
   }));
 }
 
-export function defaultModelFor(providerId, { tier = 'paid', visionOnly = true } = {}) {
+/**
+ * Tier-aware automatic selection.
+ *
+ * - free tier: only free models are eligible, and a `recommended` free model wins.
+ * - paid tier: paid models are preferred (the user asked for paid execution);
+ *   if a provider has no paid vision model, it falls back to its free entry.
+ * - `preferFast` (the 10-second deadline path) prefers `fast: true`, then the
+ *   cheapest listed model, so a slow reasoning model is never the default.
+ */
+export function defaultModelFor(providerId, { tier = 'paid', visionOnly = true, preferFast = false } = {}) {
   const catalogue = modelsFor(providerId, { tier, visionOnly });
   const entries = Object.values(catalogue);
-  // Prefer a verified entry, then a free entry, then the first one.
-  const pick = entries.find((e) => e.verified) || entries.find((e) => e.tier === 'free') || entries[0];
-  return pick?.id || '';
+  if (!entries.length) return '';
+  const sameTier = tier === 'paid'
+    ? entries.filter((entry) => entry.tier === 'paid')
+    : entries.filter((entry) => entry.tier === 'free');
+  const pool = sameTier.length ? sameTier : entries;
+  const score = (entry) => {
+    let value = 0;
+    if (entry.recommended) value += 100;
+    if (entry.verified) value += 20;
+    if (preferFast && entry.fast) value += 40;
+    if (preferFast) value -= (Number(entry.inputPerM) || 0) + (Number(entry.outputPerM) || 0);
+    return value;
+  };
+  return [...pool].sort((a, b) => score(b) - score(a))[0]?.id || '';
+}
+
+/** The model the UI should show as "recommended" for this provider and tier. */
+export function recommendedModelFor(providerId, { tier = 'paid', preferFast = false } = {}) {
+  return defaultModelFor(providerId, { tier, visionOnly: true, preferFast });
 }
 
 export function providerHasVision(providerId) {

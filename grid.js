@@ -1,36 +1,18 @@
-// grid.js — all coordinate math lives here, in ONE place.
+// grid.js — coordinate math in ONE place.
 // Shared by the browser app and the Node backend (import it from both; never duplicate).
 //
 // Canonical coordinates are "normalized": x and y are between 0 and 1.
 // x=0 is the left edge, x=1 the right edge. y=0 is the top, y=1 the bottom.
 // This way a point means the same thing whatever size the screen or image is.
 //
-// The Meta model speaks a DIFFERENT grid (integers 0..1000), so convert at the
-// boundary with modelPointToNormalized / modelBoxToNormalized and keep 0..1 inside.
+// The model speaks 0..1000 integer coordinates, so convert at the boundary with
+// modelPointToNormalized / modelBoxToNormalized and keep 0..1 inside.
 //
-// Grid size (16, 24, 32, 64 or 128) only changes the VISUAL cell address. It never
-// changes the stored normalized coordinates, the tracker resolution, or the image
-// sent to a model. Use setGridSize() to switch; everything else reads gridSize().
+// There is deliberately no visual grid and no cell addressing here. The app
+// points with normalized coordinates and boxes only; a wrong cell name used to
+// invite wrong corrections, and masking never needed a grid.
 
-export const GRID_SIZES = [16, 24, 32, 64, 128];
-// The product default is 64x64. One source of truth for the browser, the
-// backend, and the tests; do not carry a second "test default" here.
-export const DEFAULT_GRID_SIZE = 64;
-
-export let GRID = DEFAULT_GRID_SIZE;
-
-export function gridSize() {
-  return GRID;
-}
-
-export function setGridSize(size) {
-  if (!GRID_SIZES.includes(size)) {
-    throw new Error(`Unsupported grid size ${size}; use one of ${GRID_SIZES.join(', ')}`);
-  }
-  GRID = size;
-}
-
-// Muse Spark reports positions on a 0..1000 grid (see architecture.md §8).
+// The model coordinate convention is 0..1000.
 export const MODEL_GRID = 1000;
 
 // The docs warn the model can emit a value slightly outside the range (e.g. 1001)
@@ -42,32 +24,6 @@ export const clamp01 = (v) => Math.min(1, Math.max(0, v));
 // Is this a usable point? (finite numbers between 0 and 1)
 export function isValidPoint(x, y) {
   return Number.isFinite(x) && Number.isFinite(y) && x >= 0 && x <= 1 && y >= 0 && y <= 1;
-}
-
-// Turn a normalized point into a grid cell like "R8C11" (architecture.md §14.2).
-// row/col are 0-based internally; id is 1-based for display.
-// Math.floor(x * size) gives 0..size, but x=1 would give size (doesn't exist), so clamp.
-export function gridCell(point, size = GRID) {
-  if (!Number.isFinite(point.x) || !Number.isFinite(point.y) ||
-      point.x < 0 || point.x > 1 || point.y < 0 || point.y > 1) {
-    throw new Error("Invalid normalized point");
-  }
-  const n = Math.min(size - 1, Math.max(0, Math.floor(point.x * size)));
-  const m = Math.min(size - 1, Math.max(0, Math.floor(point.y * size)));
-  const col = n;
-  const row = m;
-  return { row, col, id: `R${row + 1}C${col + 1}` };
-}
-
-// Backward-compatible wrapper used by older callers: returns { row, col, cellId }.
-export function pointToCell(x, y, size = GRID) {
-  const { row, col, id } = gridCell({ x, y }, size);
-  return { row, col, cellId: id };
-}
-
-// The reverse: the center point of a cell (row/col counted from 0).
-export function cellToCenter(row, col, size = GRID) {
-  return { x: (col + 0.5) / size, y: (row + 0.5) / size };
 }
 
 // Turn a tap on screen into a normalized point.
@@ -100,7 +56,7 @@ export function boxCenter(b) {
 }
 
 // ---------------------------------------------------------------------------
-// Model grid (0..1000 integers) -> normalized (0..1)
+// Model coordinates (0..1000 integers) -> normalized (0..1)
 // ---------------------------------------------------------------------------
 
 // Returns NaN when the value is missing or materially out of range.
@@ -134,8 +90,8 @@ export function modelBoxToNormalized(xMin, yMin, xMax, yMax) {
 // Letterboxing
 // ---------------------------------------------------------------------------
 // A 4:3 phone camera in a 16:9 frame leaves black bars. The frame element is still
-// what the model sees, so coordinates stay valid across the whole frame -- but the
-// grid should only be drawn over real image content, and taps on the bars ignored.
+// what the model sees, so coordinates stay valid across the whole frame -- but taps
+// on the bars are ignored.
 //
 // fitContain returns the drawn image rectangle in FRAME PIXELS.
 export function fitContain(sourceW, sourceH, frameW, frameH) {

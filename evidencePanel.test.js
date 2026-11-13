@@ -5,16 +5,13 @@ import { buildEvidenceCard, toggleExpanded } from './evidencePanel.js';
 const capture = {
   captureId: 'cap_1',
   originalUrl: '/api/captures/cap_1/original',
-  overlayUrl: '/api/captures/cap_1/overlay',
   width: 1280,
   height: 720,
-  gridSize: 64,
 };
 
 const analysis = {
   component: { name: 'LED', identity_status: 'ai_candidate', evidence: ['clear dome'], uncertainty: 'medium' },
   location: {
-    grid_cell: 'R33C33',
     center: { x: 0.5, y: 0.5 },
     corners: [
       { x: 0.4, y: 0.4 },
@@ -30,8 +27,8 @@ const analysis = {
 test('evidence card keeps the original URL and draws only validated corners', () => {
   const card = buildEvidenceCard({ capture, analysis, candidates: [{ name: 'LED', status: 'unverified_candidate' }] });
   assert.equal(card.originalUrl, capture.originalUrl);
-  assert.equal(card.overlayUrl, capture.overlayUrl);
-  assert.equal(card.gridCell, 'R33C33');
+  assert.equal(card.overlayUrl, undefined);
+  assert.equal(card.gridCell, undefined);
   assert.equal(card.drawOutline, true);
   assert.equal(card.statusLabel, 'AI candidate — confirm or correct');
   assert.equal(card.candidates[0].status, 'unverified_candidate');

@@ -12,7 +12,6 @@ export function buildEvidenceCard({ capture = null, object = null, analysis = nu
   const location = analysis?.location || null;
   const corners = VALID_CORNERS(object?.corners) ? object.corners : VALID_CORNERS(location?.corners) ? location.corners : null;
   const center = object?.center || location?.center || null;
-  const gridCell = location?.grid_cell || object?.gridCell || null;
   const identityStatus = object?.identityStatus || component?.identity_status || 'unknown';
   const confirmed = Boolean(object?.confirmed) || identityStatus === 'confirmed_by_user';
 
@@ -28,15 +27,12 @@ export function buildEvidenceCard({ capture = null, object = null, analysis = nu
   return {
     captureId: capture?.captureId || object?.captureId || null,
     originalUrl: capture?.originalUrl || null,
-    overlayUrl: capture?.overlayUrl || null,
     width: capture?.width || null,
     height: capture?.height || null,
-    gridSize: capture?.gridSize || null,
     title: object?.name || component?.name || (capture ? 'Component candidate' : 'No component yet'),
     statusLabel,
     identityStatus,
     confirmed,
-    gridCell,
     center,
     corners,
     evidence: Array.isArray(component?.evidence) ? component.evidence.slice(0, 6) : [],

@@ -88,29 +88,22 @@ test('capture metadata is stored and the original file is immutable', () => {
       id: 'cap_test_1',
       projectId: project.projectId,
       originalBuffer: Buffer.from('original-bytes'),
-      overlayBuffer: Buffer.from('overlay-bytes'),
-      overlaySvg: '<svg xmlns="http://www.w3.org/2000/svg"></svg>',
       mimeType: 'image/jpeg',
       width: 1280,
       height: 720,
-      gridSize: 64,
       capturedAt: '2026-01-01T00:00:00.000Z',
     });
 
     assert.equal(capture.captureId, 'cap_test_1');
     assert.equal(capture.width, 1280);
     assert.equal(capture.height, 720);
-    assert.equal(capture.gridSize, 64);
+    assert.equal(capture.gridSize, undefined);
     assert.equal(capture.capturedAt, '2026-01-01T00:00:00.000Z');
-    assert.equal(capture.hasOverlay, true);
+    assert.equal(capture.hasOverlay, undefined);
     assert.equal(capture.originalUrl, '/api/captures/cap_test_1/original');
-    assert.equal(capture.overlayUrl, '/api/captures/cap_test_1/overlay');
 
-    const original = store.getCaptureFile('cap_test_1', 'original');
-    const overlay = store.getCaptureFile('cap_test_1', 'overlay');
+    const original = store.getCaptureFile('cap_test_1');
     assert.equal(readFileSync(original.path, 'utf8'), 'original-bytes');
-    assert.equal(readFileSync(overlay.path, 'utf8'), 'overlay-bytes');
-    assert.notEqual(original.path, overlay.path);
     assert.equal(store.listCaptures(project.projectId).length, 1);
 
     assert.throws(
@@ -121,7 +114,6 @@ test('capture metadata is stored and the original file is immutable', () => {
         mimeType: 'image/jpeg',
         width: 1280,
         height: 720,
-        gridSize: 64,
       }),
       (err) => err.code === 'CAPTURE_EXISTS',
     );
@@ -143,16 +135,14 @@ test('capture request rejects a non-image payload before anything is stored', ()
   );
 });
 
-test('component analysis makes one request and sends the original plus grid overlay', async () => {
+test('component analysis makes one request and sends the original image only', async () => {
   const request = readComponentRequest({
     projectId: 'proj_test',
     capture: {
       dataUrl: `data:image/jpeg;base64,${tiny('original')}`,
       width: 1280,
       height: 720,
-      gridSize: 64,
     },
-    overlayDataUrl: `data:image/png;base64,${tiny('overlay')}`,
     question: 'Build a blinking LED',
     localCandidates: [{ name: 'LED', distance: 12.5 }],
   });
@@ -160,13 +150,13 @@ test('component analysis makes one request and sends the original plus grid over
   const { router, inputs } = fakeRouter(validModelResult);
   const out = await runComponentAnalysis({ router, request, project: null });
   assert.equal(inputs.length, 1);
-  assert.equal(inputs[0].imageDataUrls.length, 2);
+  assert.equal(inputs[0].imageDataUrls.length, 1);
   assert.equal(inputs[0].schema, COMPONENT_SCHEMA);
-  assert.match(inputs[0].userText, /unverified local k-NN candidate/i);
-  assert.match(inputs[0].userText, /not a probability/i);
+  assert.match(inputs[0].userText, /unverified local candidate/i);
+  assert.match(inputs[0].userText, /not a guarantee/i);
   assert.match(inputs[0].userText, /Build a blinking LED/);
   assert.equal(out.converted.ok, true);
-  assert.equal(out.converted.result.location.grid_cell, 'R33C33');
+  assert.equal(out.converted.result.location.grid_cell, undefined);
 });
 
 test('an invalid coordinate result is rejected without a fabricated box', async () => {
@@ -176,7 +166,6 @@ test('an invalid coordinate result is rejected without a fabricated box', async 
       dataUrl: `data:image/jpeg;base64,${tiny('original')}`,
       width: 1280,
       height: 720,
-      gridSize: 64,
     },
   });
   const invalid = {
@@ -197,14 +186,14 @@ test('model prompt carries project context and resists invented facts', () => {
   const project = createProjectFromIntent('Build a blinking LED. I have an Arduino Uno.');
   const prompt = buildComponentPrompt({
     projectContext: { title: 'blinking LED', skillLevel: 'beginner', availableMaterials: ['Arduino board'] },
-    capture: { captureId: 'cap_1', width: 1280, height: 720, gridSize: 64 },
+    capture: { captureId: 'cap_1', width: 1280, height: 720 },
     localCandidates: [{ name: 'LED', distance: 9.2 }],
     question: 'What is this part?',
   });
   assert.match(prompt.instructions, /Never invent a component identity/i);
   assert.match(prompt.instructions, /Visually similar components can have different pinouts/i);
   assert.match(prompt.userText, /"skillLevel": "beginner"/);
-  assert.match(prompt.userText, /unverified local k-NN candidate/i);
+  assert.match(prompt.userText, /unverified local candidate/i);
   assert.match(prompt.instructions, /location to null/i);
   assert.ok(project.userGoal);
 });

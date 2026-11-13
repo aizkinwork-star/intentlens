@@ -11,8 +11,9 @@
 - **Dataset version:** 5 (Roboflow export)
 
 ### Attribution
-This project uses the ElectroCom61 dataset for training a non-neural k-NN component classifier.
-The dataset is licensed under CC BY 4.0. Attribution is provided as required.
+This project uses the ElectroCom61 dataset to train a component classifier (a frozen
+ResNet-18 embedding plus a linear head, exported to ONNX). The dataset is licensed
+under CC BY 4.0. Attribution is provided as required.
 
 ### Citation
 If you use this dataset, please cite:
@@ -29,7 +30,13 @@ If you use this dataset, please cite:
 ### Usage in IntentLens
 - 12,667 component crops extracted from 2,071 images.
 - 61 classes preserved (original class IDs and names).
-- Crops organized by class ID and name in `datasets/processed/crops/`.
-- Feature extraction uses `FeatureExtractor.js` (HSV histogram, Hu moments, HOG, shape descriptors).
-- k-NN classification via `KNNClassifier.js`.
-- Raw dataset excluded from Electron installer.
+- The shipped classifier is `component_classifier.onnx`; the 61 label names are
+  committed in `componentVocabulary.js`.
+- Measured accuracy and reproduction steps: `docs/COMPONENT_RECOGNITION.md`.
+- Raw dataset and trained artifacts are excluded from the repo and the installer.
+
+## onnxruntime-web
+
+- **Package:** `onnxruntime-web` (MIT)
+- **Use:** runs the exported component classifier in Node (server) and the browser.
+- **Licence text:** https://github.com/microsoft/onnxruntime/blob/main/LICENSE

@@ -2,7 +2,7 @@
 // A real model can return junk (coordinates outside the image, a target with no
 // position, a citation that was never fetched), so nothing gets drawn until it
 // passes this check. Used by the browser app and by the server.
-import { isValidPoint, isValidBox, pointToCell, boxCenter, DEFAULT_GRID_SIZE, GRID_SIZES } from './grid.js';
+import { isValidPoint, isValidBox } from './grid.js';
 
 export const RESULT_STATUSES = ['target_found', 'needs_clarification', 'no_target'];
 
@@ -12,7 +12,7 @@ const isText = (v) => typeof v === 'string';
 const isFilled = (v) => isText(v) && v.trim().length > 0;
 const isConfidence = (v) => Number.isFinite(v) && v >= 0 && v <= 1;
 
-function validateTarget(t, gridSize) {
+function validateTarget(t) {
   if (!t || typeof t !== 'object') return 'target is missing';
   if (!isFilled(t.targetId)) return 'target has no targetId';
   if (!isFilled(t.label)) return 'target has no label';
@@ -25,16 +25,6 @@ function validateTarget(t, gridSize) {
   }
   if (t.box != null) {
     if (!isValidBox(t.box)) return 'target box is malformed or outside the image';
-  }
-
-  // The server derives gridCell from the point. If someone supplied one, it must agree.
-  if (t.gridCell != null && t.point != null) {
-    const { cellId } = pointToCell(t.point.x, t.point.y, gridSize);
-    if (t.gridCell !== cellId) return `target gridCell ${t.gridCell} does not match point (${cellId})`;
-  }
-  if (t.gridCell != null && t.point == null && t.box != null) {
-    const { cellId } = pointToCell(...Object.values(boxCenter(t.box)), gridSize);
-    if (t.gridCell !== cellId) return `target gridCell ${t.gridCell} does not match box centre (${cellId})`;
   }
   return null;
 }
@@ -80,10 +70,7 @@ export function validateResult(r, expected = {}) {
   if (evidenceProblem) return { ok: false, reason: evidenceProblem };
 
   if (r.resultStatus === 'target_found') {
-    const size = GRID_SIZES.includes(Number(expected.gridSize))
-      ? Number(expected.gridSize)
-      : DEFAULT_GRID_SIZE;
-    const targetProblem = validateTarget(r.target, size);
+    const targetProblem = validateTarget(r.target);
     if (targetProblem) return { ok: false, reason: targetProblem };
   } else if (r.target != null) {
     // A target with no "target_found" status would tempt the UI into drawing a

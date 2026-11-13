@@ -3,13 +3,14 @@
 // This is deliberately separate from the desktop app.js: the desktop talks to
 // a local Node server that owns SQLite and the provider keys. A GitHub Pages
 // PWA has no server, so this file owns the browser-side equivalent:
-//   camera -> capture -> IndexedDB -> prompt -> direct Meta provider -> validate -> draw
+//   camera -> capture -> IndexedDB -> prompt -> direct provider call -> validate -> draw
 //
-// It reuses the same pure modules as the desktop app (grid, componentResult,
-// text-only interactions, so coordinate and validation behavior cannot drift.
+// It reuses the same pure modules as the desktop app (componentResult, prompt,
+// text-only interactions), so coordinate and validation behavior cannot drift.
 
-import { DEFAULT_GRID_SIZE } from './lib/grid.js';
 import { toComponentResult } from './lib/componentResult.js';
+import { browserSpeechController } from './lib/speech.js';
+import { ELECTROCOM61_CLASSES } from './lib/componentVocabulary.js';
 import { buildComponentPrompt, buildChatPrompt, buildExplainPrompt } from './prompt.js';
 import * as db from './store.js';
 import {
@@ -28,6 +29,7 @@ import {
   providerSupportsImages,
   isMetaModelId,
   localBudgetStatus,
+  safeRecognizerUrl,
 } from './provider.js';
 import { loadBudget, saveBudget, loadLedger, appendUsage, clearLedger, DEFAULT_BUDGET } from './cost.js';
 import { buildCameraConstraintLadder, cameraCapabilities, cameraErrorMessage, computeCaptureSize, openCameraWithFallback, setTorch, tryLockLandscape, unlockOrientation } from './camera.js';
@@ -50,7 +52,6 @@ const els = {
   stageEmpty: $('stageEmpty'),
   rotateHint: $('rotateHint'),
   status: $('status'),
-  gridLabel: $('gridLabel'),
   cameraBtn: $('cameraBtn'),
   captureBtn: $('captureBtn'),
   uploadBtn: $('uploadBtn'),
@@ -68,12 +69,13 @@ const els = {
   sendBtn: $('sendBtn'),
   answer: $('answer'),
   compName: $('compName'),
-  cellTag: $('cellTag'),
   instruction: $('instruction'),
   meta: $('meta'),
   evidence: $('evidence'),
   repeatBtn: $('repeatBtn'),
   explainBtn: $('explainBtn'),
+  readAloudBtn: $('readAloudBtn'),
+  stopReadAloudBtn: $('stopReadAloudBtn'),
   cloudState: $('cloudState'),
   cloudDetail: $('cloudDetail'),
   allowCloudBtn: $('allowCloudBtn'),
@@ -95,7 +97,7 @@ const els = {
   budgetRequest: $('budgetRequest'),
   budgetStatus: $('budgetStatus'),
   clearBudgetBtn: $('clearBudgetBtn'),
-  gridSelect: $('gridSelect'),
+  recognizerUrlInput: $('recognizerUrlInput'),
   testProviderBtn: $('testProviderBtn'),
   clearKeyBtn: $('clearKeyBtn'),
   saveSettingsBtn: $('saveSettingsBtn'),
@@ -118,12 +120,12 @@ const state = {
   captured: null,      // { id, dataUrl, blob, width, height }
   result: null,
   lastLatency: null,
-  gridSize: DEFAULT_GRID_SIZE,
   providerId: 'openrouter',
   model: '',
   accessTier: 'paid',
   baseUrl: '',
   accountId: '',
+  recognizerUrl: '',
   apiKey: '',
   budget: { ...DEFAULT_BUDGET },
   ledger: [],
@@ -139,6 +141,104 @@ const MAX_REQUEST_LOG = 40;
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
+// Read-aloud: synthesis only, through lib/speech.js. Never the microphone.
+const speech = browserSpeechController(window);
+
+function speechText() {
+  const name = els.compName.textContent.trim();
+  const instruction = els.instruction.textContent.trim();
+  return [name && name !== '—' ? `${name}.` : '', instruction].filter(Boolean).join(' ');
+}
+
+function setSpeechButtons() {
+  if (!els.readAloudBtn || !els.stopReadAloudBtn) return;
+  const available = speech.supported && speechText().length >= 12;
+  els.readAloudBtn.disabled = state.busy || !available;
+  els.stopReadAloudBtn.disabled = !speech.speaking;
+}
+
+function speakAnswer() {
+  const result = speech.speak(speechText(), { onEnd: setSpeechButtons });
+  if (result.ok) {
+    setStatus(`Reading the answer aloud (${result.spoken.length} characters).`, 'ok');
+  } else if (result.reason === 'unsupported') {
+    setStatus('This browser has no speech voice installed, so the answer cannot be read aloud.', 'error');
+  }
+  setSpeechButtons();
+}
+
+// ------------------------------------------------ optional local recogniser
+// The PWA has no server, so the local classifier is optional: point this at a
+// reachable IntentLens server and the centre crop can become a candidate. The
+// image is only sent to an https or same-origin/loopback endpoint, never to an
+// arbitrary host, and a failure is silent (no candidate is better than a guess).
+const RECOGNIZER_TIMEOUT_MS = 4000;
+
+function loadCapturedImage(captured) {
+  return new Promise((resolve, reject) => {
+    const el = new Image();
+    el.onload = () => resolve(el);
+    el.onerror = () => reject(new Error('The captured image could not be read.'));
+    el.src = captured.dataUrl;
+  });
+}
+
+/** Centre square crop, scaled to the classifier's native 224×224 input. */
+async function centreCropPng(captured) {
+  const img = await loadCapturedImage(captured);
+  const side = Math.min(img.naturalWidth || img.width, img.naturalHeight || img.height);
+  if (!side) throw new Error('The capture has no usable pixels.');
+  const inner = side * 0.6;
+  const canvas = document.createElement('canvas');
+  canvas.width = 224;
+  canvas.height = 224;
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('This browser cannot crop the capture.');
+  context.drawImage(
+    img,
+    ((img.naturalWidth || img.width) - inner) / 2,
+    ((img.naturalHeight || img.height) - inner) / 2,
+    inner,
+    inner,
+    0,
+    0,
+    224,
+    224,
+  );
+  return canvas.toDataURL('image/png');
+}
+
+export async function recognizerCandidates(captured = state.captured) {  const endpoint = safeRecognizerUrl(state.recognizerUrl);
+  if (!endpoint || !captured?.dataUrl) return [];
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), RECOGNIZER_TIMEOUT_MS);
+  try {
+    const dataUrl = await centreCropPng(captured);
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ dataUrl, topK: 5 }),
+      signal: controller.signal,
+      credentials: 'omit',
+      cache: 'no-store',
+    });
+    if (!response.ok) return [];
+    const payload = await response.json();
+    if (!payload?.available || !Array.isArray(payload.candidates)) return [];
+    return payload.candidates
+      .filter((candidate) => candidate && candidate.name)
+      .slice(0, 5)
+      .map((candidate) => ({
+        name: String(candidate.name).slice(0, 80),
+        confidence: Number.isFinite(Number(candidate.confidence)) ? Number(candidate.confidence) : null,
+      }));
+  } catch {
+    return [];
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function setStatus(text, kind = '') {
   els.status.textContent = text;
   els.status.className = `status ${kind}`.trim();
@@ -151,6 +251,7 @@ function setBusy(value) {
   els.uploadBtn.disabled = value;
   els.repeatBtn.disabled = value;
   els.explainBtn.disabled = value;
+  setSpeechButtons();
   els.settingsBtn.disabled = value;
   els.sendBtn.textContent = value ? 'Working…' : 'Send';
 }
@@ -306,26 +407,6 @@ function clearOverlay() {
   while (els.overlay.firstChild) els.overlay.removeChild(els.overlay.firstChild);
 }
 
-function drawGrid() {
-  clearOverlay();
-  if (!state.stream && !state.captured) return;
-  const size = state.gridSize;
-  for (let i = 0; i <= size; i += 1) {
-    const p = (i * 1000) / size;
-    for (const [x1, y1, x2, y2] of [[p, 0, p, 1000], [0, p, 1000, p]]) {
-      const line = document.createElementNS(SVG_NS, 'line');
-      line.setAttribute('x1', String(x1));
-      line.setAttribute('y1', String(y1));
-      line.setAttribute('x2', String(x2));
-      line.setAttribute('y2', String(y2));
-      line.setAttribute('stroke', 'rgba(110, 220, 255, 0.20)');
-      line.setAttribute('stroke-width', '1');
-      line.setAttribute('vector-effect', 'non-scaling-stroke');
-      els.overlay.appendChild(line);
-    }
-  }
-}
-
 function drawResult(result) {
   if (!result?.location) return;
   const { corners } = result.location;
@@ -362,7 +443,7 @@ function showStill(dataUrl, width, height) {
   els.stageEmpty.hidden = true;
   if (width && height) els.stage.style.aspectRatio = `${width} / ${height}`;
   updateRotateHint();
-  drawGrid();
+  clearOverlay();
 }
 
 function showLive() {
@@ -376,7 +457,7 @@ function showLive() {
     els.stage.style.aspectRatio = '4 / 3';
   }
   updateRotateHint();
-  drawGrid();
+  clearOverlay();
 }
 
 function showEmpty() {
@@ -473,7 +554,8 @@ async function loadProject(projectId) {
   } else {
     state.result = null;
     els.answer.classList.add('hidden');
-    drawGrid();
+    clearOverlay();
+    setSpeechButtons();
   }
   renderChatLog();
   updateCloudUi();
@@ -517,7 +599,7 @@ function updateChatModeUi() {
 }
 
 function redrawOverlay() {
-  drawGrid();
+  clearOverlay();
   if (state.result) drawResult(state.result);
 }
 
@@ -526,7 +608,6 @@ function renderResult(result, latencyMs) {
   state.result = result;
   const component = result.component || {};
   els.compName.textContent = component.name || 'Unknown component';
-  els.cellTag.textContent = result.location?.grid_cell || 'no location';
   els.instruction.textContent = result.instruction || '';
   const bits = [
     String(component.identity_status || 'unknown').replaceAll('_', ' '),
@@ -546,9 +627,10 @@ function renderResult(result, latencyMs) {
     els.evidence.appendChild(li);
   }
 
-  drawGrid();
+  clearOverlay();
   drawResult(result);
   els.answer.classList.remove('hidden');
+  setSpeechButtons();
 }
 
 const CAMERA_KEY = 'intentlens.cameraId';
@@ -665,7 +747,6 @@ async function storeCaptured(canvas, label) {
     dataUrl,
     width,
     height,
-    gridSize: state.gridSize,
   });
   state.captured = { id: row.id, dataUrl, blob, width, height };
   showStill(dataUrl, width, height);
@@ -749,7 +830,6 @@ async function importProject(file) {
       dataUrl: img.dataUrl,
       width: img.width,
       height: img.height,
-      gridSize: img.gridSize,
       createdAt: img.createdAt,
     });
     idMap.set(img.id, row.id);
@@ -903,13 +983,15 @@ async function send() {
   setBusy(true);
   try {
     setStatus('Building context…', 'busy');
+    const localCandidates = await recognizerCandidates(state.captured);
     const { instructions, userText } = buildComponentPrompt({
       projectContext: projectContext(),
       capture: {
         width: state.captured.width,
         height: state.captured.height,
-        gridSize: state.gridSize,
       },
+      localCandidates,
+      datasetClasses: ELECTROCOM61_CLASSES,
       question: command,
     });
     const prompt = `${instructions}\n\n${userText}`;
@@ -953,7 +1035,7 @@ async function send() {
       return;
     }
 
-    const normalized = toComponentResult(response.json, { gridSize: state.gridSize });
+    const normalized = toComponentResult(response.json);
     if (!normalized.ok) {
       setStatus(`Model result rejected: ${normalized.errors.join(' ')}`, 'error');
       await db.addMessage({
@@ -1141,11 +1223,11 @@ function openSettings() {
   els.modelInput.value = state.model;
   els.keyInput.value = state.apiKey;
   els.baseUrlInput.value = state.baseUrl;
+  if (els.recognizerUrlInput) els.recognizerUrlInput.value = state.recognizerUrl;
   if (els.accountIdInput) els.accountIdInput.value = state.accountId;
   if (els.budgetDaily) els.budgetDaily.value = String(state.budget.dailyUsd);
   if (els.budgetMonthly) els.budgetMonthly.value = String(state.budget.monthlyUsd);
   if (els.budgetRequest) els.budgetRequest.value = String(state.budget.maxRequestUsd);
-  els.gridSelect.value = String(state.gridSize);
   updateProviderUi();
   renderBudgetStatus();
   if (!els.settingsDialog.open) els.settingsDialog.showModal();
@@ -1162,12 +1244,12 @@ function readSettingsForm() {
     // relay/deployment URL is never carried into a fixed-host request.
     baseUrl: PROVIDERS[providerId]?.requiresBaseUrl ? els.baseUrlInput.value.trim() : '',
     accountId: PROVIDERS[providerId]?.requiresAccountId ? (els.accountIdInput?.value.trim() || '') : '',
+    recognizerUrl: safeRecognizerUrl(els.recognizerUrlInput?.value || ''),
     budget: {
       dailyUsd: Number(els.budgetDaily?.value) || DEFAULT_BUDGET.dailyUsd,
       monthlyUsd: Number(els.budgetMonthly?.value) || DEFAULT_BUDGET.monthlyUsd,
       maxRequestUsd: Number(els.budgetRequest?.value) || DEFAULT_BUDGET.maxRequestUsd,
     },
-    gridSize: Number(els.gridSelect.value) || DEFAULT_GRID_SIZE,
   };
 }
 
@@ -1179,8 +1261,8 @@ async function saveSettings() {
   state.apiKey = values.apiKey;          // memory only, never persisted
   state.baseUrl = values.baseUrl;
   state.accountId = values.accountId;
+  state.recognizerUrl = values.recognizerUrl;
   state.budget = await saveBudget(values.budget);
-  state.gridSize = values.gridSize;
 
   // Settings are not sensitive, so they may persist. The key never is.
   await db.setSetting('providerId', state.providerId);
@@ -1188,13 +1270,11 @@ async function saveSettings() {
   await db.setSetting('accessTier', state.accessTier);
   await db.setSetting('baseUrl', state.baseUrl);
   await db.setSetting('accountId', state.accountId);
-  await db.setSetting('gridSize', state.gridSize);
+  await db.setSetting('recognizerUrl', state.recognizerUrl);
   await db.deleteSetting('rememberKey');
   await db.deleteSetting('apiKey');
 
-  els.gridLabel.textContent = `Grid ${state.gridSize}×${state.gridSize}`;
   updateCloudUi();
-  drawGrid();
   renderBudgetStatus();
   els.settingsDialog.close();
   setStatus('Settings saved. The key stays in memory for this tab only.', 'ok');
@@ -1366,6 +1446,12 @@ function wireEvents() {
   els.sendBtn.addEventListener('click', send);
   els.repeatBtn.addEventListener('click', repeat);
   els.explainBtn.addEventListener('click', explain);
+  els.readAloudBtn?.addEventListener('click', speakAnswer);
+  els.stopReadAloudBtn?.addEventListener('click', () => {
+    speech.stop();
+    setSpeechButtons();
+  });
+  setSpeechButtons();
 
   els.allowCloudBtn.addEventListener('click', () => {
     state.allowCloud = true;
@@ -1478,13 +1564,13 @@ async function boot() {
   }
 
   const settings = await db.allSettings();
-  state.gridSize = Number(settings.gridSize) || DEFAULT_GRID_SIZE;
   const savedProvider = PROVIDERS[settings.providerId] ? settings.providerId : 'openrouter';
   state.providerId = savedProvider;
   state.accessTier = ['free', 'preview', 'paid'].includes(settings.accessTier) ? settings.accessTier : 'paid';
   const savedModel = settings.model || '';
   state.model = !savedModel || modelAllowedAtTier(savedProvider, savedModel, state.accessTier) ? savedModel : '';
   state.baseUrl = settings.baseUrl || '';
+  state.recognizerUrl = safeRecognizerUrl(settings.recognizerUrl || '');
   state.accountId = settings.accountId || '';
   state.budget = await loadBudget();
   state.ledger = await loadLedger();
@@ -1494,8 +1580,6 @@ async function boot() {
   await db.deleteSetting('rememberKey');
   state.apiKey = '';
 
-  els.gridSelect.value = String(state.gridSize);
-  els.gridLabel.textContent = `Grid ${state.gridSize}×${state.gridSize}`;
   updateProviderUi();
   updateCloudUi();
   updateChatModeUi();

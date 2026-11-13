@@ -35,12 +35,7 @@ const JPEG_1PX = Buffer.from(
   'AAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==',
   'base64',
 );
-const PNG_1PX = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
-  'base64',
-);
 const jpegDataUrl = `data:image/jpeg;base64,${JPEG_1PX.toString('base64')}`;
-const pngDataUrl = `data:image/png;base64,${PNG_1PX.toString('base64')}`;
 
 try {
   // Auth is enforced.
@@ -90,15 +85,13 @@ try {
       captureId: capId,
       width: 1280,
       height: 720,
-      gridSize: 64,
       capturedAt: new Date().toISOString(),
       dataUrl: jpegDataUrl,
-      overlayDataUrl: pngDataUrl,
     },
   });
   record('POST /api/captures stores the capture',
     capture.res.status === 201 && capture.data.capture?.captureId === capId,
-    `HTTP ${capture.res.status} grid=${capture.data.capture?.gridSize ?? '?'}`);
+    `HTTP ${capture.res.status} grid=${capture.data.capture?.gridSize ?? 'none'}`);
 
   // Original bytes are unchanged.
   const original = await call(`/api/captures/${capId}/original`, { raw: true });
@@ -106,37 +99,11 @@ try {
     original.res.status === 200 && Buffer.compare(original.buffer, JPEG_1PX) === 0,
     `${original.buffer.length} bytes`);
 
-  // Overlay is served separately from the original. When the client uploads a
-  // raster overlay it is served verbatim; otherwise the server-generated SVG grid
-  // is served. Either way it must never replace the original.
+  // There is no grid overlay any more: the endpoint must be gone.
   const overlay = await call(`/api/captures/${capId}/overlay`, { raw: true });
-  const overlayType = overlay.res.headers.get('content-type') || '';
-  const overlayText = overlay.buffer.toString('utf8');
-  const overlayIsRaster = /image\/png/.test(overlayType) && Buffer.compare(overlay.buffer, PNG_1PX) === 0;
-  const overlayIsSvg = /image\/svg\+xml/.test(overlayType) && /origin top-left/.test(overlayText);
-  record('overlay is served separately and matches the overlay upload',
-    overlay.res.status === 200 && (overlayIsRaster || overlayIsSvg),
-    `${overlayType}${overlayIsRaster ? ' (raster, byte-identical)' : overlayIsSvg ? ' (svg grid)' : ''}`);
-
-  // A capture with no raster overlay still gets a server-side SVG grid.
-  const capId2 = `cap_smoke_svg_${Date.now().toString(36)}`;
-  await call('/api/captures', {
-    method: 'POST',
-    body: {
-      projectId: project.projectId,
-      captureId: capId2,
-      width: 640,
-      height: 480,
-      gridSize: 32,
-      dataUrl: jpegDataUrl,
-    },
-  });
-  const overlay2 = await call(`/api/captures/${capId2}/overlay`, { raw: true });
-  record('capture without a raster overlay falls back to a server SVG grid',
-    overlay2.res.status === 200
-      && /image\/svg\+xml/.test(overlay2.res.headers.get('content-type') || '')
-      && /origin top-left/.test(overlay2.buffer.toString('utf8')),
-    overlay2.res.headers.get('content-type') || 'no content-type');
+  record('no grid overlay is produced or served',
+    overlay.res.status === 404,
+    `HTTP ${overlay.res.status}`);
 
   // Duplicate capture is refused, original untouched.
   const duplicate = await call('/api/captures', {
@@ -146,8 +113,7 @@ try {
       captureId: capId,
       width: 1280,
       height: 720,
-      gridSize: 64,
-      dataUrl: pngDataUrl,
+      dataUrl: jpegDataUrl,
     },
   });
   record('a duplicate capture id is refused (immutable)',

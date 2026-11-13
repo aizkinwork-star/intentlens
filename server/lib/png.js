@@ -177,4 +177,75 @@ export function decodePngMask(buffer, { lumaThreshold = 127, alphaThreshold = 0 
   };
 }
 
-export default { isPng, parsePngHeader, decodePngMask };
+export default { isPng, parsePngHeader, decodePngMask, decodePngRgba };
+
+/**
+ * Decode an 8-bit PNG to RGBA pixels. Returns null for a non-PNG or an
+ * unsupported encoding. Used by the local component recogniser, which needs
+ * real pixels rather than a mask summary.
+ */
+export function decodePngRgba(buffer) {
+  const header = parsePngHeader(buffer);
+  if (!header) return null;
+  if (header.bitDepth !== 8 || header.interlaced || header.compression !== 0 || header.filter !== 0) {
+    return { ...header, decoded: false, reason: 'unsupported_png_format' };
+  }
+  const channels = CHANNELS[header.colorType];
+  if (!channels) return { ...header, decoded: false, reason: 'unsupported_color_type' };
+  const chunks = readChunks(buffer);
+  const idat = chunks.filter((chunk) => chunk.type === 'IDAT').map((chunk) => chunk.data);
+  if (!idat.length) return { ...header, decoded: false, reason: 'missing_image_data' };
+
+  const { width, height } = header;
+  const stride = width * channels;
+  const expectedRaw = height * (stride + 1);
+  if (expectedRaw > MAX_RAW_BYTES) return { ...header, decoded: false, reason: 'image_too_large' };
+
+  let raw;
+  try {
+    raw = inflateSync(Buffer.concat(idat));
+  } catch {
+    return { ...header, decoded: false, reason: 'invalid_compressed_data' };
+  }
+  if (raw.length < expectedRaw) return { ...header, decoded: false, reason: 'truncated_image_data' };
+
+  const data = new Uint8ClampedArray(width * height * 4);
+  let previous = null;
+  let pos = 0;
+  for (let y = 0; y < height; y += 1) {
+    const filterType = raw[pos];
+    pos += 1;
+    const row = new Uint8Array(stride);
+    for (let x = 0; x < stride; x += 1) {
+      const left = x >= channels ? row[x - channels] : 0;
+      const up = previous ? previous[x] : 0;
+      const upLeft = previous && x >= channels ? previous[x - channels] : 0;
+      let value = raw[pos];
+      pos += 1;
+      if (filterType === 1) value += left;
+      else if (filterType === 2) value += up;
+      else if (filterType === 3) value += Math.floor((left + up) / 2);
+      else if (filterType === 4) value += paeth(left, up, upLeft);
+      else if (filterType !== 0) return { ...header, decoded: false, reason: `unsupported_filter_${filterType}` };
+      row[x] = value & 0xff;
+    }
+    for (let x = 0; x < width; x += 1) {
+      const src = x * channels;
+      const dst = (y * width + x) * 4;
+      if (header.colorType === 0 || header.colorType === 4) {
+        const luma = row[src];
+        data[dst] = luma;
+        data[dst + 1] = luma;
+        data[dst + 2] = luma;
+        data[dst + 3] = header.colorType === 4 ? row[src + 1] : 255;
+      } else if (header.colorType === 2 || header.colorType === 6) {
+        data[dst] = row[src];
+        data[dst + 1] = row[src + 1];
+        data[dst + 2] = row[src + 2];
+        data[dst + 3] = header.colorType === 6 ? row[src + 3] : 255;
+      }
+    }
+    previous = row;
+  }
+  return { ...header, decoded: true, data };
+}

@@ -1,4 +1,4 @@
-// app.js — v7 Strictly Local Meta-Only.
+// app.js — v8 Any-provider vision + local component recognition.
 //
 // Wires the screen together (landscape layout).
 //
@@ -6,15 +6,12 @@
 // Find it, and that exact frame is what the backend analyses. The marker is drawn on
 // the captured frame, never on the live preview, because a live preview moves.
 //
-// Nothing here talks to the model directly: every request goes to /api/analyze, which
-// is the only place that knows about the cloud Meta provider runtime.
+// Nothing here talks to the model directly: every request goes to /api/analyze or
+// /api/component/analyze, which are the only places that know about the configured
+// provider runtime. Which provider and model is used is decided server-side from
+// the user's own key and access tier.
 
 import {
-  GRID,
-  gridSize,
-  setGridSize,
-  pointToCell,
-  cellToCenter,
   clientToNormalized,
   fitContain,
   rectToNormalized,
@@ -34,6 +31,7 @@ import {
   MultiTargetTracker,
 } from './tracker.js';
 import { cameraAdapter } from './platform/index.js';
+import { browserSpeechController } from './speech.js';
 
 // ---------------------------------------------------------------------------
 // Startup telemetry: keep the stages separate so a fast HTTP listener cannot
@@ -130,7 +128,6 @@ window.OpticalFlowTrackerCtor = OpticalFlowTracker;
 window.BoardRegistrarCtor = BoardRegistrar;
 window.ComponentPresenceVerifierCtor = ComponentPresenceVerifier;
 import { initComponentDetector, detectComponents, getComponentDetectorMode } from './componentDetector.js';
-import { buildGridOverlaySvg, drawGridOnCanvas } from './captureOverlay.js';
 import {
   createProjectFromIntent,
   deserializeProject,
@@ -181,7 +178,7 @@ const wsAlignBtn = $('wsAlign'), wsCaptureBtn = $('wsCapture'), wsNextBtn = $('w
 const wsRepeatBtn = $('wsRepeat'), wsEditBtn = $('wsEdit');
 const wsExplainBtn = $('wsExplain');
 const evPanel = $('evidencePanel'), evTitle = $('evTitle'), evStatus = $('evStatus');
-const evOriginal = $('evOriginal'), evOverlay = $('evOverlay'), evCorners = $('evCorners'), evEmpty = $('evEmpty');
+const evOriginal = $('evOriginal'), evCorners = $('evCorners'), evEmpty = $('evEmpty');
 const evMeta = $('evMeta'), evInstruction = $('evInstruction'), evCandidates = $('evCandidates');
 const evExpandBtn = $('evExpand'), evConfirmBtn = $('evConfirm'), evCorrectBtn = $('evCorrect');
 const evRetakeBtn = $('evRetake'), evRepeatBtn = $('evRepeat');
@@ -391,7 +388,7 @@ const state = {
   lastResultFrameId: null,
   capturedFrameId: null,  // frameId of the most recent capture
   mainMarker: null,       // marker on the big view, only when the frame is frozen
-  hint: null,             // cell the user tapped, sent with the next command
+  hint: null,             // point/box the user tapped, sent with the next command
   imageRect: null,        // where real image content sits inside the frame (letterboxing)
   active: null,           // { requestId, controller, frameId } while a request is in flight
   busy: false,
@@ -401,7 +398,6 @@ const state = {
   // UI chrome (§6)
   logs: [],           // { when, stage, provider, ms, kind, text }
   menuOpen: false,
-  gridOn: true,
   contextBudget: null,
   handTrackerMode: 'uninitialized',
   componentDetectorMode: 'uninitialized',
@@ -523,8 +519,36 @@ import('./perception/PerceptionProfile.js').then((m) => { state.perceptionProfil
 // Camera source behind the §3.4 adapter contract (phone rear camera is the MVP path).
 const camera = cameraAdapter;
 
+// Read-aloud: synthesis only, through speech.js. No microphone, no recognition.
+const speech = browserSpeechController(window);
+
+function setSpeechButtons() {
+  const readBtn = $('readAloudBtn');
+  const stopBtn = $('stopReadAloudBtn');
+  if (!readBtn || !stopBtn) return;
+  const text = answerEl.textContent.trim();
+  readBtn.disabled = !speech.supported || text.length < 12;
+  stopBtn.disabled = !speech.speaking;
+  readBtn.textContent = speech.speaking ? 'Read again' : 'Read aloud';
+}
+
+function speakAnswer() {
+  const result = speech.speak(answerEl.textContent, { onEnd: setSpeechButtons });
+  if (result.ok) {
+    markStartup('speech', `${result.spoken.length} chars`);
+  } else if (result.reason === 'unsupported') {
+    setStatus("This browser has no speech voice installed, so the answer cannot be read aloud.", 'warn');
+  }
+  setSpeechButtons();
+}
+
 function setStatus(text, tone = 'ready') { statusEl.textContent = text; statusEl.dataset.tone = tone; }
-function setAnswer(text, tone = '') { answerEl.textContent = text; answerEl.dataset.tone = tone; }
+
+function setAnswer(text, tone = '') {
+  answerEl.textContent = text;
+  answerEl.dataset.tone = tone;
+  setSpeechButtons();
+}
 
 function setMeta(parts) {
   metaEl.replaceChildren();
@@ -732,14 +756,7 @@ function renderMenu() {
   if (menuTarget) menuTarget.textContent = state.tracker.targetId || '—';
   if (menuTrackState) menuTrackState.textContent = formatTrackerState(state.tracker.state);
 
-  // 3. Grid
-  const gridToggle = $('gridToggle');
-  if (gridToggle) gridToggle.textContent = state.gridOn ? 'on' : 'off';
-  document.querySelectorAll('.gridSize').forEach((b) => {
-    b.classList.toggle('active', Number(b.dataset.size) === gridSize());
-  });
-
-  // 4. Context window
+  // 3. Context window
   const cb = state.contextBudget;
   const ctxTokens = $('ctxTokens'), ctxUsage = $('ctxUsage'), ctxCompression = $('ctxCompression');
   if (cb) {
@@ -906,45 +923,11 @@ function drawContain(source, sw, sh) {
   state.imageRect = rectToNormalized(r, W, H);
 }
 
-// Grid lines, clipped to the real image content. Hidden when the user turns
-// the grid off; coordinates stored by the app are unaffected either way.
-function drawGrid(svg) {
-  svg.replaceChildren();
-  if (!state.gridOn) return;
-  const r = state.imageRect || { x0: 0, y0: 0, x1: 1, y1: 1 };
-  const x = r.x0 * W, y = r.y0 * H, w = (r.x1 - r.x0) * W, h = (r.y1 - r.y0) * H;
-  if (w <= 0 || h <= 0) return;
-
-  const clipId = `${svg.id || 'grid'}-clip`;
-  const defs = el('defs');
-  const clip = el('clipPath', { id: clipId });
-  clip.append(el('rect', { x, y, width: w, height: h }));
-  defs.append(clip);
-  svg.append(defs);
-
-  const g = el('g', { 'clip-path': `url(#${clipId})` });
-  for (let i = 0; i <= GRID; i++) {
-    const gx = x + (i * w) / GRID;
-    const gy = y + (i * h) / GRID;
-    g.append(el('line', { x1: gx, y1: y, x2: gx, y2: y + h, stroke: 'rgba(80,200,255,.26)' }));
-    g.append(el('line', { x1: x, y1: gy, x2: x + w, y2: gy, stroke: 'rgba(80,200,255,.26)' }));
-  }
-  svg.append(g);
-}
-
-// One marker: cell highlight, optional box, crosshair, label.
+// One marker: optional box, crosshair, label.
 // stale markers are dashed, have no crosshair, and say so — never a fake lock.
 function drawMarker(svg, opts) {
   const { point, box, label, color, stale = false, small = false, cls } = opts;
   const g = el('g', cls ? { class: cls } : {});
-  const { row, col, cellId } = pointToCell(point.x, point.y);
-
-  g.append(el('rect', {
-    x: (col * W) / GRID, y: (row * H) / GRID, width: W / GRID, height: H / GRID,
-    fill: color, 'fill-opacity': small ? 0.10 : 0.18,
-    stroke: color, 'stroke-width': small ? 1 : 2,
-    'stroke-dasharray': stale ? '6 5' : undefined,
-  }));
 
   if (box) {
     const bw = Math.max(box.width * W, 8), bh = Math.max(box.height * H, 8);
@@ -972,12 +955,12 @@ function drawMarker(svg, opts) {
     'font-size': small ? 15 : 20,
     'font-weight': 600,
   });
-  text.textContent = `${label} • ${cellId}${stale ? ' (stale)' : ''}`;
+  text.textContent = `${label}${stale ? ' (stale)' : ''}`;
   g.append(text);
   svg.append(g);
 }
 
-// Selection reticle for the region or cell the user picked.
+// Selection reticle for the region the user picked.
 // ONLY draws the outer perimeter outline with fill: 'none' (zero fill overlay),
 // keeping the middle components and circuitry completely visible!
 function drawHint(svg) {
@@ -985,27 +968,18 @@ function drawHint(svg) {
   const g = el('g', { class: 'user-selection-reticle' });
   const color = '#50c8ff';
 
-  let bx, by, bw, bh, cellLabel;
-  if (state.hint.cells) {
-    const { minCol, maxCol, minRow, maxRow } = state.hint.cells;
-    bx = (minCol * W) / GRID;
-    by = (minRow * H) / GRID;
-    bw = ((maxCol - minCol + 1) * W) / GRID;
-    bh = ((maxRow - minRow + 1) * H) / GRID;
-    cellLabel = state.hint.cellId || `R${minRow + 1}C${minCol + 1}..R${maxRow + 1}C${maxCol + 1}`;
-  } else if (state.hint.box) {
+  let bx, by, bw, bh;
+  if (state.hint.box) {
     bx = state.hint.box.x * W;
     by = state.hint.box.y * H;
     bw = state.hint.box.width * W;
     bh = state.hint.box.height * H;
-    cellLabel = state.hint.cellId || 'Region';
   } else {
-    const { row, col, cellId } = pointToCell(state.hint.x, state.hint.y);
-    bx = (col * W) / GRID;
-    by = (row * H) / GRID;
-    bw = W / GRID;
-    bh = H / GRID;
-    cellLabel = cellId;
+    const half = 0.02;
+    bx = Math.max(0, (state.hint.x - half)) * W;
+    by = Math.max(0, (state.hint.y - half)) * H;
+    bw = Math.min(1, state.hint.x + half) * W - bx;
+    bh = Math.min(1, state.hint.y + half) * H - by;
   }
 
   // Outer outline ONLY: fill: 'none' ensures the underlying chips/contacts are completely visible
@@ -1031,14 +1005,14 @@ function drawHint(svg) {
     'font-size': 14,
     'font-weight': 600,
   });
-  text.textContent = `Search Area • ${cellLabel}`;
+  text.textContent = 'Search area';
   g.append(text);
 
   svg.append(g);
 }
 
 function drawLive() {
-  drawGrid(overlay);
+  overlay.replaceChildren();
   if (state.mainMarker) {
     const { result, stale } = state.mainMarker;
     drawResultMarkers(overlay, result, { stale, small: false });
@@ -1106,7 +1080,7 @@ function normToScreen(nx, ny) {
 
 function drawTrackerMarker(snap) {
   const pill = getTrackedPill();
-  // Per-frame layer: redraw without duplicating markers and without wiping the grid.
+  // Per-frame layer: redraw without duplicating markers.
   const layer = ensureLayer(overlay, 'trackerLayer');
   layer.replaceChildren();
   if (!snap || !snap.box || !snap.anchor || snap.state === 'LOST' || snap.state === 'INACTIVE') {
@@ -1282,7 +1256,7 @@ function drawResultMarkers(svg, result, { stale = false, small = false } = {}) {
 
 // The analysed frame, with the target and (when enlarged) the context parts sent.
 function drawSnapshot(result) {
-  drawGrid(snapOverlay);
+  snapOverlay.replaceChildren();
   if (!result) return;
   if (result.target) {
     state.scene
@@ -1299,7 +1273,7 @@ function drawSnapshot(result) {
 function fillSnapInfo(result) {
   snapInfo.replaceChildren();
   const line = (text) => { const d = document.createElement('div'); d.textContent = text; snapInfo.append(d); };
-  const fmt = (p) => { const { cellId } = pointToCell(p.x, p.y); return `${cellId}  x=${p.x.toFixed(3)}  y=${p.y.toFixed(3)}`; };
+  const fmt = (p) => `x=${p.x.toFixed(3)}  y=${p.y.toFixed(3)}`;
   if (!result) return;
 
   // Don't let the readout cover the thing it is describing.
@@ -1378,7 +1352,7 @@ async function updateSilhouettes(img) {
   }
 }
 
-// Only the canvas is repainted per frame. The SVG grid is static while live, so
+// Only the canvas is repainted per frame. The SVG overlay is static while live, so
 // redrawing it 60x/second would burn phone battery for nothing.
 async function loop() {
   if (!live) return;
@@ -1592,17 +1566,16 @@ fileIn.addEventListener('change', async () => {
 });
 
 // ---------------------------------------------------------------------------
-// Region & Cell Selection (§12.1).
-// Supports long-click, slide/drag across blocks with cursor or finger.
-// Highlights ONLY the outer boundary perimeter (fill: none) so the mid components
-// remain crystal clear!
+// Region selection (§12.1).
+// Tap to pick a point; drag to mark a search region. Highlights ONLY the outer
+// boundary perimeter (fill: none) so the middle components remain clear.
 // ---------------------------------------------------------------------------
 const pointerSelection = {
   active: false,
   dragging: false,
   startX: 0,
   startY: 0,
-  startCell: null,
+  start: null,
 };
 
 function getPointerNorm(e) {
@@ -1628,24 +1601,16 @@ view.addEventListener('pointerdown', (e) => {
   pointerSelection.dragging = false;
   pointerSelection.startX = e.clientX;
   pointerSelection.startY = e.clientY;
+  pointerSelection.start = p;
 
-  const cell = pointToCell(p.x, p.y);
-  pointerSelection.startCell = cell;
-
-  const centre = cellToCenter(cell.row, cell.col);
-  state.hint = {
-    x: centre.x,
-    y: centre.y,
-    cellId: cell.cellId,
-    cells: { minRow: cell.row, maxRow: cell.row, minCol: cell.col, maxCol: cell.col },
-  };
+  state.hint = { x: p.x, y: p.y };
 
   drawLive();
   drawSnapshot(state.lastResult);
 });
 
 view.addEventListener('pointermove', (e) => {
-  if (!pointerSelection.active || !pointerSelection.startCell) return;
+  if (!pointerSelection.active || !pointerSelection.start) return;
   const dist = Math.hypot(e.clientX - pointerSelection.startX, e.clientY - pointerSelection.startY);
   if (dist > 6) {
     pointerSelection.dragging = true;
@@ -1653,50 +1618,32 @@ view.addEventListener('pointermove', (e) => {
   if (!pointerSelection.dragging) return;
 
   const p = getPointerNorm(e);
-  const clampedX = Math.max(0.001, Math.min(0.999, p.x));
-  const clampedY = Math.max(0.001, Math.min(0.999, p.y));
-  const currCell = pointToCell(clampedX, clampedY);
-
-  const minRow = Math.min(pointerSelection.startCell.row, currCell.row);
-  const maxRow = Math.max(pointerSelection.startCell.row, currCell.row);
-  const minCol = Math.min(pointerSelection.startCell.col, currCell.col);
-  const maxCol = Math.max(pointerSelection.startCell.col, currCell.col);
-
-  const cellId = minRow === maxRow && minCol === maxCol
-    ? `R${minRow + 1}C${minCol + 1}`
-    : `R${minRow + 1}C${minCol + 1}..R${maxRow + 1}C${maxCol + 1}`;
-
-  const bx = minCol / GRID;
-  const by = minRow / GRID;
-  const bw = (maxCol - minCol + 1) / GRID;
-  const bh = (maxRow - minRow + 1) / GRID;
+  const x0 = Math.min(pointerSelection.start.x, p.x);
+  const y0 = Math.min(pointerSelection.start.y, p.y);
+  const x1 = Math.max(pointerSelection.start.x, p.x);
+  const y1 = Math.max(pointerSelection.start.y, p.y);
+  const bw = Math.max(x1 - x0, 0.004);
+  const bh = Math.max(y1 - y0, 0.004);
 
   state.hint = {
-    x: bx + bw / 2,
-    y: by + bh / 2,
-    cellId,
-    box: { x: bx, y: by, width: bw, height: bh },
-    cells: { minRow, maxRow, minCol, maxCol },
+    x: x0 + bw / 2,
+    y: y0 + bh / 2,
+    box: { x: x0, y: y0, width: bw, height: bh },
   };
 
   drawLive();
   drawSnapshot(state.lastResult);
 });
 
-/** Start local optical-flow tracking from the selected cells. No cloud call. */
+/** Start local optical-flow tracking from the selected region. No cloud call. */
 function startLocalTrackingFromHint() {
   if (!state.hint) return false;
-  const cells = state.hint.cells;
-  let box = state.hint.box;
-  if (!box && cells) {
-    box = {
-      x: cells.minCol / GRID,
-      y: cells.minRow / GRID,
-      width: (cells.maxCol - cells.minCol + 1) / GRID,
-      height: (cells.maxRow - cells.minRow + 1) / GRID,
-    };
-  }
-  if (!box) return false;
+  const box = state.hint.box || {
+    x: Math.max(0, state.hint.x - 0.04),
+    y: Math.max(0, state.hint.y - 0.04),
+    width: 0.08,
+    height: 0.08,
+  };
   const targetId = `LOCAL_${String(state.frameCount + 1).padStart(2, '0')}`;
   tracker.init({
     targetId,
@@ -1704,7 +1651,7 @@ function startLocalTrackingFromHint() {
     box,
   });
   state.lastTargetId = targetId;
-  log({ stage: 'tracking', provider: 'local', text: `local target ${targetId} started from ${state.hint.cellId}` });
+  log({ stage: 'tracking', provider: 'local', text: `local target ${targetId} started` });
   return true;
 }
 
@@ -1718,27 +1665,12 @@ function finishPointerSelection() {
     : false;
 
   if (pointerSelection.dragging) {
-    setAnswer(`Selected search region ${state.hint.cellId}. Outer perimeter outline marked — center clear.`);
+    setAnswer('Selected search region. Outer perimeter outline marked — centre clear.');
   } else if (trackingStarted) {
-    setAnswer(`Local tracking started in ${state.hint.cellId}. This is a candidate region, not a verified component. Ask a question to identify it.`, 'warn');
+    setAnswer('Local tracking started. This is a candidate region, not a verified component. Ask a question to identify it.', 'warn');
     if (state.menuOpen) renderMenu();
   } else {
-    // Single click / tap
-    const shown = state.lastResult && state.lastResult.target;
-    if (shown && state.lastResultFrameId === state.capturedFrameId && shown.gridCell !== state.hint.cellId) {
-      state.corrections.push({
-        targetId: shown.targetId,
-        correction: `The user says the target is in cell ${state.hint.cellId}, not ${shown.gridCell}.`,
-        at: new Date().toISOString(),
-      });
-      state.corrections = state.corrections.slice(-5);
-      state.lastResult = null;
-      state.mainMarker = null;
-      saveSession();
-      setAnswer(`Thanks — noted that ${shown.targetId} is in ${state.hint.cellId}, not ${shown.gridCell}. Ask again to re-localise.`, 'warn');
-    } else {
-      setAnswer(`You picked cell ${state.hint.cellId}. Outer outline marked.`);
-    }
+    setAnswer('Point marked. Ask a question to identify what is there.');
   }
 
   drawLive();
@@ -1917,7 +1849,6 @@ async function ensureEvidenceImages(capture) {
   for (const url of state.assistant._blobUrls || []) URL.revokeObjectURL(url);
   state.assistant._blobUrls = [];
   evOriginal.hidden = true;
-  evOverlay.hidden = true;
   if (!capture) return;
 
   const load = async (url, img) => {
@@ -1935,7 +1866,6 @@ async function ensureEvidenceImages(capture) {
     }
   };
   await load(capture.originalUrl, evOriginal);
-  await load(capture.overlayUrl, evOverlay);
 }
 
 function renderEvidence() {
@@ -1966,14 +1896,8 @@ function renderEvidence() {
   evMeta.replaceChildren();
   if (capture) {
     const meta = document.createElement('div');
-    const size = document.createTextNode(`${capture.width}×${capture.height} · grid ${capture.gridSize}×${capture.gridSize}`);
+    const size = document.createTextNode(`${capture.width}×${capture.height}`);
     meta.append(size);
-    if (card.gridCell) {
-      const cell = document.createElement('span');
-      cell.className = 'cellTag';
-      cell.textContent = ` · ${card.gridCell}`;
-      meta.append(cell);
-    }
     if (card.uncertainty) {
       const unc = document.createElement('div');
       unc.textContent = `AI uncertainty: ${card.uncertainty}. ${card.identityStatus === 'confirmed_by_user' ? 'You confirmed this identity.' : 'This is a candidate, not a verified fact.'}`;
@@ -2123,7 +2047,6 @@ async function restoreLastCapture(project) {
         uncertainty: object.uncertainty || 'medium',
       },
       location: object.corners ? {
-        grid_cell: object.gridCell,
         center: object.center,
         corners: object.corners,
       } : null,
@@ -2243,19 +2166,36 @@ function makeCleanCapture() {
   return { clean, ctx, lighting };
 }
 
-function makeOverlayCapture(clean, gridSize) {
-  const overlayCanvas = document.createElement('canvas');
-  overlayCanvas.width = W;
-  overlayCanvas.height = H;
-  const ctx = overlayCanvas.getContext('2d');
-  // Only lines/labels: transparent background, never an edited copy of the original.
-  ctx.drawImage(clean, 0, 0);
-  drawGridOnCanvas(ctx, { width: W, height: H, gridSize });
-  return overlayCanvas.toDataURL('image/png');
+/**
+ * Ask the measured local recogniser about the centre of the capture. The
+ * camera workflow asks the user to point one component at the centre, so a
+ * centre crop is the honest region to classify. A low-confidence result is
+ * discarded instead of being dressed up as an identification.
+ */
+async function recognizerCandidates(clean) {
+  try {
+    const side = Math.max(32, Math.round(Math.min(W, H) * 0.6));
+    const sx = Math.round((W - side) / 2);
+    const sy = Math.round((H - side) / 2);
+    const crop = document.createElement('canvas');
+    crop.width = 224;
+    crop.height = 224;
+    const ctx = crop.getContext('2d');
+    ctx.drawImage(clean, sx, sy, side, side, 0, 0, 224, 224);
+    const dataUrl = crop.toDataURL('image/png');
+    const result = await assistantApi('/api/recognizer/classify', {
+      method: 'POST',
+      body: { dataUrl, topK: 5 },
+    });
+    if (!result?.available) return null;
+    return result;
+  } catch {
+    // The recogniser is optional; the AI analysis must still run without it.
+    return null;
+  }
 }
 
-async function captureComponent() {
-  const project = state.assistant.project;
+async function captureComponent() {  const project = state.assistant.project;
   if (!project) {
     setWsStatus('Create a project first.', 'error');
     return;
@@ -2278,9 +2218,7 @@ async function captureComponent() {
 
   try {
     const { clean, ctx } = makeCleanCapture();
-    const currentGridSize = gridSize();
     const dataUrl = clean.toDataURL('image/jpeg', 0.85);
-    const overlayDataUrl = makeOverlayCapture(clean, currentGridSize);
     const capturedAt = new Date().toISOString();
 
     const captureResponse = await assistantApi('/api/captures', {
@@ -2289,10 +2227,8 @@ async function captureComponent() {
         projectId: project.projectId,
         width: W,
         height: H,
-        gridSize: currentGridSize,
         capturedAt,
         dataUrl,
-        overlayDataUrl,
       },
     });
     const capture = captureResponse.capture;
@@ -2312,8 +2248,8 @@ async function captureComponent() {
     setWsStatus('Local reference lookup…', 'busy');
     setStatus('Local reference lookup', 'busy');
 
-    // Supporting local k-NN lookup. It never blocks the AI request and it is
-    // always shown as unverified.
+    // Supporting local lookup. The measured ONNX recogniser is preferred; the
+    // older k-NN index remains a fallback and is always shown as unverified.
     let lookup = null;
     try {
       const trackerInstance = await ensureLooseTracker();
@@ -2321,6 +2257,27 @@ async function captureComponent() {
       lookup = lookupCandidates({ tracker: trackerInstance, imageData });
     } catch (err) {
       lookup = { available: false, reason: err.message || String(err), candidates: [] };
+    }
+    const recognition = await recognizerCandidates(clean);
+    const recognized = (recognition?.candidates || [])
+      .filter((candidate) => Number(candidate.confidence) >= 0.35)
+      .slice(0, 3);
+    if (recognized.length) {
+      lookup = {
+        available: true,
+        source: 'component_classifier_onnx',
+        recognizer: {
+          label: recognition.label,
+          confidence: recognition.confidence,
+          model: recognition.model,
+        },
+        candidates: recognized.map((candidate) => ({
+          name: candidate.name,
+          confidence: candidate.confidence,
+          status: 'measured_model_candidate',
+          note: 'Unverified local model candidate. AI analysis and user confirmation decide identity.',
+        })),
+      };
     }
     state.assistant.localLookup = lookup;
     state.assistant.candidates = lookup?.candidates || [];
@@ -2336,7 +2293,11 @@ async function captureComponent() {
         projectId: project.projectId,
         captureId: capture.captureId,
         question: project.userGoal,
-        localCandidates: state.assistant.candidates.map((c) => ({ name: c.name, distance: c.distance })),
+        localCandidates: state.assistant.candidates.map((c) => ({
+          name: c.name,
+          distance: c.distance,
+          confidence: c.confidence,
+        })),
       },
     });
     const latency = Math.round(performance.now() - started);
@@ -2366,7 +2327,7 @@ async function captureComponent() {
     }
 
     // Independent client-side validation: never draw an unvalidated box.
-    const check = validateNormalizedComponentResult(result.analysis, { gridSize: capture.gridSize });
+    const check = validateNormalizedComponentResult(result.analysis);
     if (!check.ok) {
       state.assistant.analysisState = 'invalid';
       state.assistant.evidence = buildEvidenceCard({ capture, candidates: state.assistant.candidates, analysisState: 'invalid' });
@@ -2411,7 +2372,7 @@ async function captureComponent() {
     log({
       stage: 'model',
       kind: 'ok',
-      text: `${result.provider?.name || result.provider?.id || 'provider'} returned ${result.analysis.location?.grid_cell || 'no location'} in ${latency} ms`,
+      text: `${result.provider?.name || result.provider?.id || 'provider'} returned ${result.analysis.location ? 'a location' : 'no location'} in ${latency} ms`,
     });
   } catch (err) {
     const message = err.message || String(err);
@@ -2514,6 +2475,14 @@ async function nextProjectStep() {
 }
 
 function wireAssistant() {
+  // Read-aloud controls (synthesis only; no microphone anywhere in this app).
+  $('readAloudBtn')?.addEventListener('click', speakAnswer);
+  $('stopReadAloudBtn')?.addEventListener('click', () => {
+    speech.stop();
+    setSpeechButtons();
+  });
+  setSpeechButtons();
+
   // Hide legacy tracking/training/PCB/transfer panels from this release's UI.
   for (const key of ['tracking', 'training', 'pcb', 'transfer']) {
     const heading = document.querySelector(`.menuHeading[data-section="${key}"]`);
@@ -2570,7 +2539,7 @@ function wireAssistant() {
     renderWorkspace();
     setWsStatus(state.assistant.aligned
       ? 'Alignment confirmed. Keep the board still, then press Capture component.'
-      : 'Alignment cleared. Position the board inside the grid.', state.assistant.aligned ? 'ok' : 'ready');
+      : 'Alignment cleared. Position the board inside the frame.', state.assistant.aligned ? 'ok' : 'ready');
   });
   wsCaptureBtn?.addEventListener('click', captureComponent);
   wsNextBtn?.addEventListener('click', nextProjectStep);
@@ -2780,7 +2749,7 @@ async function postAnalyze(payload, signal) {
 }
 
 const FRIENDLY = {
-  LOCAL_MODEL_NOT_INSTALLED: 'No vision provider is configured. Open ☰ → Vision Provider & Model → Configure provider. Local camera, grid and tracking still work without one.',
+  LOCAL_MODEL_NOT_INSTALLED: 'No vision provider is configured. Open ☰ → Vision Provider & Model → Configure provider. Local camera and tracking still work without one.',
   LOCAL_MODEL_LOAD_FAILED: 'The provider failed to connect. Check the key and model in ☰ → Vision Provider & Model.',
   LOCAL_MODEL_TIMEOUT: 'The vision model took too long to answer. Press Find it to retry.',
   LOCAL_MODEL_BAD_RESPONSE: 'The vision model returned an unreadable format. Press Find it to retry.',
@@ -2788,7 +2757,7 @@ const FRIENDLY = {
   MODEL_AUTH_FAILED: 'API authentication failed. Verify the key in ☰ → Vision Provider & Model → Configure provider.',
   MODEL_NOT_VISION: 'That model cannot read images. Choose a vision-capable model.',
   MODEL_QUOTA_EXHAUSTED: 'The provider quota is exhausted. Failover will try the next configured provider.',
-  NETWORK_DISABLED: 'Outbound network is disabled in .env (ALLOW_OUTBOUND_NETWORK=false). Local camera, grid, tracking and k-NN still work.',
+  NETWORK_DISABLED: 'Outbound network is disabled in .env (ALLOW_OUTBOUND_NETWORK=false). Local camera, tracking and k-NN still work.',
   IMAGE_TOO_LARGE: 'That frame was too large to send. Try again.',
   NETWORK: 'Cannot reach the backend server. Start it with start.cmd and reload.',
 };
@@ -2821,8 +2790,7 @@ async function submit() {
       projectId: state.projectId,
       command,
       frame,
-      gridSize: gridSize(),
-      userSelectedRegion: state.hint ? { x: state.hint.x, y: state.hint.y, cellId: state.hint.cellId } : null,
+      userSelectedRegion: state.hint ? { x: state.hint.x, y: state.hint.y } : null,
       sceneMap: scenePayload(),
       pcbContext: state.pcbBoard ? (window.buildPcbSceneContext ? window.buildPcbSceneContext(state) : null) : null,
       taskSummary: state.taskSummary,
@@ -2852,7 +2820,7 @@ async function submit() {
     setStatus('Localising target…', 'busy');
 
     // Never trust the model blindly: re-validate on this side too.
-    const check = validateResult(result, { requestId, frameId: frame.frameId, gridSize: gridSize() });
+    const check = validateResult(result, { requestId, frameId: frame.frameId });
     if (!check.ok) throw new RequestError(check.reason, 'RESULT_SCHEMA_INVALID', false);
 
     applyResult(result, frame);
@@ -3065,7 +3033,7 @@ function applyResult(result, frame) {
     const t = result.target;
     const pct = Math.round(t.confidence * 100);
     const confident = t.confidence >= UNCERTAIN_BELOW;
-    chips.push({ text: `${t.targetId} · ${t.gridCell}`, kind: 'target' });
+    chips.push({ text: t.targetId, kind: 'target' });
     chips.push({ text: confident ? `${pct}% confident` : `${pct}% — weak`, kind: confident ? 'confident' : 'unsure' });
     if (result.needsConfirmation) chips.push({ text: 'needs confirmation', kind: 'unsure' });
   }
@@ -3384,25 +3352,6 @@ function initMenuAndControls() {
       renderMenu();
     });
   }
-
-  // Grid controls
-  if ($('gridToggle')) {
-    $('gridToggle').addEventListener('click', () => {
-      state.gridOn = !state.gridOn;
-      $('gridToggle').textContent = state.gridOn ? 'on' : 'off';
-      drawLive();
-    });
-  }
-  document.querySelectorAll('.gridSize').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const size = Number(btn.dataset.size);
-      if ([16, 24, 32, 64, 128].includes(size)) {
-        setGridSize(size);
-        drawLive();
-        renderMenu();
-      }
-    });
-  });
 
   // Logs modal controls
   if ($('logsOpen')) $('logsOpen').addEventListener('click', () => showLogs(true));
@@ -3994,7 +3943,7 @@ async function removeSetupProvider() {
     }
     const key = $('setupKey');
     if (key) key.value = '';
-    setSetupMsg('Saved key removed. Local camera, grid and tracking still work.', 'ok');
+    setSetupMsg('Saved key removed. Local camera and tracking still work.', 'ok');
     await loadLocalModelStatus();
     updateSetupForm({ keepModel: true });
     checkHealth();
@@ -4229,9 +4178,9 @@ async function checkHealth() {
     if (data.model.configured && !outboundAllowed) {
       modeEl.textContent = 'NETWORK DISABLED';
       modeEl.dataset.mode = 'offline';
-      modeEl.title = 'A vision provider is configured, but ALLOW_OUTBOUND_NETWORK=false. Local camera, grid, tracking and k-NN still work.';
+      modeEl.title = 'A vision provider is configured, but ALLOW_OUTBOUND_NETWORK=false. Local camera, tracking and k-NN still work.';
       setStatus('Cloud off', 'warn');
-      setAnswer('A provider is configured, but outbound network is disabled. Set ALLOW_OUTBOUND_NETWORK=true in .env and restart to use cloud analysis. Local camera, grid, tap-to-track and the k-NN index still work.', 'warn');
+      setAnswer('A provider is configured, but outbound network is disabled. Set ALLOW_OUTBOUND_NETWORK=true in .env and restart to use cloud analysis. Local camera, tap-to-track and the k-NN index still work.', 'warn');
     } else if (data.model.configured) {
       modeEl.textContent = data.model.id || 'Cloud vision model';
       modeEl.dataset.mode = 'ready';
@@ -4240,8 +4189,8 @@ async function checkHealth() {
     } else {
       modeEl.textContent = 'NO CLOUD AI KEY';
       modeEl.dataset.mode = 'offline';
-      modeEl.title = 'Local camera, grid, tracking and k-NN work without a key. Cloud image analysis needs a configured vision provider.';
-      setAnswer('Cloud AI is not configured. Local camera, grid, tap-to-track and the k-NN index still work. Open ☰ → Vision Provider & Model → Configure provider to add any free or paid vision provider with your own key.', 'warn');
+      modeEl.title = 'Local camera, tracking and k-NN work without a key. Cloud image analysis needs a configured vision provider.';
+      setAnswer('Cloud AI is not configured. Local camera, tap-to-track and the k-NN index still work. Open ☰ → Vision Provider & Model → Configure provider to add any free or paid vision provider with your own key.', 'warn');
     }
     if (state.menuOpen) renderMenu();
   } catch {
@@ -4297,7 +4246,6 @@ $('installApp').addEventListener('click', async () => {
 // ---------------------------------------------------------------------------
 // Boot
 // ---------------------------------------------------------------------------
-// grid.js owns the product default (64x64). Do not set a second boot default.
 markStartup('boot');
 loadSession();
 drawMockScene();

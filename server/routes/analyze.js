@@ -18,7 +18,7 @@ import { randomUUID } from 'node:crypto';
 import { readJson, json, recordServerLog } from '../lib/http.js';
 import { appError, errorPayload } from '../lib/errors.js';
 import { config, localModelConfig, modelMode, localModelAvailable, outboundNetworkAllowed, providerRuntime } from '../config.js';
-import { isValidPoint, isValidBox, GRID_SIZES, DEFAULT_GRID_SIZE } from '../../grid.js';
+import { isValidPoint, isValidBox } from '../../grid.js';
 import { buildGroundingPrompt, summarizeContext, resolveLimits } from '../services/contextBuilder.js';
 import { ContextBudget } from '../services/contextBudget.js';
 import { buildRouter } from '../services/router.js';
@@ -146,15 +146,11 @@ export function readAnalyzeRequest(body) {
     throw appError('CAMERA_FRAME_MISSING', 'The frame is missing usable width/height.');
   }
 
-  const requestedGrid = Number(body.gridSize);
-  const gridSize = GRID_SIZES.includes(requestedGrid) ? requestedGrid : DEFAULT_GRID_SIZE;
-
   return {
     requestId: text(body.requestId, 80) || `req_${Date.now()}_${randomUUID().slice(0, 6)}`,
     sessionId: text(body.sessionId, 80) || 'sess_local_demo',
     projectId: text(body.projectId, 80) || 'default',
     command,
-    gridSize,
     frame: {
       frameId: text(frame.frameId, 60) || `frame_${Date.now()}`,
       dataUrl,
@@ -194,7 +190,7 @@ export async function analyzeHandler(req, res, store) {
       throw appError('AI_NOT_CONFIGURED', 'No vision provider is configured. Add a provider key in Settings (OpenRouter, Groq, Google AI Studio, NVIDIA NIM, Cloudflare, Mistral and others are supported).');
     }
     if (!outboundNetworkAllowed()) {
-      throw appError('NETWORK_DISABLED', 'Outbound network is disabled in .env (ALLOW_OUTBOUND_NETWORK=false). Local camera, grid, tracking and k-NN still work.');
+      throw appError('NETWORK_DISABLED', 'Outbound network is disabled in .env (ALLOW_OUTBOUND_NETWORK=false). Local camera, tracking and k-NN still work.');
     }
 
     const prompt = buildGroundingPrompt(clean);
@@ -238,6 +234,7 @@ export async function analyzeHandler(req, res, store) {
         allowWebSearch: false,
         requestId: clean.requestId,
         frameId: clean.frame.frameId,
+        deadlineMs: config.answerDeadlineMs,
         signal: controller.signal,
       });
     } catch (err) {

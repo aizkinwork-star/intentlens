@@ -3,7 +3,6 @@
 // exact same GroundingResult shape as the live adapter (already normalized to 0..1).
 // The UI labels this mode as MOCK everywhere, so nobody mistakes it for vision.
 import { COMPONENTS } from '../../phoneBoard.js';
-import { pointToCell } from '../../grid.js';
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -18,7 +17,6 @@ function asTarget(p) {
     label: p.label,
     point,
     box,
-    gridCell: pointToCell(point.x, point.y).cellId,
     confidence: p.conf,
     freshness: 'current_frame',
   };
@@ -54,7 +52,7 @@ export async function mockGrounding({ requestId, frameId, command, userSelectedR
 
   if (!hit) {
     const answer =
-      'I can’t tell which part you mean in this demo board. Try “point to the processor”, “where is the battery connector”, or tap a cell and say “what is this”.';
+      'I can’t tell which part you mean in this demo board. Try “point to the processor”, “where is the battery connector”, or tap a region and say “what is this”.';
     return {
       requestId,
       frameId,

@@ -61,7 +61,7 @@ export class Store {
         mime_type TEXT NOT NULL,
         width INTEGER NOT NULL,
         height INTEGER NOT NULL,
-        grid_size INTEGER NOT NULL,
+        grid_size INTEGER,
         captured_at TEXT NOT NULL,
         created_at TEXT NOT NULL,
         FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
@@ -648,12 +648,9 @@ export class Store {
     id,
     projectId,
     originalBuffer,
-    overlayBuffer = null,
-    overlaySvg = null,
     mimeType = 'image/jpeg',
     width,
     height,
-    gridSize,
     capturedAt,
   }) {
     if (!id || !projectId || !Buffer.isBuffer(originalBuffer)) {
@@ -666,17 +663,18 @@ export class Store {
     mkdirSync(join(this.capturesDir, safeProject), { recursive: true });
     const ext = mimeType === 'image/png' ? 'png' : mimeType === 'image/webp' ? 'webp' : 'jpg';
     const originalPath = join(this.capturesDir, safeProject, `${safeCapture}-original.${ext}`);
-    const overlayPath = overlayBuffer ? join(this.capturesDir, safeProject, `${safeCapture}-overlay.png`) : null;
     const ts = now();
 
     try {
+      // Legacy columns are written as NULL/0 so an older database still opens.
+      // No grid and no overlay are produced any more.
       this.db.prepare(`
         INSERT INTO captures (id, project_id, original_path, overlay_path, overlay_svg,
           mime_type, width, height, grid_size, captured_at, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, NULL, NULL, ?, ?, ?, 0, ?, ?)
       `).run(
-        id, projectId, originalPath, overlayPath, overlaySvg || null,
-        mimeType, Math.round(width), Math.round(height), Math.round(gridSize),
+        id, projectId, originalPath,
+        mimeType, Math.round(width), Math.round(height),
         capturedAt || ts, ts,
       );
     } catch (err) {
@@ -691,10 +689,8 @@ export class Store {
     try {
       // 'wx' refuses to overwrite an existing file. The original is immutable.
       writeFileSync(originalPath, originalBuffer, { flag: 'wx' });
-      if (overlayPath) writeFileSync(overlayPath, overlayBuffer, { flag: 'wx' });
     } catch (err) {
       this._deleteFile(originalPath);
-      if (overlayPath) this._deleteFile(overlayPath);
       this.db.prepare('DELETE FROM captures WHERE id = ?').run(id);
       const failed = new Error(`Could not store capture ${id}: ${err.message}`);
       failed.code = 'CAPTURE_WRITE_FAILED';
@@ -711,13 +707,10 @@ export class Store {
       projectId: row.project_id,
       width: row.width,
       height: row.height,
-      gridSize: row.grid_size,
       mimeType: row.mime_type,
       capturedAt: row.captured_at,
       createdAt: row.created_at,
-      hasOverlay: Boolean(row.overlay_path || row.overlay_svg),
       originalUrl: `/api/captures/${row.id}/original`,
-      overlayUrl: row.overlay_path || row.overlay_svg ? `/api/captures/${row.id}/overlay` : null,
     };
   }
 
@@ -734,21 +727,9 @@ export class Store {
   }
 
   /** Absolute file location + content type for serving a capture. */
-  getCaptureFile(id, kind = 'original') {
+  getCaptureFile(id) {
     const row = this.db.prepare('SELECT * FROM captures WHERE id = ?').get(id);
     if (!row) return null;
-    if (kind === 'overlay') {
-      if (row.overlay_path && existsSync(row.overlay_path)) {
-        return { path: row.overlay_path, mimeType: 'image/png' };
-      }
-      if (row.overlay_svg) {
-        return { inlineText: row.overlay_svg, mimeType: 'image/svg+xml' };
-      }
-      if (row.original_path && existsSync(row.original_path)) {
-        return { path: row.original_path, mimeType: row.mime_type };
-      }
-      return null;
-    }
     if (!row.original_path || !existsSync(row.original_path)) return null;
     return { path: row.original_path, mimeType: row.mime_type };
   }
@@ -758,10 +739,9 @@ export class Store {
     for (const img of images) this._deleteFile(img.path);
     const objects = this.db.prepare('SELECT crop_image_path FROM objects WHERE project_id = ?').all(id);
     for (const obj of objects) if (obj.crop_image_path) this._deleteFile(obj.crop_image_path);
-    const captures = this.db.prepare('SELECT original_path, overlay_path FROM captures WHERE project_id = ?').all(id);
+    const captures = this.db.prepare('SELECT original_path FROM captures WHERE project_id = ?').all(id);
     for (const cap of captures) {
       if (cap.original_path) this._deleteFile(cap.original_path);
-      if (cap.overlay_path) this._deleteFile(cap.overlay_path);
     }
     try {
       if (/^[A-Za-z0-9_-]{1,80}$/.test(String(id))) {

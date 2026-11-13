@@ -76,6 +76,7 @@ import { segmentationStore } from './services/segmentationStore.js';
 import { json, logRequest, logError, getServerLogs, clearServerLogs } from './lib/http.js';
 import { serveStatic } from './lib/static.js';
 import { handleGetScaler } from './routes/scaler.js';
+import { handleRecognizerStatus, recognizerClassifyHandler } from './routes/recognizer.js';
 import { initSessionToken, getSessionToken, validateSessionToken, authMiddleware } from './lib/auth.js';
 import { providerHealthSnapshot } from './services/provider.js';
 import { Store } from './store.js';
@@ -326,6 +327,18 @@ const server = createServer(async (req, res) => {
       } else {
         json(res, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'Use GET or DELETE.' } });
       }
+    } else if (path === '/api/recognizer/status') {
+      if (req.method !== 'GET') {
+        json(res, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'Use GET.', retryable: false } });
+      } else {
+        handleRecognizerStatus(req, res);
+      }
+    } else if (path === '/api/recognizer/classify') {
+      if (req.method !== 'POST') {
+        json(res, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'Use POST.', retryable: false } });
+      } else {
+        await recognizerClassifyHandler(req, res);
+      }
     } else if (path === '/api/component/analyze') {
       if (req.method !== 'POST') {
         json(res, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'Use POST.', retryable: false } });
@@ -352,9 +365,9 @@ const server = createServer(async (req, res) => {
       } else {
         json(res, 405, { error: { code: 'METHOD_NOT_ALLOWED', message: 'Use GET or POST.', retryable: false } });
       }
-    } else if (path.match(/^\/api\/captures\/([^\/]+)\/(original|overlay)$/) && req.method === 'GET') {
-      const match = path.match(/^\/api\/captures\/([^\/]+)\/(original|overlay)$/);
-      captureFileHandler(req, res, store, decodeURIComponent(match[1]), match[2]);
+    } else if (path.match(/^\/api\/captures\/([^\/]+)\/original$/) && req.method === 'GET') {
+      const match = path.match(/^\/api\/captures\/([^\/]+)\/original$/);
+      captureFileHandler(req, res, store, decodeURIComponent(match[1]));
     } else if (path.match(/^\/api\/captures\/([^\/]+)$/) && req.method === 'GET') {
       const id = decodeURIComponent(path.match(/^\/api\/captures\/([^\/]+)$/)[1]);
       captureGetHandler(req, res, store, id);

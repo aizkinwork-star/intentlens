@@ -8,8 +8,6 @@
 // Used by the server (before persisting/returning a result) and by the client
 // (before drawing one), so both sides enforce the same rules.
 
-import { pointToCell, DEFAULT_GRID_SIZE, GRID_SIZES } from './grid.js';
-
 export const IDENTITY_STATUSES = ['confirmed_by_user', 'ai_candidate', 'unknown'];
 export const MODEL_IDENTITY_STATUSES = ['ai_candidate', 'unknown'];
 export const UNCERTAINTIES = ['low', 'medium', 'high'];
@@ -80,18 +78,13 @@ function pointInPolygon(point, polygon) {
   return inside;
 }
 
-function validateGridSize(gridSize) {
-  return GRID_SIZES.includes(gridSize) ? gridSize : DEFAULT_GRID_SIZE;
-}
-
 /**
  * Convert and validate the model's raw component JSON.
- * Raw coordinates are 0..1000 integers (the model grid).
+ * Raw coordinates are 0..1000 integers (the model coordinate convention).
  * Returns { ok: true, result } or { ok: false, errors }.
  */
-export function toComponentResult(raw, { gridSize = DEFAULT_GRID_SIZE } = {}) {
+export function toComponentResult(raw) {
   const errors = [];
-  const size = validateGridSize(gridSize);
 
   if (!raw || typeof raw !== 'object') {
     return { ok: false, errors: ['The model did not return a JSON object.'] };
@@ -152,11 +145,7 @@ export function toComponentResult(raw, { gridSize = DEFAULT_GRID_SIZE } = {}) {
         } else if (center && !pointInPolygon(center, corners)) {
           errors.push('location.center is outside the corner outline.');
         } else if (center) {
-          location = {
-            grid_cell: pointToCell(center.x, center.y, size).cellId,
-            center,
-            corners,
-          };
+          location = { center, corners };
         }
       }
     }
@@ -187,8 +176,7 @@ export function toComponentResult(raw, { gridSize = DEFAULT_GRID_SIZE } = {}) {
  * Validate an already-normalized result (server output, before the client draws
  * it). This is a second, independent check: the model is never trusted blindly.
  */
-export function validateNormalizedComponentResult(raw, { gridSize = DEFAULT_GRID_SIZE } = {}) {
-  const size = validateGridSize(gridSize);
+export function validateNormalizedComponentResult(raw) {
   const errors = [];
   if (!raw || typeof raw !== 'object') return { ok: false, errors: ['Result must be an object.'] };
 
@@ -228,14 +216,6 @@ export function validateNormalizedComponentResult(raw, { gridSize = DEFAULT_GRID
           errors.push('location.corners are not a consistent outline.');
         } else if (center && !pointInPolygon(center, corners)) {
           errors.push('location.center is outside the corner outline.');
-        }
-      }
-      if (typeof raw.location.grid_cell !== 'string' || !/^R\d+C\d+$/.test(raw.location.grid_cell)) {
-        errors.push('location.grid_cell is missing or malformed.');
-      } else if (center) {
-        const expected = pointToCell(center.x, center.y, size).cellId;
-        if (raw.location.grid_cell !== expected) {
-          errors.push('location.grid_cell does not match the center on the active grid.');
         }
       }
     }

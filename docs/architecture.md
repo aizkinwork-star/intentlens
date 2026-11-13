@@ -4,9 +4,12 @@
 > context. **It is historical.** Sections written before the multi-provider change
 > describe a Meta-only allowlist that no longer exists; the current provider and
 > budget design is in `MULTI_PROVIDER_ARCHITECTURE.md`, and the lighting, tracking
-> and PCB/heuristic accuracy design is in `PERCEPTION_AND_ACCURACY.md`. The
-> default grid is 64x64, and a local k-NN classifier runs on the device. See
-> `../README.md` for current behavior, verified providers and limitations.
+> and PCB/heuristic accuracy design is in `PERCEPTION_AND_ACCURACY.md`.
+> The visual grid overlay and `gridCell` addressing described below were removed;
+> coordinates are still model `0..1000` converted to normalized points/boxes. A
+> measured ElectroCom61 ONNX classifier runs on the device; see
+> `COMPONENT_RECOGNITION.md`. See `../README.md` for current behavior, verified
+> providers and limitations.
 
 **Document status:** Build specification for a time-boxed hackathon prototype  
 **Date:** 26 October 2026  

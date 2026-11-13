@@ -46,7 +46,7 @@
           <div class="menuHeading" data-section="localmodel">Vision Provider &amp; Model <span class="menuChevron">▼</span></div>
           <div class="menuBody" id="menuBody-localmodel" style="display:block">
             <div class="menuRow note">
-              Cloud AI is optional. Any catalogued provider (free or paid) can be used with your own key: OpenRouter, Groq, Google AI Studio, NVIDIA NIM, Cloudflare Workers AI, Mistral, Cerebras, Together, Hugging Face, DeepInfra, OpenAI, Anthropic, local Ollama, or a custom HTTPS relay. Camera preview, grid, tap-to-track and the k-NN reference index run locally.
+              Cloud AI is optional. Any catalogued provider (free or paid) can be used with your own key: OpenRouter, Groq, Google AI Studio, NVIDIA NIM, Cloudflare Workers AI, Mistral, Cerebras, Together, Hugging Face, DeepInfra, OpenAI, Anthropic, local Ollama, or a custom HTTPS relay. Camera preview, tap-to-track and the k-NN reference index run locally.
             </div>
             <div class="menuRow">
               <span class="menuLabel">Runtime</span>
@@ -159,7 +159,7 @@
           </div>
         </div>
 
-        <div class="menuGroupTitle">Tracking &amp; Grid</div>
+        <div class="menuGroupTitle">Tracking</div>
 
         <!-- Tracking -->
         <div class="menuSection">
@@ -205,26 +205,6 @@
                 <span style="color:#ff9f43;">Loose object tracking mode (local)</span>
               </label>
             </div>
-          </div>
-        </div>
-
-        <!-- Grid -->
-        <div class="menuSection">
-          <div class="menuHeading" data-section="grid">Grid <span class="menuChevron">▼</span></div>
-          <div class="menuBody" id="menuBody-grid">
-            <div class="menuRow">
-              <span class="menuLabel">Grid lines</span>
-              <button id="gridToggle" type="button">on</button>
-            </div>
-            <div class="menuRow gridSizes">
-              <span class="menuLabel">Resolution</span>
-              <button class="gridSize" data-size="16" type="button">16×16</button>
-              <button class="gridSize" data-size="24" type="button">24×24</button>
-              <button class="gridSize" data-size="32" type="button">32×32</button>
-              <button class="gridSize active" data-size="64" type="button">64×64</button>
-              <button class="gridSize" data-size="128" type="button">128×128</button>
-            </div>
-            <div class="menuRow note">64×64 is the default. Grid size changes the cell address only; stored coordinates stay normalized.</div>
           </div>
         </div>
 
@@ -308,7 +288,7 @@
           <div class="menuHeading" data-section="privacy">Privacy &amp; Data <span class="menuChevron">▼</span></div>
           <div class="menuBody" id="menuBody-privacy">
             <div class="menuRow note">
-              IntentLens is local-first, not fully offline. Camera preview, grid, tap-to-track and the k-NN reference index run on this device. Analyze sends only the captured frame, your command and relevant task/object context to the AI provider you selected.
+              IntentLens is local-first, not fully offline. Camera preview, tap-to-track and the k-NN reference index run on this device. Analyze sends only the captured frame, your command and relevant task/object context to the AI provider you selected.
             </div>
             <div class="menuRow note">
               Requests use your own provider credential and are subject to that provider's policies, quotas and billing. No continuous live video is streamed. There is no local LLM; commands and responses are text-only.
@@ -415,7 +395,6 @@
         <div id="evStatus" class="evStatus">Capture a component to see image evidence.</div>
         <div id="evThumbWrap" class="evThumbWrap">
           <img id="evOriginal" class="evImg" alt="Captured still" hidden>
-          <img id="evOverlay" class="evImg evOverlay" alt="" hidden>
           <svg id="evCorners" class="evCorners" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true"></svg>
           <div id="evEmpty" class="evEmpty">No capture yet.<br>Align the board, then press Capture component.</div>
         </div>
@@ -437,7 +416,7 @@
 
       <!-- bottom: written answer, evidence, command -->
       <div class="bar">
-        <div id="answer" class="answer" aria-live="polite">Start the camera (or upload a photo), then type a command and press Find it. Tap the picture to pick a cell.</div>
+        <div id="answer" class="answer" aria-live="polite">Start the camera (or upload a photo), then type a command and press Find it. Tap the picture to pick a point.</div>
         <div id="instructionSteps" class="steps" hidden></div>
         <div id="meta" class="meta" hidden></div>
         <div id="sources" class="sources" hidden></div>
@@ -445,6 +424,11 @@
           <input id="command" type="text" placeholder="Where is the battery connector?" autocomplete="off" enterkeyhint="send">
           <button id="submit" type="button">Find it</button>
           <button id="cancel" type="button" class="ghost" hidden>Cancel</button>
+        </div>
+        <div class="row speakRow">
+          <button id="readAloudBtn" type="button" class="ghost" disabled>Read aloud</button>
+          <button id="stopReadAloudBtn" type="button" class="ghost" disabled>Stop voice</button>
+          <span id="speechNote" class="meta">Uses the phone's built-in voice. No microphone is used.</span>
         </div>
       </div>
 
@@ -472,7 +456,7 @@
     <div class="setupContent">
       <div class="setupHead">
         <p>
-          Camera preview, grid, tap-to-track and the k-NN reference index run locally. Cloud AI is optional and sends a captured frame only when you press <strong>Find it</strong>. There is no local Llama model on this machine.
+          Camera preview, tap-to-track and the k-NN reference index run locally. Cloud AI is optional and sends a captured frame only when you press <strong>Find it</strong>. There is no local Llama model on this machine.
         </p>
       </div>
       <div class="setupBody">
@@ -538,7 +522,7 @@
         </div>
         <div class="setupRow" id="setupNetworkRow" hidden>
           <div class="setupHint" style="color:var(--warn);">
-            Cloud requests are disabled for this install (ALLOW_OUTBOUND_NETWORK=false). Camera, grid and local k-NN still work. You can allow cloud requests for this session only, or set ALLOW_OUTBOUND_NETWORK=true and restart.
+            Cloud requests are disabled for this install (ALLOW_OUTBOUND_NETWORK=false). Camera and local k-NN still work. You can allow cloud requests for this session only, or set ALLOW_OUTBOUND_NETWORK=true and restart.
           </div>
           <button id="setupAllowOutbound" type="button" class="small">Allow cloud requests for this session</button>
         </div>

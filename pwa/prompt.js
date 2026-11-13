@@ -62,7 +62,9 @@ You must reason only from visible evidence in the image and the supplied project
 Hard rules:
 - Never invent a component identity, part number, pinout, polarity, voltage or rating that you cannot see.
 - Visually similar components can have different pinouts. Do not assume they are interchangeable.
-- Local candidates, if any, are unverified guesses. Treat them as weak hints, not facts.
+- Local recogniser candidates are unverified guesses. They may be wrong. Treat them as weak hints, not facts.
+- The datasetVocabulary list is the label set the local recogniser was trained on. Prefer an exact name from it when the visible part matches; ignore it when the image shows something else.
+- A local candidate with a confidence value is still unverified. Never quote that number as a probability in your answer.
 - If the image does not support a location, set location to null. Do not fabricate a bounding box.
 - If identity, orientation, polarity, pinout or variant is unclear, set next_action to ask_question or request_closer_image.
 - Only start from parts the project context lists as available or user-confirmed. Never assume an unmentioned part is available.
@@ -86,20 +88,35 @@ export function buildComponentPrompt({
   projectContext = null,
   capture = null,
   localCandidates = [],
+  datasetClasses = [],
   question = '',
   userCorrection = null,
   previousInstruction = null,
 } = {}) {
+  const candidates = Array.isArray(localCandidates)
+    ? localCandidates.slice(0, 5).map((item) => ({
+      name: String(item?.name || 'unknown').slice(0, 80),
+      confidence: Number.isFinite(Number(item?.confidence)) ? Math.round(Number(item.confidence) * 1000) / 1000 : null,
+      note: 'unverified local candidate; confidence is a model softmax, not a guarantee',
+    }))
+    : [];
+  const vocabulary = Array.isArray(datasetClasses)
+    ? [...new Set(datasetClasses.map((name) => String(name || '').trim()).filter(Boolean))].slice(0, 96)
+    : [];
+
   const context = {
     project: projectContext,
     capture: capture ? {
       width: capture.width,
       height: capture.height,
-      gridSize: capture.gridSize,
-      coordinateConvention: 'origin top-left; x increases right; y increases down; normalized 0..1 inside the app',
+      coordinateConvention: 'origin top-left; x increases right; y increases down; model speaks 0..1000, app stores normalized 0..1',
     } : null,
-    localCandidates: Array.isArray(localCandidates) ? localCandidates.slice(0, 5) : [],
+    localCandidates: candidates,
     localCandidatesAreFallible: true,
+    datasetVocabulary: vocabulary.length ? {
+      note: 'The local recogniser was trained on these labels. Prefer one of these exact names when the visible part matches; ignore the list when it does not.',
+      classes: vocabulary,
+    } : null,
     userCorrection: userCorrection || null,
     previousInstruction: previousInstruction || null,
   };

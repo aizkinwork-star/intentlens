@@ -16,6 +16,8 @@ const shared = [
   'componentResult.js',
   'modelRegistry.js',
   'costCore.js',
+  'speech.js',
+  'componentVocabulary.js',
 ];
 
 mkdirSync(lib, { recursive: true });

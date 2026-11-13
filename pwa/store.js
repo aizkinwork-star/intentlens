@@ -151,7 +151,6 @@ export async function putImage(image) {
     dataUrl: image.dataUrl,
     width: image.width,
     height: image.height,
-    gridSize: image.gridSize,
     createdAt: image.createdAt || now(),
   };
   const tx = db.transaction('images', 'readwrite');

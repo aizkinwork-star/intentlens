@@ -1,8 +1,6 @@
 // Turns a request into an explicit, inspectable prompt (architecture.md §7).
 // Nothing here is hidden: everything sent to the model is built from named fields,
 // and the same fields are what the UI shows as "context".
-import { pointToCell, boxCenter, DEFAULT_GRID_SIZE } from '../../grid.js';
-
 const DEFAULT_LIMITS = {
   command: 500,
   taskSummary: 300,
@@ -44,16 +42,6 @@ function sceneLine(item) {
   bits.push(`from_frame=${item.sourceFrameId}`);
   bits.push(item.status === 'stale' ? 'STALE (coordinates are from an older frame)' : `status=${item.status || 'current'}`);
   return bits.join(' | ');
-}
-
-function cellOf(pointOrBox, size = DEFAULT_GRID_SIZE) {
-  if (!pointOrBox) return null;
-  const p = pointOrBox.point || boxCenter(pointOrBox.box);
-  try {
-    return pointToCell(p.x, p.y, size).cellId;
-  } catch {
-    return null;
-  }
 }
 
 export const INSTRUCTIONS = `You are the visual grounding component of IntentLens, a task-aware visual assistant.
@@ -106,9 +94,8 @@ export function buildGroundingPrompt(request, limits = DEFAULT_LIMITS) {
 
   if (request.userSelectedRegion) {
     const r = request.userSelectedRegion;
-    const cell = r.cellId || cellOf({ point: r }, request.gridSize || DEFAULT_GRID_SIZE);
     lines.push('## The user tapped this region of the current image');
-    lines.push(`${cell ? `grid cell ${cell}, ` : ''}point=(${fmt(r.x)}, ${fmt(r.y)})`);
+    lines.push(`point=(${fmt(r.x)}, ${fmt(r.y)})`);
     lines.push('Treat this as a strong hint about what "this" or "here" refers to.');
     lines.push('');
   }

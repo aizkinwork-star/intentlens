@@ -37,19 +37,23 @@ Both surfaces share the same pure modules for coordinates, result validation and
 ## What works
 
 - **Camera and upload** — live preview, frozen stills, phone gallery upload and desktop file upload.
-- **Grid grounding** — a 16/24/32/64/128 cell grid; the model returns `0..1000` coordinates, the app validates and converts them to normalized boxes.
+- **Local component recognition** — a measured ElectroCom61 classifier (ResNet-18 + linear head, exported to ONNX). **94.15%** held-out test accuracy, **93.00%** through the shipped JS + onnxruntime path. It proposes candidates; the AI and the user decide identity. See [docs/COMPONENT_RECOGNITION.md](docs/COMPONENT_RECOGNITION.md).
+- **Coordinate grounding** — the model returns `0..1000` coordinates; the app validates them and converts them to normalized points/boxes. There is no visual grid overlay.
+- **Read aloud** — the written answer can be spoken with the browser's built-in voice. Text-to-speech only; the app never opens the microphone.
 - **Local tracking** — colour-histogram + patch similarity tracking, reacquisition and a visible state machine. No per-frame AI calls.
 - **Lighting repair** — measures a still and only repairs genuinely dim, low-contrast or uneven frames. Blown highlights are never pushed brighter.
 - **Hinge / articulation tracking** — local, model-free angle estimate from two board edges, or a coarse frame-only orientation hint. Explicitly labelled as a hint when it comes from a raw frame.
 - **PCB registration and confidence** — board homography, per-component presence verification, explainable component confidence, board-quad sanity checks, IoU precision/recall and calibration metrics.
 - **Any vision provider** — OpenRouter, Groq, Google AI Studio, NVIDIA NIM, Cloudflare Workers AI, Mistral, Together, Hugging Face, DeepInfra, OpenAI, Anthropic, local Ollama, or a custom HTTPS relay. Free, preview and paid tiers are selectable.
+- **Key-first selection** — a provider is only used when its own key is present; free tier auto-selects free models, paid tier uses paid models.
+- **10-second answer deadline** — a slow attempt is aborted and the next provider is tried instead of waiting minutes.
 - **Failover** — auth, quota, rate-limit, timeout and outage errors move to the next configured provider.
 - **Hard budgets** — a pessimistic preflight reserves the worst-case cost against daily, monthly and per-request caps before any request is sent.
 - **Optional hosted masks** — SAM 2 via Replicate, with a server-side key, same-origin mask cache, timeouts, mask/byte caps and a flat per-run budget guard. Off by default. It proposes masks; it does not identify components.
 - **Phone transfer** — a one-time code plus a desktop-served upload page for gallery photos over the LAN; project JSON export/import for offline transfer.
 - **CLI** — health, provider list, model list, budget get/set/reset, analysis and sync-code creation.
 
-Not built: live desktop↔phone video sync, an APK, glasses integration, a trained end-to-end component classifier, and a PWA overlay for hosted masks (the server API and mask cache are ready; the phone UI is not wired yet).
+Not built: live desktop↔phone video sync, an APK, glasses integration, a PWA overlay for hosted masks, and pin/polarity/board-region labels for step-level guidance. The server API and mask cache are ready; the phone UI is not wired yet.
 
 ---
 
@@ -109,8 +113,9 @@ The installer is written under `electron/release/` and is not committed.
 ```text
 Browser / Electron renderer
   app.js (desktop) or pwa/app.js (phone)
-    capture → lighting check → grid → prompt → provider call → validate → draw
-    local perception: tracker.js, componentDetector.js, OpenCV loader, k-NN
+    capture → lighting check → prompt → provider call → validate → draw
+    local perception: tracker.js, componentDetector.js, OpenCV loader
+    local recognition: /api/recognizer/classify (desktop) or optional PWA endpoint
                  │
                  │ /api/* (desktop only, session token)
                  ▼
@@ -131,13 +136,15 @@ Node server (server/index.js)
 | --- | --- |
 | `modelRegistry.js` | One catalogue of providers, models, modalities, tiers, prices, context windows and endpoints. Used by the server, desktop UI and PWA. |
 | `costCore.js` | Pure budget normalisation, window sums, pessimistic preflight, usage entries and pruning. No I/O, so it is directly testable. |
-| `grid.js` | Grid sizes and coordinate conversions. |
+| `grid.js` | Point/box/letterbox coordinate math. The visual overlay grid was removed. |
 | `componentResult.js` | The only boundary that converts `0..1000` model coordinates to normalized boxes and rejects invalid markers. |
+| `componentVocabulary.js` | The 61 ElectroCom61 labels the local recogniser can emit, shared by desktop and PWA prompts. |
+| `speech.js` | Read-aloud via the browser Web Speech API. Synthesis only; no microphone. |
 | `schema.js` | Result validation shared by both clients. |
 
 ### Why one catalogue
 
-Before, provider names and model ids lived in several files. That is how a model can be “allowed” in one place and rejected in another. Now `modelRegistry.js` is the single source of truth; `server/config.js`, the desktop settings UI and `pwa/provider.js` derive everything from it. `scripts/prepare-pwa.mjs` copies it (plus `costCore.js`, `grid.js`, `componentResult.js`) into `pwa/lib/` so the browser build uses the same rules.
+Before, provider names and model ids lived in several files. That is how a model can be “allowed” in one place and rejected in another. Now `modelRegistry.js` is the single source of truth; `server/config.js`, the desktop settings UI and `pwa/provider.js` derive everything from it. `scripts/prepare-pwa.mjs` copies it (plus `costCore.js`, `grid.js`, `componentResult.js`, `componentVocabulary.js`, `speech.js`) into `pwa/lib/` so the browser build uses the same rules.
 
 ---
 
@@ -233,10 +240,13 @@ Pure functions, no DOM and no OpenCV:
   - With a raw frame, `dominantOrientations` bins Sobel gradients and returns the angle between the two strongest peaks. The result is `method: 'orientation'` and is a coarse hint, never a calibrated measurement.
   - Smoothing, velocity, jump clamping, loss and reacquisition are covered by synthetic tests.
 
-### 3. PCB and grid confidence (`perception/pcb/gridConfidence.js`)
+### 3. PCB geometry confidence (`perception/pcb/gridConfidence.js`)
 
+- Board-quad sanity checks, component presence/confidence and IoU precision/recall.
+- Grid-line alignment scores remain as a geometry heuristic over detected board features; there is no visual grid overlay in the product.
 - `iou`, one-to-one greedy matching, precision, recall, F1 and a symmetric accuracy.
-- Grid snap and grid-line alignment scores, so a model's use of the requested grid can be checked.
+- `iou`, one-to-one greedy matching, precision, recall, F1 and a symmetric accuracy.
+- Grid snap and grid-line alignment scores remain as geometry signals over detected board features (not a user-facing grid).
 - `boardQuadQuality` rejects bow-ties, slivers and self-intersecting projected boards before they are drawn.
 - `componentConfidence` combines declared evidence (similarity, focus, presence, position) with published weights, so a confidence number can be explained.
 - `calibrationReport` computes Brier score and expected calibration error.
@@ -336,7 +346,9 @@ Tests run on Node's built-in test runner with no third-party dependency. `node -
 ## Privacy and security
 
 - **Keys never reach the browser.** The desktop server stores credentials encrypted (Electron `safeStorage` / Windows DPAPI) and applies them only inside the server process.
-- **Outbound network is opt-in.** `ALLOW_OUTBOUND_NETWORK=false` by default. Local camera, grid, tracking, lighting and k-NN still work.
+- **Outbound network is opt-in.** `ALLOW_OUTBOUND_NETWORK=false` by default. Local camera, tracking, lighting and the local recogniser still work.
+- **Answer read-aloud is local.** It uses the browser's built-in speech synthesis. There is no microphone capture, speech recognition or recording anywhere in the app.
+- **The recogniser never calls the network.** `/api/recognizer/status` and `/api/recognizer/classify` run the ONNX model in-process. The PWA only sends a crop to an endpoint you explicitly configure, and only over https, same-origin or loopback.
 - **Hosted segmentation is separately opt-in.** `SAM2_ENABLED=true` plus a server-side Replicate token. When enabled, the captured still is sent to Replicate for masks; when disabled, no frame leaves the machine for segmentation. Masks are cached locally for a bounded TTL and served same-origin.
 - **Host allowlist.** Known provider hosts plus explicit HTTPS relays. A custom relay must be HTTPS; private LAN IP literals are refused. Ollama is the loopback exception. Replicate is allowlisted only for the optional segmentation path.
 - **Only captured frames are sent.** No continuous video stream. Images leave the device only when you press Find it.
@@ -369,6 +381,8 @@ Never commit `.env`, `intentlens-data/`, `intentlens-config.json`, generated `pw
 app.js / index.html              desktop renderer
 style.css / sw.js                UI and service worker
 grid.js / componentResult.js     shared coordinate + validation modules
+componentVocabulary.js           shared ElectroCom61 label set
+speech.js                        read-aloud (browser speech synthesis only)
 modelRegistry.js                 shared provider/model catalogue
 costCore.js                      shared budget rules
 tracker.js / looseObjectTracker.js
@@ -396,8 +410,9 @@ docs/                            architecture, audits, evaluation notes
 ## Docs
 
 - `docs/architecture.md` — original architecture; sections written before the multi-provider change are historical. Use `docs/MULTI_PROVIDER_ARCHITECTURE.md` for current provider/budget design.
-- `docs/PERCEPTION_AND_ACCURACY.md` — lighting, hinge, PCB confidence and how to measure accuracy honestly.
-- `docs/HOSTED_SAM.md` — optional SAM 2 via Replicate: setup, API, limits, privacy and evaluation rules.
+- `docs/PERCEPTION_AND_ACCURACY.md` - lighting, hinge, PCB confidence and how to measure accuracy honestly.
+- `docs/COMPONENT_RECOGNITION.md` - ElectroCom61 classifier: measured 94.15% offline / 93.00% runtime accuracy and reproduction commands.
+- `docs/HOSTED_SAM.md` - optional SAM 2 via Replicate: setup, API, limits, privacy and evaluation rules.
 - `docs/INSTALL.md`, `docs/SETUP_GUIDE.md` — installation and provider setup.
 - `docs/KNN_EVALUATION.md`, `docs/PHASE6_*` — local reference experiments.
 - `docs/DEVICE_TEST_CHECKLIST.md` — what still needs physical hardware.

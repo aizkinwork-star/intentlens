@@ -80,6 +80,9 @@ button.ghost { background: transparent; }
 .sources .ev { display: block; margin: 1px 0; }
 .sources .ev-kind { opacity: .8; margin-right: 4px; }
 .row { display: flex; gap: 6px; }
+.speakRow { margin-top: 5px; align-items: center; flex-wrap: wrap; }
+.speakRow button { flex: 0 0 auto; }
+.speakRow .meta { display: inline; margin: 0; font-size: .68rem; }
 input { flex: 1; min-width: 0; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--line);
   background: var(--panel); color: var(--text); font: inherit; font-size: .85rem; }
 #submit { background: #1b6fa8; border-color: #1b6fa8; }
@@ -157,8 +160,6 @@ input { flex: 1; min-width: 0; padding: 7px 10px; border-radius: 8px; border: 1p
 .menuList { color: var(--muted); font-size: .8rem; line-height: 1.5; }
 
 button.small { padding: 4px 10px; font-size: .75rem; border-radius: 6px; }
-.gridSize { padding: 4px 8px; border-radius: 6px; font-size: .78rem; }
-.gridSize.active { background: var(--cyan); color: #000; border-color: var(--cyan); font-weight: 600; }
 .note { font-size: .74rem; color: var(--muted); margin-top: 4px; }
 
 .menuLink { color: var(--cyan); text-decoration: underline; cursor: pointer; }
@@ -309,12 +310,6 @@ button.small { padding: 4px 10px; font-size: .75rem; border-radius: 6px; }
   text-transform: uppercase;
 }
 .menuPanel .menuGroupTitle:first-of-type { margin-top: 4px; }
-.gridSizes { row-gap: 6px; }
-.gridSizes .gridSize { flex: 0 1 auto; min-width: 62px; }
-@media (max-width: 460px) {
-  .gridSizes .menuLabel { flex-basis: 100%; }
-  .gridSizes .gridSize { flex: 1 1 28%; }
-}
 
 .setupPopup { width: min(560px, 94vw); }
 .setupHeader { gap: 12px; align-items: flex-start; }
@@ -446,7 +441,6 @@ button.small { padding: 4px 10px; font-size: .75rem; border-radius: 6px; }
   margin-bottom: 6px;
 }
 .evImg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block; }
-.evOverlay { pointer-events: none; }
 .evCorners { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .evCorners polygon { fill: rgba(255, 77, 94, 0.10); stroke: var(--target); stroke-width: 2; vector-effect: non-scaling-stroke; }
 .evCorners circle { fill: var(--target); stroke: #fff; stroke-width: 1; vector-effect: non-scaling-stroke; }
@@ -455,7 +449,6 @@ button.small { padding: 4px 10px; font-size: .75rem; border-radius: 6px; }
   color: var(--muted); font-size: 0.7rem; padding: 8px; line-height: 1.35;
 }
 .evMeta { font-size: 0.68rem; color: var(--muted); line-height: 1.4; margin-bottom: 6px; }
-.evMeta .cellTag { color: var(--cyan); font-family: ui-monospace, monospace; }
 .evActions { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 5px; }
 .evActions button { flex: 1 1 auto; }
 .evCorrectRow { display: flex; gap: 5px; margin-bottom: 6px; }

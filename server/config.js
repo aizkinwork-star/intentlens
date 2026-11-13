@@ -32,6 +32,7 @@ import {
   providerLabel,
   providerSupportsModel as registrySupportsModel,
   providerSupportsVisionModel as registrySupportsVision,
+  defaultModelFor,
 } from '../modelRegistry.js';
 
 loadEnv();
@@ -353,6 +354,9 @@ export const config = {
   maxRequestUsd: Number(process.env.MAX_REQUEST_USD || 0.25),
   maxInputTokens: int(process.env.MAX_INPUT_TOKENS, 12000),
   maxOutputTokens: int(process.env.MAX_OUTPUT_TOKENS, 2048),
+  // Hard answer deadline. The router aborts an attempt when the remaining
+  // budget runs out and never waits 120-180s for one slow provider.
+  answerDeadlineMs: int(process.env.ANSWER_DEADLINE_MS, 10_000),
 
   // Flattened legacy fields.
   cloudflareAccountId: (process.env.CLOUDFLARE_ACCOUNT_ID || '').trim(),
@@ -458,13 +462,17 @@ export function sam2Status() {
   };
 }
 
-/** Resolve the effective model for a provider, falling back to its default. */
+/** Resolve the effective model for a provider, falling back to its recommended tier default. */
 export function effectiveModelId(id, modelId = '') {
   const chosen = String(modelId || '').trim() || providerSelectedModel(id);
-  if (chosen) return chosen;
-  const defaults = modelsFor(id, { tier: config.accessTier, visionOnly: true });
-  const entry = Object.values(defaults).find((m) => m.verified) || Object.values(defaults)[0];
-  return entry?.id || '';
+  if (chosen && modelAllowedAtTier(id, chosen, config.accessTier)) return chosen;
+  // Tier-aware automatic selection: free tier -> recommended free model,
+  // paid tier -> recommended paid model. Fast models win on the 10s path.
+  return defaultModelFor(id, {
+    tier: config.accessTier,
+    visionOnly: true,
+    preferFast: config.answerDeadlineMs > 0 && config.answerDeadlineMs <= 12_000,
+  });
 }
 
 /** Provider has credentials and a usable vision model at the selected tier. */

@@ -19,9 +19,10 @@ test('transition rules', () => {
 });
 
 test('observation without identity', () => {
-  const o = createObservation({ trackId: 't1', bbox: [0,0,10,10], gridCell: 'R1C1' });
+  const o = createObservation({ trackId: 't1', bbox: [0,0,10,10], normalized: { x: 0.5, y: 0.5 } });
   assert.equal(o.state, IDENTITY_STATES.DETECTED);
   assert.equal(o.classification, null);
+  assert.equal(o.gridCell, undefined);
 });
 
 test('candidate prediction sets state', () => {
@@ -48,7 +49,7 @@ test('mark lost', () => {
 });
 
 test('shared context hash deterministic', () => {
-  const o = createObservation({ trackId: 't5', gridCell: 'R2C2' });
+  const o = createObservation({ trackId: 't5' });
   const c1 = buildSharedContext({ sessionId: 's', observations: [o] });
   const c2 = buildSharedContext({ sessionId: 's', observations: [o] });
   assert.equal(c1.contextHash, c2.contextHash);
@@ -76,7 +77,7 @@ test('classification cache', () => {
 });
 
 test('export sample metadata', () => {
-  const o = createObservation({ trackId: 't7', gridCell: 'R1C1', cropHash: 'abc' });
+  const o = createObservation({ trackId: 't7', cropHash: 'abc' });
   const s = buildExportSample({ observation: o, session: 'sess', imageQuality: {w:10,h:10} });
   assert.equal(s.trackId, 't7');
   assert.equal(s.cropHash, 'abc');

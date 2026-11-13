@@ -19,8 +19,9 @@ function timeoutFor(providerId, model) {
   return 60000;
 }
 
-function maxTokensFor(model) {
-  return Math.min(8192, Math.max(512, Number(model?.maxOutput) || 3072));
+function maxTokensFor(model, { fast = false } = {}) {
+  const cap = fast ? 1024 : 8192;
+  return Math.min(cap, Math.max(256, Number(model?.maxOutput) || 3072));
 }
 
 function buildOne(id) {
@@ -42,7 +43,7 @@ function buildOne(id) {
       modelId,
       baseUrl,
       timeoutMs: timeoutFor(id, model),
-      maxTokens: maxTokensFor(model),
+      maxTokens: maxTokensFor(model, { fast: config.answerDeadlineMs > 0 && config.answerDeadlineMs <= 12_000 }),
     });
   }
   if (!endpoint) throw new Error(`${runtime.label} has no endpoint`);
@@ -54,7 +55,7 @@ function buildOne(id) {
     apiKey,
     modelId,
     timeoutMs: timeoutFor(id, model),
-    maxTokens: maxTokensFor(model),
+    maxTokens: maxTokensFor(model, { fast: config.answerDeadlineMs > 0 && config.answerDeadlineMs <= 12_000 }),
     allowUnknownModel: id === 'custom',
   });
 }

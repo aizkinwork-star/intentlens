@@ -26,6 +26,31 @@ function mockProvider(id, { fail = false, code = 'MODEL_UPSTREAM_ERROR', retryab
   };
 }
 
+/** A provider that never answers on its own, but honours the abort signal. */
+function hangingProvider(id) {
+  let aborted = 0;
+  let calls = 0;
+  return {
+    id,
+    name: `Hanging ${id}`,
+    capabilities: { imageInput: true, structuredOutput: true, webGrounding: false },
+    async healthCheck() { return { ok: true }; },
+    analyze(input, signal) {
+      calls += 1;
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => resolve({ text: JSON.stringify(RAW) }), 30_000);
+        signal?.addEventListener('abort', () => {
+          aborted += 1;
+          clearTimeout(timer);
+          reject(appError('MODEL_TIMEOUT', 'aborted by the answer deadline'));
+        }, { once: true });
+      });
+    },
+    get aborted() { return aborted; },
+    get callCount() { return calls; },
+  };
+}
+
 test('router returns the first successful provider result', async () => {
   const router = new ProviderRouter()
     .use(mockProvider('first', { fail: true }))
@@ -70,4 +95,42 @@ test('healthCheckAll reports ok/fail per provider', async () => {
   const health = await router.healthCheckAll();
   assert.equal(health.good.ok, true);
   assert.equal(health.bad.ok, false);
+});
+
+test('a hung provider is aborted at the answer deadline instead of blocking the request', async () => {
+  const hung = hangingProvider('slow');
+  const fallback = mockProvider('fast');
+  const router = new ProviderRouter().use(hung).use(fallback);
+
+  const started = Date.now();
+  await assert.rejects(
+    () => router.analyze({ requestId: 'req_deadline', deadlineMs: 300 }),
+    (err) => {
+      assert.equal(err.code, 'MODEL_TIMEOUT');
+      return true;
+    },
+  );
+  const elapsed = Date.now() - started;
+
+  assert.ok(elapsed < 2_000, `expected the deadline to cut the wait, took ${elapsed} ms`);
+  assert.equal(hung.aborted, 1, 'the hung attempt must be aborted');
+  assert.equal(fallback.callCount, 0, 'no second attempt starts with no budget left');
+});
+
+test('a provider that answers inside the deadline is used even when a fallback exists', async () => {
+  const router = new ProviderRouter().use(mockProvider('primary')).use(mockProvider('backup'));
+  const out = await router.analyze({ requestId: 'req_ok', deadlineMs: 5_000 });
+  assert.equal(out.providerUsed, 'primary');
+  assert.equal(out.fallbackOccurred, false);
+});
+
+test('an already-spent deadline skips every provider and fails fast', async () => {
+  const first = mockProvider('a');
+  const router = new ProviderRouter().use(first);
+  await assert.rejects(() => router.analyze({ deadlineMs: 1 }), (err) => {
+    assert.equal(err.code, 'MODEL_TIMEOUT');
+    assert.equal(err.attempts[0].code, 'ANSWER_DEADLINE_REACHED');
+    return true;
+  });
+  assert.equal(first.callCount, 0, 'no provider request may start after the deadline');
 });

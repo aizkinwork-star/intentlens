@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "main": "electron/main.js",
-  "description": "Task-aware visual grounding prototype: phone/PC camera + command + any vision provider + grid overlay + local perception",
+  "description": "Task-aware visual grounding prototype: phone/PC camera + command + any vision provider + local ElectroCom61 component recognition",
   "engines": {
     "node": ">=22.5"
   },
@@ -17,6 +17,10 @@
     "pwa:prepare": "node scripts/prepare-pwa.mjs",
     "pwa:serve": "node scripts/serve-pwa.mjs",
     "eval:accuracy": "node scripts/eval-accuracy.mjs",
+    "test:accuracy": "node scripts/eval-runtime-accuracy.mjs --min 0.85",
     "cli": "node cli/intentlens.mjs"
+  },
+  "dependencies": {
+    "onnxruntime-web": "^1.31.1"
   }
 }

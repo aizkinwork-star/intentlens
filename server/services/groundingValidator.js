@@ -1,7 +1,7 @@
 // Converts the model's schema-constrained JSON into the GroundingResult the UI uses,
 // and decides the evidence labels. Anything materially wrong is rejected rather than
 // "repaired", because a wrong marker is worse than no marker.
-import { modelPointToNormalized, modelBoxToNormalized, pointToCell, DEFAULT_GRID_SIZE } from '../../grid.js';
+import { modelPointToNormalized, modelBoxToNormalized } from '../../grid.js';
 import { appError } from '../lib/errors.js';
 
 const MAX_ANSWER = 220;
@@ -96,7 +96,6 @@ export function toGroundingResult({ raw, request, citations = [], searchedWeb = 
       label,
       point,
       box,
-      gridCell: pointToCell(point.x, point.y, request.gridSize || DEFAULT_GRID_SIZE).cellId,
       confidence: t.confidence,
       freshness: 'current_frame',
     };

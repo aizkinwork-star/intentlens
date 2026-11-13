@@ -2,8 +2,7 @@
 //
 // One capture -> one analysis. No per-frame inference, no continuous tracking.
 // The capture must already be stored (POST /api/captures); this route reads the
-// immutable original and the separate grid overlay from disk, so the model sees
-// exactly what the user captured.
+// immutable original from disk, so the model sees exactly what the user captured.
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { json, readJson, recordServerLog } from '../lib/http.js';
@@ -13,6 +12,8 @@ import { buildRouter } from '../services/router.js';
 import { providerHealthSnapshot } from '../services/provider.js';
 import { providerAvailability, tryBuildRouter } from '../services/providerGate.js';
 import { COMPONENT_SCHEMA, buildComponentPrompt } from '../services/componentSchema.js';
+import { recognizerStatus } from '../services/componentRecognizer.js';
+import { ELECTROCOM61_CLASSES } from '../../componentVocabulary.js';
 import { toComponentResult } from '../../componentResult.js';
 import {
   addObjectToProject,
@@ -24,9 +25,9 @@ import {
 const ID_RE = /^[A-Za-z0-9_-]{1,80}$/;
 const clean = (value, max) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
 
-function imageDataUrlFromFile(store, captureId, kind) {
-  const file = store.getCaptureFile(captureId, kind);
-  if (!file || !file.path) return null; // An SVG overlay is display-only; never sent as vision input.
+function imageDataUrlFromFile(store, captureId) {
+  const file = store.getCaptureFile(captureId);
+  if (!file || !file.path) return null;
   const buffer = readFileSync(file.path);
   return `data:${file.mimeType};base64,${buffer.toString('base64')}`;
 }
@@ -41,20 +42,17 @@ export function readComponentRequest(body, { store } = {}) {
   if (captureId && !ID_RE.test(captureId)) throw appError('BAD_JSON', 'Invalid capture id.');
 
   let imageDataUrl = null;
-  let overlayDataUrl = null;
   let width = null;
   let height = null;
-  let gridSize = null;
 
   if (captureId) {
     if (!store) throw appError('INTERNAL_ERROR', 'Capture storage is unavailable.');
     const meta = store.getCapture(captureId);
     if (!meta) throw appError('NOT_FOUND', `Capture ${captureId} not found.`);
     if (meta.projectId !== projectId) throw appError('BAD_JSON', 'That capture belongs to a different project.');
-    imageDataUrl = imageDataUrlFromFile(store, captureId, 'original');
+    imageDataUrl = imageDataUrlFromFile(store, captureId);
     if (!imageDataUrl) throw appError('IMAGE_DECODE_FAILED', 'The stored capture file is missing.');
-    overlayDataUrl = imageDataUrlFromFile(store, captureId, 'overlay');
-    ({ width, height, gridSize } = meta);
+    ({ width, height } = meta);
   } else {
     const frame = body.capture || body.frame;
     if (!frame || typeof frame !== 'object' || typeof frame.dataUrl !== 'string') {
@@ -63,8 +61,6 @@ export function readComponentRequest(body, { store } = {}) {
     imageDataUrl = frame.dataUrl;
     width = Math.round(Number(frame.width));
     height = Math.round(Number(frame.height));
-    gridSize = Number(frame.gridSize);
-    overlayDataUrl = typeof body.overlayDataUrl === 'string' ? body.overlayDataUrl : null;
     if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
       throw appError('CAMERA_FRAME_MISSING', 'The inline capture is missing usable width/height.');
     }
@@ -74,6 +70,7 @@ export function readComponentRequest(body, { store } = {}) {
     ? body.localCandidates.slice(0, 5).map((item) => ({
       name: clean(item?.name, 80),
       distance: Number.isFinite(Number(item?.distance)) ? Number(item.distance) : null,
+      confidence: Number.isFinite(Number(item?.confidence)) ? Number(item.confidence) : null,
     })).filter((item) => item.name)
     : [];
 
@@ -82,10 +79,8 @@ export function readComponentRequest(body, { store } = {}) {
     projectId,
     captureId,
     imageDataUrl,
-    overlayDataUrl,
     width,
     height,
-    gridSize,
     question: clean(body.question, 800),
     userCorrection: clean(body.userCorrection, 160) || null,
     previousInstruction: clean(body.previousInstruction, 700) || null,
@@ -111,31 +106,38 @@ export async function runComponentAnalysis({ router, request, project, signal })
     ? projectContextForAI(project)
     : request.projectContext;
 
+  // The local recogniser's label vocabulary makes the AI's answer
+  // dataset-grounded instead of open-ended. It is context, not a command: the
+  // image and the user always win over the list.
+  const status = recognizerStatus();
+  // Fall back to the committed label list when the model files are absent, so
+  // the prompt is still dataset-grounded instead of open-ended.
+  const datasetClasses = status.model?.classNames || ELECTROCOM61_CLASSES;
+
   const prompt = buildComponentPrompt({
     projectContext,
     capture: {
       captureId: request.captureId || 'inline_capture',
       width: request.width,
       height: request.height,
-      gridSize: request.gridSize,
     },
     localCandidates: request.localCandidates,
+    datasetClasses,
     question: request.question || project?.userGoal || '',
     userCorrection: request.userCorrection,
     previousInstruction: request.previousInstruction,
   });
 
-  const images = [request.imageDataUrl, request.overlayDataUrl].filter(Boolean);
-
   const routed = await router.analyze({
     instructions: prompt.instructions,
     userText: prompt.userText,
     imageDataUrl: request.imageDataUrl,
-    imageDataUrls: images,
+    imageDataUrls: [request.imageDataUrl],
     imageMeta: { width: request.width, height: request.height },
     schema: COMPONENT_SCHEMA,
     allowWebSearch: false,
     requestId: request.requestId,
+    deadlineMs: config.answerDeadlineMs,
     signal,
   });
 
@@ -146,7 +148,7 @@ export async function runComponentAnalysis({ router, request, project, signal })
     throw appError('MODEL_BAD_RESPONSE', 'The model did not return valid JSON.');
   }
 
-  const converted = toComponentResult(rawJson, { gridSize: request.gridSize });
+  const converted = toComponentResult(rawJson);
   return { routed, rawJson, converted };
 }
 
@@ -187,7 +189,6 @@ function persistObject(store, { request, result, routed, requestId }) {  if (!st
     confirmed: false,
     uncertainty: result.component.uncertainty,
     evidence: result.component.evidence,
-    gridCell: result.location?.grid_cell || null,
     center: result.location?.center || null,
     corners: result.location?.corners || null,
     source: 'ai_vision',

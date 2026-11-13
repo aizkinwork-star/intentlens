@@ -50,7 +50,7 @@ test('text chat prompt never asks for or contains an image', () => {
 
 test('component prompt includes the exact answer schema', () => {
   const { instructions, userText } = buildComponentPrompt({
-    capture: { width: 640, height: 480, gridSize: 64 },
+    capture: { width: 640, height: 480 },
     question: 'Where is the resistor?',
   });
   assert.match(`${instructions}\n${userText}`, /JSON Schema for the answer/);
@@ -198,7 +198,7 @@ test('a budget preflight refuses the request before the network', async () => {
 test('provider presets expose the registry and label browser-blocked hosts', () => {
   assert.equal(PROVIDERS.openrouter.browserCors, 'allowed');
   assert.equal(PROVIDERS.groq.browserCors, 'allowed');
-  assert.equal(PROVIDERS.openrouter.defaultModel, 'meta-llama/llama-4-maverick');
+  assert.equal(PROVIDERS.openrouter.defaultModel, 'google/gemini-2.5-flash');
   assert.equal(PROVIDERS['nvidia-nim'].unavailableInBrowser, true);
   assert.match(PROVIDERS['nvidia-nim'].blockedMessage, /integrate\.api\.nvidia\.com/);
   assert.equal(PROVIDERS['cloudflare-workers-ai'].unavailableInBrowser, true);

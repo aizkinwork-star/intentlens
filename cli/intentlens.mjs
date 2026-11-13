@@ -237,7 +237,6 @@ async function main() {
       sessionId: 'cli',
       projectId: 'cli',
       command,
-      gridSize: 64,
       frame: {
         frameId: `cli_${Date.now()}`,
         dataUrl,

@@ -1,7 +1,7 @@
 # IntentLens Install & Run
 
 IntentLens is a local-first web app served by a small Node.js backend. Camera,
-grid, tap/drag tracking and the k-NN reference classifier run on this machine.
+tap/drag tracking and the k-NN reference classifier run on this machine.
 Cloud image analysis is optional and sends the frame only to the vision provider
 you configure.
 
@@ -138,11 +138,11 @@ For headless use, keep `.env` out of source control. The file is gitignored.
 ## Network gate
 
 `ALLOW_OUTBOUND_NETWORK=false` blocks cloud analysis and provider tests. Local camera,
-grid, tap-to-track, local classification and project memory still work. Set it to
+tap-to-track, local recognition and project memory still work. Set it to
 `true` and restart the server to use a cloud provider.
 
 This app is **local-first, not fully offline**. It sends a captured frame, your
-command and relevant task/object context to the selected Meta model host only when you
+command and relevant task/object context to the selected vision provider only when you
 press **Find it**.
 
 ## Camera notes
@@ -157,8 +157,8 @@ press **Find it**.
 
 1. Start the app and leave provider setup unconfigured, or set
    `ALLOW_OUTBOUND_NETWORK=false`.
-2. Confirm camera preview or photo upload, grid size changes, tap/drag tracking and
-   k-NN classification still work.
+2. Confirm camera preview or photo upload, tap/drag tracking and
+   local recognition still work.
 3. Confirm the UI says cloud AI is optional and does not claim a local Llama model.
 4. Configure a provider only when you are ready to send a frame to that host.
 5. Use **Logs** to inspect local diagnostics. Keys and image payloads are not logged.

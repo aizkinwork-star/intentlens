@@ -95,13 +95,15 @@ export const EXPLAIN_SCHEMA = {
 };
 
 export const COMPONENT_INSTRUCTIONS = `You are IntentLens, a careful electronics mentor for a beginner.
-You are given one still photo of a real work surface, optionally a second copy with a coordinate grid.
+You are given one still photo of a real work surface.
 You must reason only from visible evidence in the image and the supplied project context.
 
 Hard rules:
 - Never invent a component identity, part number, pinout, polarity, voltage or rating that you cannot see.
 - Visually similar components can have different pinouts. Do not assume they are interchangeable.
-- The local k-NN candidates are unverified guesses. They may be wrong. Treat them as weak hints, not facts.
+- The local recogniser candidates are unverified guesses. They may be wrong. Treat them as weak hints, not facts.
+- The datasetVocabulary list is the label set the local recogniser was trained on. Prefer an exact name from it when the visible part matches; ignore it when the image shows something else.
+- A local candidate with a confidence value is still unverified. Never quote that number as a probability in your answer.
 - If the image does not support a location, set location to null. Do not fabricate a bounding box.
 - If identity, orientation, polarity, pinout or variant is unclear, set next_action to ask_question or request_closer_image.
 - Only start from parts the project context lists as available or user-confirmed. Never assume an unmentioned part is available.
@@ -116,16 +118,26 @@ export function buildComponentPrompt({
   projectContext = null,
   capture = null,
   localCandidates = [],
+  datasetClasses = [],
   question = '',
   userCorrection = null,
   previousInstruction = null,
 } = {}) {
   const candidates = Array.isArray(localCandidates)
-    ? localCandidates.slice(0, 5).map((item) => ({
-      name: String(item?.name || 'unknown').slice(0, 80),
-      rawDistance: Number.isFinite(Number(item?.distance)) ? Number(item.distance) : null,
-      note: 'unverified local k-NN candidate; the raw distance is not a probability',
-    }))
+    ? localCandidates.slice(0, 5).map((item) => {
+      const confidence = Number(item?.confidence);
+      const distance = Number(item?.distance);
+      return {
+        name: String(item?.name || 'unknown').slice(0, 80),
+        confidence: Number.isFinite(confidence) ? Math.round(confidence * 1000) / 1000 : null,
+        rawDistance: Number.isFinite(distance) ? distance : null,
+        note: 'unverified local candidate; confidence is a model softmax, not a guarantee',
+      };
+    })
+    : [];
+
+  const vocabulary = Array.isArray(datasetClasses)
+    ? [...new Set(datasetClasses.map((name) => String(name || '').trim()).filter(Boolean))].slice(0, 96)
     : [];
 
   const context = {
@@ -134,11 +146,14 @@ export function buildComponentPrompt({
       captureId: capture.captureId,
       width: capture.width,
       height: capture.height,
-      gridSize: capture.gridSize,
-      coordinateConvention: 'origin top-left; x increases right; y increases down; normalized 0..1 inside the server',
+      coordinateConvention: 'origin top-left; x increases right; y increases down; model speaks 0..1000, server stores normalized 0..1',
     } : null,
     localCandidates: candidates,
     localCandidatesAreFallible: true,
+    datasetVocabulary: vocabulary.length ? {
+      note: 'The local recogniser was trained on these labels. Prefer one of these exact names when the visible part matches; ignore the list when it does not.',
+      classes: vocabulary,
+    } : null,
     userCorrection: userCorrection || null,
     previousInstruction: previousInstruction || null,
   };
@@ -151,7 +166,6 @@ export function buildComponentPrompt({
     '',
     'Analyse the still image. Identify a component only as confidently as the visible evidence allows,',
     'give its image coordinate if you can locate it honestly, and give the next beginner-friendly step.',
-    'If a grid-overlay image is included, it is the second image and exists only to help with coordinates.',
     'Reply with one JSON object only.',
   ].filter(Boolean).join('\n');
 
@@ -179,7 +193,6 @@ export function buildExplainPrompt({
     previousAnswer: String(previousAnswer || '').slice(0, 2000),
     capture: capture ? {
       captureId: capture.captureId,
-      gridSize: capture.gridSize,
     } : null,
   };
 

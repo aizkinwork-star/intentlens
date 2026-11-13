@@ -76,6 +76,26 @@ export function isBrowserCallable(providerId) {
   return browserCanCallProvider(providerId);
 }
 
+/**
+ * Validate an optional local-recogniser endpoint. Images may only leave the
+ * browser for https, same-origin, or loopback addresses — never an arbitrary
+ * plain-http host. Returns '' when the value is unusable.
+ */
+export function safeRecognizerUrl(raw, baseHref = globalThis.location?.href || 'https://localhost/') {
+  const text = String(raw || '').trim();
+  if (!text || /\s/.test(text)) return '';
+  try {
+    const base = new URL(baseHref);
+    const url = new URL(text, base);
+    const sameOrigin = url.origin === base.origin;
+    const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+    if (url.protocol !== 'https:' && !sameOrigin && !loopback) return '';
+    return url.href;
+  } catch {
+    return '';
+  }
+}
+
 export function providerSupportsImages(providerId) {
   const id = normalizeProviderId(providerId);
   if (id === 'custom') return true; // the user's relay decides

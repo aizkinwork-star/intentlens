@@ -46,7 +46,6 @@
 
     <div class="statusRow">
       <span id="status" class="status">Ready</span>
-      <span id="gridLabel" class="gridLabel">Grid 64×64</span>
     </div>
 
     <section class="controls">
@@ -83,7 +82,6 @@
     <section id="answer" class="card hidden" aria-live="polite">
       <div class="answerTop">
         <strong id="compName">—</strong>
-        <span id="cellTag" class="tag"></span>
       </div>
       <p id="instruction" class="instruction"></p>
       <p id="meta" class="meta"></p>
@@ -91,7 +89,10 @@
       <div class="answerActions">
         <button id="repeatBtn" class="ghost" type="button">Repeat · 0 requests</button>
         <button id="explainBtn" class="ghost" type="button">Explain · 1 request</button>
+        <button id="readAloudBtn" class="ghost" type="button" disabled>Read aloud</button>
+        <button id="stopReadAloudBtn" class="ghost" type="button" disabled>Stop voice</button>
       </div>
+      <p class="meta">Read aloud uses the phone's built-in voice. No microphone is used.</p>
     </section>
 
     <section class="card cloudCard">
@@ -181,17 +182,14 @@
         <button id="clearBudgetBtn" class="ghost smallBtn" type="button">Clear local ledger</button>
       </fieldset>
 
-      <div class="twoCol">
-        <label>Grid
-          <select id="gridSelect">
-            <option value="16">16×16</option>
-            <option value="32">32×32</option>
-            <option value="64" selected>64×64</option>
-            <option value="96">96×96</option>
-            <option value="128">128×128</option>
-          </select>
-        </label>
-      </div>
+      <label id="recognizerUrlRow">Local recogniser URL (optional, https or same-origin)
+        <input id="recognizerUrlInput" type="url" autocomplete="off" spellcheck="false"
+               placeholder="https://192.168.1.20:8011/api/recognizer/classify">
+      </label>
+      <p class="meta">
+        Optional. When set, this phone sends one centre crop to that address for a local
+        component candidate. Leave it empty to send only the photo to the provider.
+      </p>
 
       <div class="dialogActions">
         <button id="testProviderBtn" class="ghost" type="button">Test key · 1 text request</button>

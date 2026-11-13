@@ -1,15 +1,14 @@
-// server/routes/captures.js — immutable still captures + separate grid overlay.
+// server/routes/captures.js — immutable still captures.
 //
-// The client sends one still image (and optionally a raster grid overlay drawn on
-// a copy). The server never edits the original. Files are written with an
-// exclusive-create flag, and a capture id can never be overwritten.
+// The client sends one still image. The server never edits the original. Files
+// are written with an exclusive-create flag, and a capture id can never be
+// overwritten. There is no grid overlay: the model receives the honest original
+// image only.
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { json, readJson, recordServerLog } from '../lib/http.js';
 import { appError, errorPayload } from '../lib/errors.js';
 import { config } from '../config.js';
-import { GRID_SIZES, DEFAULT_GRID_SIZE } from '../../grid.js';
-import { buildGridOverlaySvg } from '../../captureOverlay.js';
 import { addCaptureToProject } from '../../projectPlanner.js';
 
 const IMAGE_DATA_URL = /^data:image\/(jpeg|jpg|png|webp);base64,([a-z0-9+/=\s]+)$/i;
@@ -44,11 +43,7 @@ export function readCaptureRequest(body) {
   const height = safeDimension(body.height);
   if (!width || !height) throw appError('CAMERA_FRAME_MISSING', 'The capture is missing usable width/height.');
 
-  const requestedGrid = Number(body.gridSize);
-  const gridSize = GRID_SIZES.includes(requestedGrid) ? requestedGrid : DEFAULT_GRID_SIZE;
-
   const original = decodeImageDataUrl(body.dataUrl, 'capture');
-  const overlay = body.overlayDataUrl ? decodeImageDataUrl(body.overlayDataUrl, 'grid overlay') : null;
 
   const providedId = clean(body.captureId, 80);
   if (providedId && !ID_RE.test(providedId)) throw appError('BAD_JSON', 'Invalid capture id.');
@@ -58,10 +53,8 @@ export function readCaptureRequest(body) {
     captureId: providedId || `cap_${Date.now().toString(36)}_${randomUUID().slice(0, 8)}`,
     width,
     height,
-    gridSize,
     capturedAt: clean(body.capturedAt, 40) || new Date().toISOString(),
     original,
-    overlay,
   };
 }
 
@@ -77,24 +70,15 @@ export async function captureCreateHandler(req, res, store) {
       return;
     }
 
-    const overlaySvg = buildGridOverlaySvg({
-      width: request.width,
-      height: request.height,
-      gridSize: request.gridSize,
-    });
-
     let capture;
     try {
       capture = store.createCapture({
         id: request.captureId,
         projectId: request.projectId,
         originalBuffer: request.original.buffer,
-        overlayBuffer: request.overlay ? request.overlay.buffer : null,
-        overlaySvg,
         mimeType: request.original.mimeType,
         width: request.width,
         height: request.height,
-        gridSize: request.gridSize,
         capturedAt: request.capturedAt,
       });
     } catch (err) {
@@ -111,7 +95,7 @@ export async function captureCreateHandler(req, res, store) {
     recordServerLog({
       level: 'ok',
       category: 'capture',
-      message: `Stored capture ${capture.captureId} (${capture.width}x${capture.height}, grid ${capture.gridSize})`,
+      message: `Stored capture ${capture.captureId} (${capture.width}x${capture.height})`,
     });
     json(res, 201, { capture, project: updated });
   } catch (err) {
@@ -133,14 +117,14 @@ export function captureGetHandler(req, res, store, captureId) {
   json(res, 200, { capture });
 }
 
-export function captureFileHandler(req, res, store, captureId, kind = 'original') {
+export function captureFileHandler(req, res, store, captureId) {
   if (!ID_RE.test(captureId)) {
     json(res, 400, { error: { code: 'BAD_JSON', message: 'Invalid capture id.', retryable: false } });
     return;
   }
-  const file = store.getCaptureFile(captureId, kind);
+  const file = store.getCaptureFile(captureId);
   if (!file) {
-    json(res, 404, { error: { code: 'NOT_FOUND', message: `Capture ${captureId} has no stored ${kind} file.`, retryable: false } });
+    json(res, 404, { error: { code: 'NOT_FOUND', message: `Capture ${captureId} has no stored file.`, retryable: false } });
     return;
   }
 

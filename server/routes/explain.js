@@ -41,7 +41,7 @@ export async function runExplain({ router, request, project, captureImage = null
     projectContext: project ? projectContextForAI(project) : null,
     previousAnswer: request.previousAnswer,
     question: request.question || project?.userGoal || '',
-    capture: captureImage ? { captureId: request.captureId, gridSize: captureImage.gridSize } : null,
+    capture: captureImage ? { captureId: request.captureId } : null,
   });
 
   const routed = await router.analyze({
@@ -52,6 +52,7 @@ export async function runExplain({ router, request, project, captureImage = null
     schema: EXPLAIN_SCHEMA,
     allowWebSearch: false,
     requestId: request.requestId,
+    deadlineMs: config.answerDeadlineMs,
     signal,
   });
 
@@ -72,13 +73,12 @@ function loadCaptureImage(store, request) {
   if (!store || !request.captureId) return null;
   const meta = store.getCapture(request.captureId);
   if (!meta || meta.projectId !== request.projectId) return null;
-  const file = store.getCaptureFile(request.captureId, 'original');
+  const file = store.getCaptureFile(request.captureId);
   if (!file || !file.path) return null;
   try {
     const buffer = readFileSync(file.path);
     return {
       dataUrl: `data:${file.mimeType};base64,${buffer.toString('base64')}`,
-      gridSize: meta.gridSize,
     };
   } catch {
     return null;

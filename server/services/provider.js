@@ -92,6 +92,8 @@ export class ProviderRouter {
     const now = Date.now();
     const candidates = this.eligibleProviders;
     let attempted = 0;
+    const deadlineMs = Number(input?.deadlineMs);
+    const deadlineAt = Number.isFinite(deadlineMs) && deadlineMs > 0 ? now + deadlineMs : 0;
 
     for (const provider of candidates) {
       const health = healthFor(provider.id);
@@ -105,6 +107,21 @@ export class ProviderRouter {
           cooldownRemainingMs: health.cooldownUntil - now,
         });
         continue;
+      }
+
+      // Hard answer deadline: never start an attempt that cannot finish inside
+      // the remaining budget. A fast fallback is more useful than a late answer.
+      const remainingMs = deadlineAt ? deadlineAt - Date.now() : 0;
+      if (deadlineAt && remainingMs <= 250) {
+        attempts.push({
+          id: provider.id,
+          modelId: provider.modelId || null,
+          ok: false,
+          skipped: true,
+          code: 'ANSWER_DEADLINE_REACHED',
+        });
+        if (!lastError) lastError = appError('MODEL_TIMEOUT', 'The 10-second answer deadline was reached.');
+        break;
       }
 
       // Hard budget preflight. A request that cannot fit is skipped in favour
@@ -136,8 +153,22 @@ export class ProviderRouter {
       }
 
       const started = Date.now();
+      let attemptController = null;
+      let deadlineTimer = null;
+      let removeAbortListener = null;
       try {
-        const raw = await provider.analyze(input, signal);
+        let attemptSignal = signal;
+        if (deadlineAt) {
+          attemptController = new AbortController();
+          attemptSignal = attemptController.signal;
+          if (signal) {
+            const forwardAbort = () => attemptController.abort();
+            signal.addEventListener('abort', forwardAbort, { once: true });
+            removeAbortListener = () => signal.removeEventListener('abort', forwardAbort);
+          }
+          deadlineTimer = setTimeout(() => attemptController.abort(), Math.max(1, deadlineAt - Date.now()));
+        }
+        const raw = await provider.analyze(input, attemptSignal);
         const ms = Date.now() - started;
         health.state = 'healthy';
         health.lastSuccessAt = new Date().toISOString();
@@ -169,11 +200,15 @@ export class ProviderRouter {
         };
       } catch (err) {
         attempted += 1;
-        lastError = err;
-        const info = classifyProviderError(err);
+        const timedOut = Boolean(attemptController?.signal.aborted) && !Boolean(signal?.aborted) && !err?.code;
+        const effectiveError = timedOut
+          ? appError('MODEL_TIMEOUT', 'The provider did not answer before the answer deadline.')
+          : err;
+        lastError = effectiveError;
+        const info = classifyProviderError(effectiveError);
         health.state = info.authInvalid ? 'auth_invalid' : info.category === 'quota' ? 'quota_exhausted' : 'unhealthy';
         health.lastErrorAt = new Date().toISOString();
-        health.lastError = String(err?.message || err).slice(0, 300);
+        health.lastError = String(effectiveError?.message || effectiveError).slice(0, 300);
         health.lastErrorCategory = info.category;
         health.consecutiveFailures += 1;
         health.cooldownUntil = info.cooldownMs ? Date.now() + info.cooldownMs : 0;
@@ -182,14 +217,17 @@ export class ProviderRouter {
           modelId: provider.modelId || null,
           ok: false,
           ms: Date.now() - started,
-          code: err.code || 'UNKNOWN',
+          code: effectiveError.code || 'UNKNOWN',
           category: info.category,
-          retryable: Boolean(err.retryable),
+          retryable: Boolean(effectiveError.retryable),
         });
 
-        if (NEVER_FAILOVER.has(err.code) || err?.badRequest) throw err; // diagnose locally
-        if (signal?.aborted) throw err;
+        if (NEVER_FAILOVER.has(effectiveError.code) || effectiveError?.badRequest) throw effectiveError; // diagnose locally
+        if (signal?.aborted) throw effectiveError;
         if (provider.id === candidates[candidates.length - 1]?.id) break;
+      } finally {
+        if (deadlineTimer) clearTimeout(deadlineTimer);
+        if (removeAbortListener) removeAbortListener();
       }
     }
 

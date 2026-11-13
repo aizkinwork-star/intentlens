@@ -3,7 +3,7 @@
 // Never caches model requests, images or Authorization-bearing responses.
 // Only same-origin GET assets are handled.
 
-const CACHE = 'intentlens-pwa-v17';
+const CACHE = 'intentlens-pwa-v18';
 const SHELL = [
   './',
   './index.html',
@@ -18,6 +18,8 @@ const SHELL = [
   './manifest.webmanifest',
   './lib/grid.js',
   './lib/componentResult.js',
+  './lib/speech.js',
+  './lib/componentVocabulary.js',
   './icons/icon-192.png',
   './icons/icon-512.png',
 ];

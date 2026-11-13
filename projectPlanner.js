@@ -240,10 +240,8 @@ export function addCaptureToProject(project, capture, now = new Date()) {
     projectId: project.projectId,
     width: capture.width,
     height: capture.height,
-    gridSize: capture.gridSize,
     capturedAt: capture.capturedAt,
     originalUrl: capture.originalUrl || null,
-    overlayUrl: capture.overlayUrl || null,
     localOnly: Boolean(capture.localOnly),
   };
   return {
@@ -322,7 +320,6 @@ export function projectContextForAI(project, { currentObject = null } = {}) {
     currentObject: currentObject ? {
       id: currentObject.id,
       name: currentObject.name,
-      gridCell: currentObject.gridCell || null,
       identityStatus: currentObject.identityStatus,
     } : null,
   };

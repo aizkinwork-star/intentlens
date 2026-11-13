@@ -22,7 +22,7 @@ export function canTransition(from, to) {
 }
 
 export function createObservation({
-  trackId, bbox, center, normalized, gridCell, cropHash,
+  trackId, bbox, center, normalized, cropHash,
   firstSeen = Date.now(), lastSeen = Date.now(), state = IDENTITY_STATES.DETECTED,
 } = {}) {
   if (!trackId) throw new Error('trackId required');
@@ -31,7 +31,6 @@ export function createObservation({
     bbox: bbox || null,
     center: center || null,
     normalized: normalized || null,
-    gridCell: gridCell || null,
     cropHash: cropHash || null,
     firstSeen,
     lastSeen,
@@ -71,7 +70,6 @@ export function buildSharedContext({ sessionId, boardId, observations = [], inst
     bbox: o.bbox,
     center: o.center,
     normalized: o.normalized,
-    gridCell: o.gridCell,
     cropHash: o.cropHash,
     firstSeen: o.firstSeen,
     lastSeen: o.lastSeen,
@@ -124,7 +122,6 @@ export function buildExportSample({ observation, session, imageQuality = null })
     sessionId: session || null,
     trackId: observation.trackId,
     timestamp: observation.lastSeen,
-    gridCell: observation.gridCell,
     prediction: observation.classification ? observation.classification.candidates : null,
     userCorrection: observation.userCorrection,
     imageQuality,
