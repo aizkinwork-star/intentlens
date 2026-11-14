@@ -17,7 +17,8 @@
     "pwa:prepare": "node scripts/prepare-pwa.mjs",
     "pwa:serve": "node scripts/serve-pwa.mjs",
     "eval:accuracy": "node scripts/eval-accuracy.mjs",
-    "test:accuracy": "node scripts/eval-runtime-accuracy.mjs --min 0.85",
+    "test:accuracy": "node scripts/eval-runtime-accuracy.mjs --min 0.9 --min-stage 0.9 --min-class 0.9",
+    "bench:tracking": "node scripts/bench-tracking.mjs",
     "cli": "node cli/intentlens.mjs"
   },
   "dependencies": {

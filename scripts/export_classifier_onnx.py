@@ -30,6 +30,9 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--report", required=True)
     parser.add_argument("--out", default="")
+    parser.add_argument("--embeddings", default="",
+                        help="Cache used to verify the fold. Defaults to <out>/embeddings.npz, "
+                             "then the baseline clean cache.")
     parser.add_argument("--opset", type=int, default=17)
     return parser.parse_args()
 
@@ -68,6 +71,7 @@ def main() -> None:
     report_path = Path(args.report)
     report = json.loads(report_path.read_text(encoding="utf-8"))
     out_dir = Path(args.out) if args.out else report_path.parent
+    out_dir.mkdir(parents=True, exist_ok=True)
     backbone_name = report["embedding"]["backbone"]
     classes = report["classes"]
     coef = np.asarray(report["classifier"]["coef"], dtype=np.float64)
@@ -75,7 +79,11 @@ def main() -> None:
     mean = np.asarray(report["scaler"]["mean"], dtype=np.float64)
     scale = np.asarray(report["scaler"]["scale"], dtype=np.float64)
 
-    if report.get("method") != "frozen-imagenet-embeddings+logreg":
+    allowed_methods = {
+        "frozen-imagenet-embeddings+logreg",
+        "frozen-imagenet-embeddings+logreg+robust-augmentation",
+    }
+    if report.get("method") not in allowed_methods:
         raise SystemExit("Only the frozen-embedding report can be folded into a linear head.")
 
     # sklearn computes softmax((x - mean) / scale @ coef.T + intercept).
@@ -88,8 +96,14 @@ def main() -> None:
         raise SystemExit(f"Embedding dimension mismatch: report {coef.shape[1]} vs backbone {dim}")
     model = FoldedClassifier(backbone, folded_weight, folded_bias).eval()
 
-    # Verify on cached test embeddings that the fold is exact.
-    checkpoint = out_dir / "embeddings.npz"
+    # Verify on cached test embeddings that the fold is exact. A robust run
+    # reuses the baseline clean test embeddings, so look there when the output
+    # directory has no cache of its own.
+    checkpoint = Path(args.embeddings) if args.embeddings else out_dir / "embeddings.npz"
+    if not checkpoint.exists() and not args.embeddings:
+        fallback = Path("datasets/processed/cnn_resnet18_v1/embeddings.npz")
+        if fallback.exists():
+            checkpoint = fallback
     verification = None
     if checkpoint.exists():
         cached = np.load(checkpoint)
@@ -139,6 +153,7 @@ def main() -> None:
         "contextMargin": 0.10,
         "classes": classes,
         "classCount": len(classes),
+        "trainingMethod": report.get("method"),
         "measured": {
             "testAccuracy": report["testAccuracy"],
             "validAccuracy": report["validAccuracy"],
@@ -148,6 +163,24 @@ def main() -> None:
         "foldedHeadVerification": verification,
         "license": "Backbone: torchvision ImageNet weights (BSD-3-Clause). Head trained on ElectroCom61 (CC BY 4.0).",
     }
+    # Lighting-robust runs record one measured number per opacity stage. The JS
+    # runtime benchmark (scripts/eval-runtime-accuracy.mjs) replays the same
+    # stages, so these are directly comparable.
+    if report.get("perStage"):
+        meta["lightingRobustness"] = {
+            "opacityStages": report.get("augmentation", {}).get("opacityStages", {}),
+            "rotationDegrees": report.get("augmentation", {}).get("rotationDegrees"),
+            "stages": {
+                name: {
+                    "opacity": stats.get("opacity"),
+                    "testAccuracy": stats.get("accuracy"),
+                    "samples": stats.get("samples"),
+                    "minClassRecall": stats.get("minClassRecall"),
+                    "classesBelow90": len(stats.get("classesBelow90") or []),
+                }
+                for name, stats in report["perStage"].items()
+            },
+        }
     (out_dir / "classifier.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
     print(f"Wrote {out_dir / 'classifier.json'}")
 

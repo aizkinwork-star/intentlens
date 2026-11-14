@@ -11,7 +11,7 @@ IntentLens runs in two places:
 
 Both surfaces share the same pure modules for coordinates, result validation and model metadata, so a marker cannot mean different things on the phone and the PC.
 
-> **Honest status.** This is an MVP. Component identification is a research problem, not a solved one. No accuracy percentage is claimed in this README: the measurement code returns `null` until it has at least 30 labelled samples, and those samples do not ship in this repository. Low-light capture, hinge/articulation tracking and PCB registration are included as local heuristics with explicit confidence, not as validated industrial metrology. Physical phone, laptop-hinge and PCB accuracy still need hardware validation. Meta Ray-Ban glasses integration was not built.
+> **Honest status.** This is an MVP. Component identification is a research problem, not a solved one. The only accuracy figures quoted here are measured on the held-out ElectroCom61 test split; the measurement code returns `null` until it has at least 30 labelled samples, and those samples do not ship in this repository. Low-light capture, hinge/articulation tracking and PCB registration are included as local heuristics with explicit confidence, not as validated industrial metrology. Physical phone, laptop-hinge and PCB accuracy still need hardware validation. Meta Ray-Ban glasses integration was not built.
 
 ---
 
@@ -37,7 +37,7 @@ Both surfaces share the same pure modules for coordinates, result validation and
 ## What works
 
 - **Camera and upload** — live preview, frozen stills, phone gallery upload and desktop file upload.
-- **Local component recognition** — a measured ElectroCom61 classifier (ResNet-18 + linear head, exported to ONNX). **94.15%** held-out test accuracy, **93.00%** through the shipped JS + onnxruntime path. It proposes candidates; the AI and the user decide identity. See [docs/COMPONENT_RECOGNITION.md](docs/COMPONENT_RECOGNITION.md).
+- **Local component recognition** — a measured ElectroCom61 classifier (ResNet-18, last block fine-tuned, exported to ONNX). **97.51%** held-out test accuracy (clean), **97.33%** through the shipped JS + onnxruntime path, and still **97.04%** at 30% brightness. Per-class accuracy is tracked honestly: 3–7 of 61 classes remain just below 90%. It proposes candidates; the AI and the user decide identity. See [docs/COMPONENT_RECOGNITION.md](docs/COMPONENT_RECOGNITION.md).
 - **Coordinate grounding** — the model returns `0..1000` coordinates; the app validates them and converts them to normalized points/boxes. There is no visual grid overlay.
 - **Read aloud** — the written answer can be spoken with the browser's built-in voice. Text-to-speech only; the app never opens the microphone.
 - **Local tracking** — colour-histogram + patch similarity tracking, reacquisition and a visible state machine. No per-frame AI calls.
@@ -411,7 +411,7 @@ docs/                            architecture, audits, evaluation notes
 
 - `docs/architecture.md` — original architecture; sections written before the multi-provider change are historical. Use `docs/MULTI_PROVIDER_ARCHITECTURE.md` for current provider/budget design.
 - `docs/PERCEPTION_AND_ACCURACY.md` - lighting, hinge, PCB confidence and how to measure accuracy honestly.
-- `docs/COMPONENT_RECOGNITION.md` - ElectroCom61 classifier: measured 94.15% offline / 93.00% runtime accuracy and reproduction commands.
+- `docs/COMPONENT_RECOGNITION.md` - ElectroCom61 classifier: measured per-stage accuracy (97.5% clean → 97.0% in low light), the per-class shortfall, and reproduction commands.
 - `docs/HOSTED_SAM.md` - optional SAM 2 via Replicate: setup, API, limits, privacy and evaluation rules.
 - `docs/INSTALL.md`, `docs/SETUP_GUIDE.md` — installation and provider setup.
 - `docs/KNN_EVALUATION.md`, `docs/PHASE6_*` — local reference experiments.

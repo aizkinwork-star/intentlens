@@ -17,22 +17,35 @@ export const TRACK_INTERVAL_MS = 100; // ~10 updates/second, tunable
 // Analysis is done on a downscaled copy so an old laptop stays responsive.
 export const ANALYSIS_WIDTH = 320;
 export const ANALYSIS_HEIGHT = 240;
+// Half-width of the appearance template, in analysis pixels. `_search` samples
+// exactly this patch, so the reference must be built at the same size.
+export const TEMPLATE_RADIUS = 12;
 
 // ---------------------------------------------------------------------------
 // Small image helpers (pixels)
 // ---------------------------------------------------------------------------
 
-// Colour histogram of an ImageData: 4x4x4 = 64 buckets, normalised to sum to 1.
+// Colour histogram of an ImageData. 8x8 bins over chromaticity (r/s, g/s),
+// where s = r + g + b. Dividing by the pixel sum removes exposure changes, so a
+// gradual or sudden dimming does not move the descriptor the way it moves a
+// plain RGB histogram. Near-black pixels (unstable hue) share one bin.
 function colourHistogram(imageData) {
   const { data } = imageData;
   const hist = new Uint32Array(64);
   let n = 0;
   for (let i = 0; i < data.length; i += 4) {
-    const r = data[i] >> 6;
-    const g = data[i + 1] >> 6;
-    const b = data[i + 2] >> 6;
-    hist[(r << 4) | (g << 2) | b] += 1;
+    const r = data[i];
+    const g = data[i + 1];
+    const b = data[i + 2];
+    const sum = r + g + b;
     n += 1;
+    if (sum < 18) {
+      hist[63] += 1;
+      continue;
+    }
+    const rb = Math.min(7, (r / sum * 8) | 0);
+    const gb = Math.min(7, (g / sum * 8) | 0);
+    hist[(rb << 3) | gb] += 1;
   }
   const total = n || 1;
   return Array.from(hist, (v) => v / total);
@@ -101,6 +114,28 @@ function dot(a, b) {
 // Cosine similarity of two unit-normalised patches (1 = identical).
 function patchSimilarity(a, b) {
   return Math.max(0, dot(a, b));
+}
+
+// Renormalise a histogram so Bhattacharyya affinity stays on the same scale.
+function normalizeHistogram(hist) {
+  let total = 0;
+  for (let i = 0; i < hist.length; i++) total += hist[i];
+  if (total <= 0) return hist;
+  return hist.map((value) => value / total);
+}
+
+// Blend two unit-normalised patches and keep the result unit-length.
+function unitBlend(a, b, alpha) {
+  const out = new Float32Array(a.length);
+  let norm = 0;
+  for (let i = 0; i < a.length; i++) {
+    const value = a[i] * (1 - alpha) + b[i] * alpha;
+    out[i] = value;
+    norm += value * value;
+  }
+  norm = Math.sqrt(norm) || 1;
+  for (let i = 0; i < out.length; i++) out[i] /= norm;
+  return out;
 }
 
 // Downscale src ImageData to outW x outH (nearest neighbour).
@@ -195,31 +230,36 @@ export class TargetTracker {
     this.lastBox = null;
     this.smoothedBox = null;
 
-    this.hist = null;      // colour histogram of the target
+    this.hist = null;      // chromaticity histogram of the target
     this.template = null;  // grayscale template patch
 
-    this.smoothAlpha = 0.35;
+    this.smoothAlpha = 0.5;
     this.searchHalf = 0.12;
+    this.velocity = { x: 0, y: 0 }; // normalized units per update
     this._lastRun = 0;
     this.STABLE_MS = 600;
     this.stableSince = null;
     this._appearanceBuilt = false;
+    // Only blend the appearance model when the match is strong; a weak match
+    // would poison the reference and make the next frame worse.
+    this.appearanceAlpha = 0.08;
+    this.appearanceUpdateScore = 0.82;
   }
 
   // Build an appearance model from a target crop.
-  // imageData: full frame ImageData; box: normalized target box within it.
+  // imageData: frame ImageData; box: normalized target box within it.
+  // Pass the analysis-sized frame (see `update`) so the template covers the
+  // same number of pixels the search will compare against.
   static buildAppearance(imageData, box) {
     const { width: fW, height: fH } = imageData;
     // Histogram over the target region only.
     const region = regionImageData(imageData, box.x * fW, box.y * fH, box.width * fW, box.height * fH);
     const hist = colourHistogram(region);
-    // Template from the centre of the box.
+    // Template centred on the box, at the fixed search-patch size.
     const cx = (box.x + box.width / 2) * fW;
     const cy = (box.y + box.height / 2) * fH;
-    const tsize = Math.min(box.width, box.height) * 0.5 * Math.min(fW, fH);
-    const tx = cx - tsize / 2;
-    const ty = cy - tsize / 2;
-    const template = grayscalePatch(imageData, tx, ty, tsize, tsize, 24, 24);
+    const side = TEMPLATE_RADIUS * 2;
+    const template = grayscalePatch(imageData, cx - TEMPLATE_RADIUS, cy - TEMPLATE_RADIUS, side, side, 24, 24);
     return { hist, template };
   }
 
@@ -230,12 +270,25 @@ export class TargetTracker {
     this.box = { x: box.x, y: box.y, width: box.width, height: box.height };
     this.lastBox = { ...this.box };
     this.smoothedBox = { ...this.box };
+    // Scale is searched relative to the size seen at init, never relative to the
+    // previous frame. Chaining relative steps made the box shrink every frame.
+    this.baseWidth = box.width;
+    this.baseHeight = box.height;
+    this.scale = 1;
 
     if (appearance) {
       this.hist = appearance.hist;
       this.template = appearance.template;
       this._appearanceBuilt = true;
+    } else {
+      // Reused tracker: drop the previous target's appearance and rebuild it
+      // from the first analysed frame at analysis scale.
+      this.hist = null;
+      this.template = null;
+      this._appearanceBuilt = false;
     }
+    this.velocity = { x: 0, y: 0 };
+    this._lastRun = 0;
     this.confidence = 1.0;
     this.stableSince = null;
     this._setState('TRACKING');
@@ -245,6 +298,9 @@ export class TargetTracker {
     if (this.state === next) return;
     const prev = this.state;
     this.state = next;
+    // Stability is a property of a continuous TRACKING run; reacquiring must
+    // not inherit the timer from before the target was lost.
+    if (next !== 'TRACKING') this.stableSince = null;
     if (this.onStateChange) this.onStateChange({ prev, next, targetId: this.targetId });
   }
 
@@ -254,15 +310,6 @@ export class TargetTracker {
   update(imageData, now = performance.now()) {
     if (this.state === 'INACTIVE') return null;
 
-    // Build the appearance model from the first frame the target is visible in,
-    // unless the caller already supplied one at init().
-    if (!this._appearanceBuilt && this.box) {
-      const app = TargetTracker.buildAppearance(imageData, this.box);
-      this.hist = app.hist;
-      this.template = app.template;
-      this._appearanceBuilt = true;
-    }
-
     if (this._lastRun !== 0 && now - this._lastRun < TRACK_INTERVAL_MS) {
       return this._currentSnapshot();
     }
@@ -270,32 +317,58 @@ export class TargetTracker {
 
     const small = downscale(imageData, ANALYSIS_WIDTH, ANALYSIS_HEIGHT);
 
+    // Build the appearance model from the first analysed frame, so the
+    // histogram and the template are sampled at the same scale as the search.
+    // Building it from a high-resolution frame used to make template similarity
+    // depend on camera resolution.
+    if (!this._appearanceBuilt && this.box) {
+      const app = TargetTracker.buildAppearance(small, this.box);
+      this.hist = app.hist;
+      this.template = app.template;
+      this._appearanceBuilt = true;
+    }
+
     const predicted = this._predictedBox();
     const search = this._searchWindow(predicted);
 
-    const best = this._search(small, search);
+    const best = this._search(small, search, predicted);
     if (!best) {
-      this.confidence = Math.max(0, this.confidence - 0.15);
-      if (this.state === 'TRACKING' && this.confidence < 0.55) this._setState('LOW_CONFIDENCE');
-      if (this.state === 'LOW_CONFIDENCE' && this.confidence < 0.30) this._setState('LOST');
+      this.velocity.x *= 0.5;
+      this.velocity.y *= 0.5;
+      // No candidate cleared the floor. Stop claiming TRACKING immediately:
+      // the module's contract is that it never over-claims a lost target.
+      this.confidence = Math.max(0, Math.min(this.confidence ?? 0, 0.54) - 0.15);
+      if (this.state === 'TRACKING' || this.state === 'LOW_CONFIDENCE') this._setState('LOW_CONFIDENCE');
+      if (this.confidence < 0.30) this._setState('LOST');
       if (this.state === 'LOST') this._setState('REACQUIRING');
       return this._currentSnapshot();
     }
 
     const { box: candBox } = best;
     const scoreCombined = 0.45 * best.hist + 0.35 * best.tmpl + 0.20 * best.overlap;
+    const previous = this.smoothedBox ? { ...this.smoothedBox } : { ...candBox };
 
     this.smoothedBox = {
-      x: this.smoothAlpha * candBox.x + (1 - this.smoothAlpha) * this.smoothedBox.x,
-      y: this.smoothAlpha * candBox.y + (1 - this.smoothAlpha) * this.smoothedBox.y,
-      width: this.smoothAlpha * candBox.width + (1 - this.smoothAlpha) * this.smoothedBox.width,
-      height: this.smoothAlpha * candBox.height + (1 - this.smoothAlpha) * this.smoothedBox.height,
+      x: this.smoothAlpha * candBox.x + (1 - this.smoothAlpha) * previous.x,
+      y: this.smoothAlpha * candBox.y + (1 - this.smoothAlpha) * previous.y,
+      width: this.smoothAlpha * candBox.width + (1 - this.smoothAlpha) * previous.width,
+      height: this.smoothAlpha * candBox.height + (1 - this.smoothAlpha) * previous.height,
     };
+    // Velocity is a short-memory average of the smoothed displacement, capped so
+    // one bad match cannot throw the next search window off the target.
+    const vx = Math.max(-0.04, Math.min(0.04, this.smoothedBox.x - previous.x));
+    const vy = Math.max(-0.04, Math.min(0.04, this.smoothedBox.y - previous.y));
+    this.velocity.x = 0.55 * this.velocity.x + 0.45 * vx;
+    this.velocity.y = 0.55 * this.velocity.y + 0.45 * vy;
+
     this.box = { ...this.smoothedBox };
-    this.lastBox = { ...this.box };
+    this.lastBox = previous;
     this.anchor = { x: this.box.x + this.box.width / 2, y: this.box.y + this.box.height / 2 };
 
     this.confidence = Math.min(1, Math.max(0, scoreCombined));
+    if (scoreCombined >= this.appearanceUpdateScore && best.overlap > 0.35) {
+      this._blendAppearance(best.cHist, best.cTmpl);
+    }
 
     if (this.state === 'REACQUIRING') this._setState('TRACKING');
     else if (this.state === 'LOW_CONFIDENCE' && this.confidence >= 0.65) this._setState('TRACKING');
@@ -304,13 +377,22 @@ export class TargetTracker {
     return this._currentSnapshot();
   }
 
+  /** Blend a confident observation into the reference appearance (slow EMA). */
+  _blendAppearance(hist, template) {
+    if (hist && this.hist) {
+      const alpha = this.appearanceAlpha;
+      this.hist = normalizeHistogram(this.hist.map((value, index) => value * (1 - alpha) + hist[index] * alpha));
+    }
+    if (template && this.template) {
+      this.template = unitBlend(this.template, template, this.appearanceAlpha);
+    }
+  }
+
   _predictedBox() {
-    if (!this.lastBox || !this.smoothedBox) return { ...this.box };
-    const dx = this.smoothedBox.x - this.lastBox.x;
-    const dy = this.smoothedBox.y - this.lastBox.y;
+    if (!this.smoothedBox) return { ...(this.box || { x: 0, y: 0, width: 0.06, height: 0.06 }) };
     return {
-      x: this.smoothedBox.x + dx,
-      y: this.smoothedBox.y + dy,
+      x: Math.max(0, Math.min(1 - this.smoothedBox.width, this.smoothedBox.x + this.velocity.x)),
+      y: Math.max(0, Math.min(1 - this.smoothedBox.height, this.smoothedBox.y + this.velocity.y)),
       width: this.smoothedBox.width,
       height: this.smoothedBox.height,
     };
@@ -333,48 +415,76 @@ export class TargetTracker {
     };
   }
 
-  _search(small, win) {
-    const patchRadius = 12; // half-width of the template patch in analysis px
-    const refHist = this.hist;
-    const refTmpl = this.template;
+  /**
+   * Score one candidate centre and box size. Returns null when the candidate is
+   * outside the frame or below the acceptance floor.
+   */
+  _scoreCandidate(small, cx, cy, bw, bh, predicted) {
+    const radius = TEMPLATE_RADIUS;
+    const ax = cx * ANALYSIS_WIDTH;
+    const ay = cy * ANALYSIS_HEIGHT;
+    if (ax < radius || ax > ANALYSIS_WIDTH - radius || ay < radius || ay > ANALYSIS_HEIGHT - radius) return null;
 
+    const bx = ax - bw / 2;
+    const by = ay - bh / 2;
+    if (bx < 0 || by < 0 || bx + bw > ANALYSIS_WIDTH || by + bh > ANALYSIS_HEIGHT) return null;
+
+    const cHist = colourHistogram(regionImageData(small, bx, by, bw, bh));
+    const hMatch = this.hist ? histAffinity(this.hist, cHist) : 0.5;
+
+    const cTmpl = grayscalePatch(small, ax - radius, ay - radius, radius * 2, radius * 2, 24, 24);
+    const tMatch = this.template ? patchSimilarity(this.template, cTmpl) : 0.5;
+
+    const candBox = {
+      x: bx / ANALYSIS_WIDTH,
+      y: by / ANALYSIS_HEIGHT,
+      width: bw / ANALYSIS_WIDTH,
+      height: bh / ANALYSIS_HEIGHT,
+    };
+    const overlap = boxOverlap(candBox, predicted);
+    const score = 0.45 * hMatch + 0.35 * tMatch + 0.20 * overlap;
+    if (score <= 0.42) return null;
+    return { score, overlap, hist: hMatch, tmpl: tMatch, box: candBox, centre: { cx, cy }, cHist, cTmpl };
+  }
+
+  _search(small, win, predicted = this._predictedBox()) {
+    // Size is always expressed relative to the init size, so the box cannot
+    // creep smaller (or larger) frame after frame.
+    const baseW = (this.baseWidth ?? this.box?.width ?? 0.06) * ANALYSIS_WIDTH;
+    const baseH = (this.baseHeight ?? this.box?.height ?? 0.06) * ANALYSIS_HEIGHT;
     let best = null;
-    // Candidate centres, normalized, stepped over the search window.
+    const consider = (cx, cy, scale) => {
+      const candidate = this._scoreCandidate(small, cx, cy, baseW * scale, baseH * scale, predicted);
+      if (candidate && (!best || candidate.score > best.score)) best = { ...candidate, scale };
+    };
+
+    const startScale = this.scale || 1;
+    // Coarse pass over the search window.
     for (let cy = win.y0; cy <= win.y1; cy += 0.02) {
-      for (let cx = win.x0; cx <= win.x1; cx += 0.02) {
-        const ax = cx * ANALYSIS_WIDTH;
-        const ay = cy * ANALYSIS_HEIGHT;
-        if (ax < patchRadius || ax > ANALYSIS_WIDTH - patchRadius ||
-            ay < patchRadius || ay > ANALYSIS_HEIGHT - patchRadius) continue;
-
-        const bw = (this.box ? this.box.width : 0.06) * ANALYSIS_WIDTH;
-        const bh = (this.box ? this.box.height : 0.06) * ANALYSIS_HEIGHT;
-        const bx = ax - bw / 2;
-        const by = ay - bh / 2;
-        if (bx < 0 || by < 0 || bx + bw > ANALYSIS_WIDTH || by + bh > ANALYSIS_HEIGHT) continue;
-
-        const cHist = colourHistogram(regionImageData(small, bx, by, bw, bh));
-        const hMatch = refHist ? histAffinity(refHist, cHist) : 0.5;
-
-        const cTmpl = grayscalePatch(small, bx + bw / 2 - patchRadius, by + bh / 2 - patchRadius,
-          patchRadius * 2, patchRadius * 2, 24, 24);
-        const tMatch = refTmpl ? patchSimilarity(refTmpl, cTmpl) : 0.5;
-
-        const candBox = {
-          x: cx - bw / 2 / ANALYSIS_WIDTH,
-          y: cy - bh / 2 / ANALYSIS_HEIGHT,
-          width: bw / ANALYSIS_WIDTH,
-          height: bh / ANALYSIS_HEIGHT,
-        };
-        const overlap = boxOverlap(candBox, this._predictedBox());
-
-        const combined = 0.45 * hMatch + 0.35 * tMatch + 0.20 * overlap;
-        if (combined > 0.42 && (!best || combined > best.score)) {
-          best = { score: combined, overlap, hist: hMatch, tmpl: tMatch, box: candBox };
-        }
-      }
+      for (let cx = win.x0; cx <= win.x1; cx += 0.02) consider(cx, cy, startScale);
     }
-    return best;
+    if (!best) return null;
+
+    // Fine pass around the winner: 0.02 steps are too coarse for a stable box.
+    const { cx, cy } = best.centre;
+    for (let dy = -0.010; dy <= 0.0101; dy += 0.005) {
+      for (let dx = -0.010; dx <= 0.0101; dx += 0.005) consider(cx + dx, cy + dy, startScale);
+    }
+
+    // Scale pass: components grow/shrink as the phone moves closer/further.
+    // Sizes are absolute (relative to the init size), so a scale change cannot
+    // ratchet the box smaller. Hysteresis: a different size must be clearly
+    // better, otherwise flat scores make the box flicker.
+    const SCALE_MARGIN = 0.03;
+    let refined = best;
+    for (const factor of [0.92, 1.08, 0.84, 1.16]) {
+      const candidate = this._scoreCandidate(small, best.centre.cx, best.centre.cy,
+        baseW * startScale * factor, baseH * startScale * factor, predicted);
+      if (!candidate) continue;
+      if (candidate.score > refined.score + SCALE_MARGIN) refined = { ...candidate, scale: startScale * factor };
+    }
+    this.scale = Math.max(0.6, Math.min(1.7, refined.scale));
+    return refined;
   }
 
   _currentSnapshot() {

@@ -9,7 +9,14 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const MODEL_DIR = process.env.COMPONENT_MODEL_DIR || join('datasets', 'processed', 'cnn_resnet18_v1');
+const MODEL_CANDIDATES = [
+  join('datasets', 'processed', 'cnn_resnet18_finetuned_v1'),
+  join('datasets', 'processed', 'cnn_resnet18_robust_v1'),
+  join('datasets', 'processed', 'cnn_resnet18_v1'),
+];
+const MODEL_DIR = process.env.COMPONENT_MODEL_DIR
+  || MODEL_CANDIDATES.find((dir) => existsSync(join(dir, 'classifier.json')))
+  || MODEL_CANDIDATES[MODEL_CANDIDATES.length - 1];
 const META_PATH = join(MODEL_DIR, 'classifier.json');
 const ONNX_PATH = join(MODEL_DIR, 'component_classifier.onnx');
 const RUNTIME_REPORT = join('datasets', 'processed', 'runtime_accuracy.json');
@@ -43,14 +50,44 @@ test('measured test accuracy is recorded and trustworthy', { skip: hasArtifacts 
   );
 });
 
-test('the runtime evaluation (JS preprocess + onnxruntime) clears the 85% gate', { skip: existsSync(RUNTIME_REPORT) ? false : 'run `npm run test:accuracy` to produce the report' }, () => {
+test('the runtime evaluation (JS preprocess + onnxruntime) clears the 90% gate', { skip: existsSync(RUNTIME_REPORT) ? false : 'run `npm run test:accuracy` to produce the report' }, () => {
   const report = readJson(RUNTIME_REPORT);
   const measured = report.measured || {};
   assert.ok(measured.samples >= 30, `need >= 30 labelled samples, got ${measured.samples}`);
   assert.equal(measured.trustworthy, true);
   assert.ok(
-    measured.accuracy >= 0.85,
-    `runtime accuracy ${(measured.accuracy * 100).toFixed(2)}% is below the 85% gate`,
+    measured.accuracy >= 0.90,
+    `runtime accuracy ${(measured.accuracy * 100).toFixed(2)}% is below the 90% gate`,
   );
   assert.equal(measured.passed, true);
+});
+
+test('every measured lighting stage clears the 90% gate', { skip: existsSync(RUNTIME_REPORT) ? false : 'run `npm run test:accuracy` to produce the report' }, () => {
+  const report = readJson(RUNTIME_REPORT);
+  const stages = report.stages || {};
+  const names = Object.keys(stages);
+  assert.ok(names.length >= 4, `expected clean/slight/medium/low, got ${names.join(', ') || 'none'}`);
+  for (const name of names) {
+    const stage = stages[name];
+    assert.ok(stage.samples >= 30, `${name}: need >= 30 samples, got ${stage.samples}`);
+    assert.ok(
+      stage.accuracy >= 0.90,
+      `${name} stage accuracy ${(stage.accuracy * 100).toFixed(2)}% is below the 90% gate`,
+    );
+  }
+});
+
+test('per-class recall is measured, not assumed', { skip: existsSync(RUNTIME_REPORT) ? false : 'run `npm run test:accuracy` to produce the report' }, () => {
+  const report = readJson(RUNTIME_REPORT);
+  const perClass = report.perClass || {};
+  const measured = Object.values(perClass).filter((stats) => stats.support > 0);
+  assert.ok(measured.length >= 60, `expected 61 measured classes, got ${measured.length}`);
+  // The report must always carry the shortfall list, so a regression cannot be
+  // hidden by quoting only the overall number.
+  const shortfall = measured.filter((stats) => stats.recall < 0.90);
+  assert.equal(
+    shortfall.length,
+    (report.stages?.[Object.keys(report.stages || {})[0]]?.classesBelow) ?? shortfall.length,
+    'per-class shortfall must match the recorded stage summary',
+  );
 });

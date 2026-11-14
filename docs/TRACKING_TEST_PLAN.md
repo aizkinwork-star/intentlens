@@ -21,3 +21,20 @@
 - Move target 50px between frames: tracker should follow within 3 frames.
 - Occlude target for 5 frames: state should become LOST, then REACQUIRING on reappearance.
 - Measure update latency: target < 16ms per frame on mid-range laptop.
+
+## Measured synthetic benchmark
+
+`node scripts/bench-tracking.mjs` draws seven deterministic 320×240 scenes (no
+camera, no browser) and runs `TargetTracker` on each: clean light, lights
+dropping to 60%/40%, steady 50% light, an occlusion, a similar distractor and a
+target that shrinks to 82%.
+
+Per scenario it records the tracked rate (IoU > 0.35), mean IoU against the
+ground-truth box, the fraction of occluded frames falsely reported as TRACKING,
+and how many visible frames recovery took. The gate is mean tracked ≥ 90%, mean
+IoU ≥ 55%, and ≤ 5% false tracking on every scenario. Results are written to
+`datasets/processed/tracking_benchmark.json` (gitignored).
+
+`trackingBenchmark.test.js` runs a shorter subset of the same scenes in
+`npm test`, including the honesty check that an occluded target is never
+reported as TRACKING. The full script is the number to quote.

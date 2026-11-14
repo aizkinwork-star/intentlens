@@ -16,7 +16,15 @@ import { decodePngRgba, isPng } from '../lib/png.js';
 import { createOnnxClassifier } from '../../perception/learning/OnnxComponentClassifier.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const DEFAULT_MODEL_DIR = join(ROOT, 'datasets', 'processed', 'cnn_resnet18_v1');
+// Prefer the fine-tuned model, then the lighting-robust linear model, then the
+// clean baseline. All three expose the same runtime contract.
+const MODEL_CANDIDATES = [
+  join(ROOT, 'datasets', 'processed', 'cnn_resnet18_finetuned_v1'),
+  join(ROOT, 'datasets', 'processed', 'cnn_resnet18_robust_v1'),
+  join(ROOT, 'datasets', 'processed', 'cnn_resnet18_v1'),
+];
+const DEFAULT_MODEL_DIR = MODEL_CANDIDATES.find((dir) => existsSync(join(dir, 'classifier.json')))
+  || MODEL_CANDIDATES[MODEL_CANDIDATES.length - 1];
 const MAX_PIXELS = 4096 * 4096;
 
 let state = null; // { status, classifier, meta, error }

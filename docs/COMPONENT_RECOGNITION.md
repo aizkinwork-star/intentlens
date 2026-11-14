@@ -12,28 +12,70 @@ do **not** prove.
 
 ## Measured results
 
-| Path | Accuracy | Labeled samples | Notes |
-| --- | --- | --- | --- |
-| Offline evaluation (scikit-learn, frozen head) | **94.15%** | 1,283 test crops | Held-out dataset split, never seen in training |
-| Shipped runtime (JS preprocessing + `onnxruntime-web`) | **93.00%** (279/300) | 300 held-out crops | Same crops and preprocessing the app uses |
-| Validation split (scikit-learn) | 94.30% | — | Cross-check that the split is not lucky |
+The current model is a ResNet-18 whose last block (`layer4`) and classifier were
+fine-tuned on ElectroCom61 with the lighting and rotation augmentation the device
+sees. Accuracy is reported per lighting stage, because "works in a dim room" was
+the original failure. Each stage dims every pixel toward black by the listed
+opacity factor (`clean` 1.0, `slight` 0.75, `medium` 0.50, `low` 0.30); rotation
+is part of training only, so these stage numbers isolate lighting.
 
-Both numbers are above the 90% project target. The runtime number is the one to
-quote for "how often does the app get the component right", because it runs the
-exact image pipeline that ships.
+Held-out test split, 1,283 labelled crops (offline, PyTorch preprocessing):
+
+| Stage | Opacity | Accuracy | Classes below 90% | Worst class recall |
+| --- | --- | --- | --- | --- |
+| clean | 1.00 | **97.51%** | 6 of 61 | 83.3% (`Resistor`) |
+| slight | 0.75 | **97.82%** | 3 of 61 | 86.4% (`IC-Base-14-Pin`) |
+| medium | 0.50 | **97.43%** | 5 of 61 | 86.4% |
+| low | 0.30 | **97.04%** | 7 of 61 | 86.4% |
+
+Shipped runtime path (JavaScript preprocessing + `onnxruntime-web`, 300 held-out
+crops exported for the app):
+
+| Stage | Opacity | Accuracy | ms/crop |
+| --- | --- | --- | --- |
+| clean | 1.00 | **97.33%** (292/300) | ~490 |
+| slight | 0.75 | **97.67%** (293/300) | |
+| medium | 0.50 | **97.33%** (292/300) | |
+| low | 0.30 | **97.33%** (292/300) | |
+
+The runtime number is the one to quote for "how often does the app get the
+component right", because it runs the exact image pipeline that ships.
+
+**What this does and does not prove.** Overall accuracy clears 90% at every
+lighting stage, and by a wide margin. Per-class accuracy (≥90% for *every one of
+the 61 classes*) is **not** fully met: 3–7 classes sit at 83–89% on the 1,283-crop
+test split, and 6–7 classes on the 300-crop runtime set. Those shortfalls are
+mostly one or two errors with tiny support (some classes have only 9 test crops,
+so a single error puts them at 88.9%). The shortfall list is recorded in
+`report.json` (`classesBelow90`) and in `runtime_accuracy.json`
+(`stages.<stage>.classesBelowList`) rather than hidden behind the average. The
+strongest remaining confusions are `Resistor → Diode`/`Zener-Diode` and
+`IC-Base-14-Pin → IC-Chip`; both are visually plausible at this crop resolution.
+
+Validation (capped at 8 crops/class during training, 488 crops/stage) reached
+**96.52%** clean and **96.72%** medium; the full validation split measured
+97.61% / 97.73%. The epoch was chosen on validation only; the test split was
+evaluated once.
 
 The dataset audit found 2,071 images, 12,667 annotations and 61 classes with no
 missing labels, no empty labels, no duplicate images and no degenerate boxes
-(`datasets/processed/audit.md`).
+(`datasets/processed/audit.md`). A separate check found no duplicate images and no
+shared base stems across the train/valid/test splits, so the held-out numbers are
+not inflated by leakage.
 
 ## What the classifier is
 
-- **Backbone:** ImageNet-pretrained ResNet-18, frozen.
-- **Head:** multinomial logistic regression on the 512-d embedding.
+- **Backbone:** ImageNet-pretrained ResNet-18.
+- **Fine-tuning:** `layer4` + classifier head only; earlier blocks stay frozen and
+  BatchNorm statistics stay at their ImageNet values.
+- **Training augmentation:** brightness/opacity sampled uniformly in `[0.30, 1.0]`
+  (blend toward black, matching dim lighting), rotation uniformly in `±3°`,
+  label smoothing `0.05`. AdamW, 6 epochs, early stopping on a clean+medium
+  validation mix.
 - **Input:** 224×224 RGB, per-channel mean `[0.485, 0.456, 0.406]` and std
   `[0.229, 0.224, 0.225]`.
-- **Export:** backbone + head folded into one ONNX graph (`image` →
-  `logits`), `[1,3,224,224]` → `[1,61]`.
+- **Export:** backbone + head in one ONNX graph (`image` → `logits`),
+  `[1,3,224,224]` → `[1,61]`, opset 17.
 - **Classes:** the 61 ElectroCom61 component names from the dataset, stored in
   `classifier.json` so the prompt vocabulary cannot drift from the model.
 
@@ -57,29 +99,42 @@ not source). To rebuild them locally:
 # 1. Dataset audit (fast, CPU only)
 python scripts/audit_dataset.py
 
-# 2. Train the classifier (ResNet-18 embeddings + logistic regression)
-python scripts/train_cnn_classifier.py
+# 2. Fine-tune layer4 + head with the lighting/rotation augmentation
+python scripts/train_finetune_classifier.py `
+  --root "datasets/ElectroCom61 A Multiclass Dataset for Detection of Electronic Components/ElectroCom61" `
+  --out datasets/processed/cnn_resnet18_finetuned_v1 --epochs 6 --threads 2
 
-# 3. Fold backbone + head into one ONNX graph
-python scripts/export_classifier_onnx.py
+# 3. Export the fine-tuned state dict to one ONNX graph + classifier.json
+python scripts/export_finetuned_onnx.py `
+  --report datasets/processed/cnn_resnet18_finetuned_v1/report.json `
+  --state datasets/processed/cnn_resnet18_finetuned_v1/finetuned_state.pt `
+  --out datasets/processed/cnn_resnet18_finetuned_v1
 
 # 4. Export the held-out test crops the runtime will be judged on
 python scripts/export_test_crops.py
 
-# 5. End-to-end runtime accuracy (JS preprocessing + onnxruntime-web)
-node scripts/eval-runtime-accuracy.mjs --limit 300 --min 0.85
+# 5. End-to-end runtime accuracy per lighting stage (JS preprocessing + onnxruntime-web)
+node scripts/eval-runtime-accuracy.mjs --min 0.90 --min-stage 0.90 --min-class 0.90
 ```
 
 Step 5 is also wired as a gate:
 
 ```powershell
-npm run test:accuracy   # fails below 85%
+npm run test:accuracy   # fails below 90% overall or at any lighting stage
 ```
 
+The cheaper frozen-embedding + logistic-regression baseline remains available
+(`scripts/train_robust_classifier.py` → `scripts/export_classifier_onnx.py`) and
+is used automatically when the fine-tuned artifacts are absent:
+`server/services/componentRecognizer.js` and the evaluation scripts prefer
+`cnn_resnet18_finetuned_v1`, then `cnn_resnet18_robust_v1`, then
+`cnn_resnet18_v1`. All three share the same ONNX contract.
+
 `node scripts/run-source-tests.mjs` includes `accuracyGate.test.js`, which checks
-that any recorded measurement has at least 30 labeled samples and clears the
-gates. When the artifacts are absent the test skips with a reason rather than
-claiming a number it did not measure.
+that any recorded measurement has at least 30 labeled samples, that overall and
+per-stage accuracy clear 90%, and that the per-class shortfall list matches the
+stage summary. When the artifacts are absent the test skips with a reason rather
+than claiming a number it did not measure.
 
 ## How the result is used
 
@@ -98,6 +153,10 @@ are reported as uncertain rather than promoted to a label.
 
 ## Limitations
 
+- **Per-class accuracy is not yet universal.** Overall and per-stage accuracy
+  clear 90%, but 3–7 of 61 classes remain below 90% on held-out crops (worst
+  ~83%). Those classes are named in the generated reports; treat a prediction for
+  one of them as more uncertain.
 - **Classification only.** The classifier answers "which component is in this
   crop". It does not produce masks, pin numbers, polarity, ratings or board
   regions. Guidance that depends on those still needs the vision provider and,
